@@ -250,6 +250,9 @@ func _test_item_definition() -> void:
 	_expect(item != null and item.object_id == 272 and item.bitmap == 110, "DOS item object identity and bitmap parsing")
 	_expect(item.script_on_use == 39660 and item.flags == 17, "DOS item use script and flags parsing")
 	_expect(item.is_usable() and item.applies_to_all() and not item.is_consuming(), "story item usability flags")
+	var database := PalContentDatabase.new()
+	database.item_descriptions = {"272": "掺了水的酒。", "75": "糯稻的米*可解尸毒。"}
+	_expect(database.get_item_description(272) == "掺了水的酒。" and database.get_item_description(75).split("*").size() == 2, "item descriptions preserve object ids and original line separators")
 
 
 func _test_player_roles_structure() -> void:

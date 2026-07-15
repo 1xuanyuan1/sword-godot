@@ -10,8 +10,8 @@ func _init() -> void:
 		quit(0)
 		return
 	var wine := database.item_definition(272)
-	if wine == null or not database.load_ui_sprite().is_valid() or not database.load_item_bitmap(wine.bitmap).is_valid():
-		printerr("FAIL: 原版菜单 Sprite 或桂花酒图标没有正确导入")
+	if wine == null or not database.load_ui_sprite().is_valid() or not database.load_item_bitmap(wine.bitmap).is_valid() or database.get_item_description(272).is_empty():
+		printerr("FAIL: 原版菜单 Sprite、桂花酒图标或物品说明没有正确导入")
 		quit(1)
 		return
 

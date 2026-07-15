@@ -18,6 +18,7 @@ var items: Array[PalItemDefinition] = []
 var player_roles: PalPlayerRoles
 var words: Array = []
 var messages: Array = []
+var item_descriptions: Dictionary = {}
 var source_encoding: String = ""
 var _mgo_sprites: Dictionary = {}
 var _rgm_portraits: Dictionary = {}
@@ -36,6 +37,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	player_roles = null
 	words.clear()
 	messages.clear()
+	item_descriptions.clear()
 	_mgo_sprites.clear()
 	_rgm_portraits.clear()
 	_item_bitmaps.clear()
@@ -140,6 +142,10 @@ func get_message(index: int) -> String:
 	return str(messages[index]) if index >= 0 and index < messages.size() else ""
 
 
+func get_item_description(item_id: int) -> String:
+	return str(item_descriptions.get(str(item_id), item_descriptions.get(item_id, "")))
+
+
 func is_quoted_narration_start(index: int) -> bool:
 	# DOS 文本用成对半角引号标记无角色的剧情叙述；续行只在末尾带结束引号。
 	return get_message(index).strip_edges().begins_with("\"")
@@ -168,6 +174,7 @@ func _load_text_database() -> void:
 	source_encoding = str(parsed.get("encoding", ""))
 	words = parsed.get("words", [])
 	messages = parsed.get("messages", [])
+	item_descriptions = parsed.get("object_descriptions", {})
 
 
 func _build_speaker_portrait_defaults() -> void:

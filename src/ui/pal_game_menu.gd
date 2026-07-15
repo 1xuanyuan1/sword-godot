@@ -210,6 +210,11 @@ func _draw_inventory_page() -> void:
 	var selected_item := database.item_definition(_inventory_ids[_inventory_selection])
 	if selected_item != null:
 		_draw_item_bitmap(selected_item.bitmap, Vector2i(8, 147))
+		var description := database.get_item_description(selected_item.object_id)
+		var description_y := 150
+		for line in description.split("*", false):
+			_draw_pal_text(line, Vector2i(75, description_y), _palette_color(0x3c), true)
+			description_y += 16
 
 
 func _move_selection(direction: Vector2i) -> void:
@@ -377,7 +382,10 @@ func _draw_pal_glyphs(text: String, position: Vector2i, color: Color) -> void:
 			var values: Array = _font_glyphs[key]
 			var region := Rect2(float(values[0]), float(values[1]), float(values[2]), float(values[3]))
 			draw_texture_rect_region(_font_texture, Rect2(Vector2(x, position.y), region.size), region, color)
-		x += 16
+			x += 16
+		else:
+			draw_string(ThemeDB.fallback_font, Vector2(x, position.y + 13), key, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+			x += 8
 
 
 func _draw_number(value: int, length: int, position: Vector2i, frame_start: int) -> void:

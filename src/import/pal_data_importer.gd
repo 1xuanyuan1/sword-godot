@@ -280,6 +280,8 @@ static func _convert_text_and_font(files_by_lowercase: Dictionary, absolute_outp
 		"--characters", files_by_lowercase["wor16.asc"],
 		"--output", output_dir,
 	]
+	if files_by_lowercase.has("desc.dat"):
+		arguments.append_array(["--description", files_by_lowercase["desc.dat"]])
 	var output: Array = []
 	var exit_code := -1
 	var command_used := ""

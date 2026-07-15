@@ -63,6 +63,20 @@ def decode_messages(message_data: bytes, offset_data: bytes, encoding: str) -> l
     ]
 
 
+def decode_object_descriptions(data: bytes, encoding: str) -> dict[str, str]:
+    descriptions: dict[str, str] = {}
+    for line in data.decode(encoding, errors="replace").splitlines():
+        if "=" not in line:
+            continue
+        key, description = line.split("=", 1)
+        object_id = key.split("(", 1)[0].strip()
+        try:
+            descriptions[str(int(object_id, 16))] = description.strip()
+        except ValueError:
+            continue
+    return descriptions
+
+
 def _png_chunk(kind: bytes, payload: bytes) -> bytes:
     return struct.pack(">I", len(payload)) + kind + payload + struct.pack(">I", zlib.crc32(kind + payload) & 0xFFFFFFFF)
 
@@ -117,6 +131,7 @@ def main() -> int:
     parser.add_argument("--offsets", required=True, type=Path)
     parser.add_argument("--font", required=True, type=Path)
     parser.add_argument("--characters", required=True, type=Path)
+    parser.add_argument("--description", type=Path)
     parser.add_argument("--output", required=True, type=Path)
     args = parser.parse_args()
 
@@ -125,19 +140,20 @@ def main() -> int:
     encoding = detect_encoding(word_data)
     words = decode_words(word_data, encoding)
     messages = decode_messages(args.message.read_bytes(), args.offsets.read_bytes(), encoding)
+    object_descriptions = decode_object_descriptions(args.description.read_bytes(), encoding) if args.description else {}
     font = convert_font(args.font.read_bytes(), args.characters.read_bytes(), encoding, args.output)
     result = {
         "format_version": 1,
         "encoding": encoding,
         "words": words,
         "messages": messages,
+        "object_descriptions": object_descriptions,
         "font": font,
     }
     (args.output / "text.json").write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
-    print(json.dumps({"encoding": encoding, "words": len(words), "messages": len(messages), **font}))
+    print(json.dumps({"encoding": encoding, "words": len(words), "messages": len(messages), "descriptions": len(object_descriptions), **font}))
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
