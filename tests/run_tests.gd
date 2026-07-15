@@ -28,6 +28,7 @@ func _init() -> void:
 	_test_party_trail()
 	_test_script_vm_foundation()
 	_test_script_vm_dialog_pause()
+	_test_script_vm_title_and_body()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
 		quit(0)
@@ -320,4 +321,27 @@ func _test_script_vm_dialog_pause() -> void:
 	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM advances one dialog message")
 	vm.advance_dialog()
 	_expect(not vm.waiting_for_dialog and not vm.running, "script VM finishes after final dialog message")
+	vm.free()
+
+
+func _test_script_vm_title_and_body() -> void:
+	var database := PalContentDatabase.new()
+	database.messages.resize(14)
+	database.messages[12] = "测试人："
+	database.messages[13] = "正文"
+	for operation in [0, 0x003c, 0xffff, 0xffff, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[2].operands[0] = 12
+	database.scripts[3].operands[0] = 13
+	var messages: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database)
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.run_trigger(1)
+	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM combines speaker title with first body line")
+	vm.advance_dialog()
+	_expect(not vm.waiting_for_dialog, "script VM title does not require a separate key press")
 	vm.free()

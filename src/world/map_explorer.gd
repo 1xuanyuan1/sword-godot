@@ -293,7 +293,13 @@ func _on_dialog_message(message_index: int) -> void:
 
 
 func _on_dialog_started(position: int, color: int, portrait: int) -> void:
-	_dialog_box.begin(position, color, portrait)
+	var portrait_texture: Texture2D
+	if portrait > 0:
+		var portrait_image := _database.load_rgm_portrait(portrait)
+		var palette := _database.load_palette(_session.palette_index, _session.night_palette)
+		if portrait_image.is_valid() and not palette.is_empty():
+			portrait_texture = ImageTexture.create_from_image(portrait_image.to_rgba_image(palette))
+	_dialog_box.begin(position, color, portrait_texture)
 
 
 func _on_dialog_ended() -> void:

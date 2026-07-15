@@ -211,6 +211,9 @@ func _continue_execution() -> int:
 			0xffff:
 				dialog_message.emit(entry.operands[0])
 				_cursor = next_cursor
+				if _is_dialog_title(database.get_message(entry.operands[0])):
+					executed += 1
+					continue
 				waiting_for_dialog = true
 				running = false
 				return _cursor
@@ -254,3 +257,8 @@ func _resolve_event(operand: int) -> PalEventObject:
 
 static func _signed_word(value: int) -> int:
 	return value - 0x10000 if value >= 0x8000 else value
+
+
+static func _is_dialog_title(text: String) -> bool:
+	var content := text.strip_edges()
+	return content.ends_with(":") or content.ends_with("：") or content.ends_with("∶")

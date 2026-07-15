@@ -66,6 +66,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_generate_palette_previews(files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_content_database(files_by_lowercase, absolute_output, report)
 	_convert_mgo_sprites(files_by_lowercase["mgo.mkf"], absolute_output, report)
+	_convert_rgm_portraits(files_by_lowercase["rgm.mkf"], absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)
 	_generate_fbp_preview(files_by_lowercase["fbp.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_rng_preview(files_by_lowercase["rng.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
@@ -209,6 +210,38 @@ static func _convert_mgo_sprites(mgo_path: String, absolute_output: String, repo
 		report.warnings.append("mgo.mkf 中没有成功转换的场景 Sprite")
 	if not decode_failures.is_empty() or not invalid_sprites.is_empty():
 		report.errors.append("MGO 场景 Sprite 校验失败：%d 个解压失败，%d 个帧表无效" % [decode_failures.size(), invalid_sprites.size()])
+
+
+static func _convert_rgm_portraits(rgm_path: String, absolute_output: String, report: PalImportReport) -> void:
+	var archive := MkfArchive.load_file(rgm_path)
+	if not archive.is_valid():
+		return
+	var output_dir := absolute_output.path_join("content/portraits/rgm")
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	var previous_output := DirAccess.open(output_dir)
+	if previous_output != null:
+		for file_name in previous_output.get_files():
+			if file_name.ends_with(".rle"):
+				previous_output.remove(file_name)
+	var converted := 0
+	var invalid: Array[int] = []
+	for portrait_index in range(archive.chunk_count()):
+		var portrait_bytes := archive.get_chunk(portrait_index)
+		if portrait_bytes.is_empty():
+			continue
+		var portrait := RleDecoder.decode(portrait_bytes)
+		if not portrait.is_valid():
+			invalid.append(portrait_index)
+			continue
+		if _write_bytes(output_dir.path_join("%03d.rle" % portrait_index), portrait_bytes):
+			converted += 1
+	report.files["rgm_conversion"] = {
+		"converted": converted,
+		"invalid_indices": invalid,
+		"output": output_dir,
+	}
+	if not invalid.is_empty():
+		report.errors.append("RGM 对话肖像校验失败：%d 个 RLE 图像无效" % invalid.size())
 
 
 static func _convert_text_and_font(files_by_lowercase: Dictionary, absolute_output: String, report: PalImportReport) -> void:

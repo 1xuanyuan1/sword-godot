@@ -30,4 +30,5 @@
 | 脚本虚拟机 | `script.c` |
 | 经典战斗循环 | `battle.c`、`fight.c`、`uibattle.c` |
 | 文本、代码页和字库 | `text.c`、`font.c`、`codepage.h` |
+| RGM 对话肖像与布局 | `text.c` |
 | RIX/VOC 音频 | `rixplay.cpp`、`sound.c`、`adplug/` |

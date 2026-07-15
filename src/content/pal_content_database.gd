@@ -13,6 +13,7 @@ var words: Array = []
 var messages: Array = []
 var source_encoding: String = ""
 var _mgo_sprites: Dictionary = {}
+var _rgm_portraits: Dictionary = {}
 
 
 func load_generated(path: String = "res://generated/pal/content") -> bool:
@@ -25,6 +26,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	words.clear()
 	messages.clear()
 	_mgo_sprites.clear()
+	_rgm_portraits.clear()
 	var core := root_path.path_join("core")
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
@@ -72,6 +74,16 @@ func load_mgo_sprite(sprite_number: int) -> PalSprite:
 	var sprite := PalSprite.from_bytes(file.get_buffer(file.get_length()) if file != null else PackedByteArray())
 	_mgo_sprites[sprite_number] = sprite
 	return sprite
+
+
+func load_rgm_portrait(portrait_number: int) -> PalIndexedImage:
+	if _rgm_portraits.has(portrait_number):
+		return _rgm_portraits[portrait_number]
+	var path := root_path.path_join("portraits/rgm/%03d.rle" % portrait_number)
+	var file := FileAccess.open(path, FileAccess.READ)
+	var portrait := RleDecoder.decode(file.get_buffer(file.get_length()) if file != null else PackedByteArray())
+	_rgm_portraits[portrait_number] = portrait
+	return portrait
 
 
 func events_for_scene(scene_index: int) -> Array[PalEventObject]:
