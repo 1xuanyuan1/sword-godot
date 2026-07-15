@@ -44,6 +44,10 @@ func _parse(data: PackedByteArray) -> void:
 	var previous := -1
 	for index in range(frame_count_value):
 		var offset := PalBinary.u16_le(data, index * 2) * 2
+		# SDLPal preserves this original data quirk: one MGO Sprite stores the
+		# 17-bit offset 0x18444 in a 16-bit table and expects it to wrap to 0x8444.
+		if offset == 0x18444:
+			offset &= 0xffff
 		if offset < table_words * 2 or offset > data.size() or previous > offset:
 			error_message = "Sprite 帧偏移无效：%d" % offset
 			_frame_offsets = PackedInt64Array()

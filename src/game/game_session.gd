@@ -4,6 +4,7 @@ class_name GameSession
 extends RefCounted
 
 const PARTY_OFFSET := Vector2i(160, 112)
+const TRAIL_SIZE := 5
 
 var scene_index: int = 0
 var viewport_position: Vector2i = Vector2i.ZERO
@@ -14,10 +15,49 @@ var night_palette: bool = false
 var music_number: int = 0
 var battle_music_number: int = 0
 var party_roles: PackedInt32Array = PackedInt32Array([0])
+var trail_positions: Array[Vector2i] = []
+var trail_directions: PackedInt32Array = PackedInt32Array()
 
 
 func party_world_position() -> Vector2i:
 	return viewport_position + PARTY_OFFSET
+
+
+func set_party_world_position(world_position: Vector2i) -> void:
+	viewport_position = world_position - PARTY_OFFSET
+	_initialize_trail(world_position)
+
+
+func record_party_step(direction: int, movement: Vector2i) -> void:
+	if trail_positions.size() != TRAIL_SIZE or trail_directions.size() != TRAIL_SIZE:
+		_initialize_trail(party_world_position())
+	for index in range(TRAIL_SIZE - 1, 0, -1):
+		trail_positions[index] = trail_positions[index - 1]
+		trail_directions[index] = trail_directions[index - 1]
+	trail_positions[0] = party_world_position()
+	trail_directions[0] = direction
+	party_direction = direction
+	viewport_position += movement
+
+
+func party_member_world_position(member_index: int) -> Vector2i:
+	if member_index <= 0 or trail_positions.size() < 2:
+		return party_world_position()
+	var base := trail_positions[1]
+	var direction := trail_directions[1]
+	if member_index == 2:
+		base.x += -16 if direction in [1, 3] else 16
+		base.y += 8
+	else:
+		base.x += 16 if direction in [2, 3] else -16
+		base.y += 8 if direction in [0, 3] else -8
+	return base
+
+
+func party_member_direction(member_index: int) -> int:
+	if member_index <= 0 or trail_directions.size() < 3:
+		return party_direction
+	return trail_directions[2]
 
 
 func reset_new_game() -> void:
@@ -30,3 +70,16 @@ func reset_new_game() -> void:
 	music_number = 0
 	battle_music_number = 0
 	party_roles = PackedInt32Array([0])
+	_initialize_trail(party_world_position())
+
+
+func _initialize_trail(world_position: Vector2i) -> void:
+	trail_positions.resize(TRAIL_SIZE)
+	trail_directions.resize(TRAIL_SIZE)
+	var backward := Vector2i(
+		16 if party_direction in [2, 3] else -16,
+		8 if party_direction in [0, 3] else -8
+	)
+	for index in range(TRAIL_SIZE):
+		trail_positions[index] = world_position + backward * index
+		trail_directions[index] = party_direction

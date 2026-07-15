@@ -156,7 +156,7 @@ func _show_report(report: PalImportReport) -> void:
 	_details.clear()
 	var root := _details.create_item()
 	for file_name: String in report.files.keys():
-		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "rng_preview", "voc_conversion", "rix_conversion", "content_database", "text_conversion"]:
+		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "rng_preview", "voc_conversion", "rix_conversion", "mgo_conversion", "content_database", "text_conversion"]:
 			continue
 		var metadata: Dictionary = report.files[file_name]
 		var item := _details.create_item(root)

@@ -12,6 +12,7 @@ func _init() -> void:
 	_test_mkf_rejects_bad_offsets()
 	_test_rle_decoder()
 	_test_sprite_offsets()
+	_test_sprite_wrapped_offset()
 	_test_yj1_raw_block()
 	_test_palette_decoder()
 	_test_rng_animation_table()
@@ -20,6 +21,10 @@ func _init() -> void:
 	_test_map_helpers()
 	_test_voc_decoder()
 	_test_content_structures()
+	_test_player_roles_structure()
+	_test_scene_draw_item_anchors()
+	_test_scene_y_sorting()
+	_test_party_trail()
 	_test_script_vm_foundation()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -83,6 +88,17 @@ func _test_sprite_offsets() -> void:
 	_expect(sprite.frame_count() == 2, "sprite frame count")
 	_expect(sprite.get_frame(0) == PackedByteArray([0xaa, 0xbb]), "sprite first frame")
 	_expect(sprite.get_frame(1) == PackedByteArray([0xcc, 0xdd]), "sprite last frame uses chunk end")
+
+
+func _test_sprite_wrapped_offset() -> void:
+	var data := PackedByteArray()
+	data.resize(0x8446)
+	data[0] = 3
+	data[2] = 0x22
+	data[3] = 0xc2
+	var sprite := PalSprite.from_bytes(data)
+	_expect(sprite.is_valid(), "sprite original 0x18444 wrapped offset")
+	_expect(sprite.frame_count() == 2 and sprite.get_frame(1).size() == 2, "sprite wrapped frame boundary")
 
 
 func _test_yj1_raw_block() -> void:
@@ -191,6 +207,68 @@ func _test_content_structures() -> void:
 	var script := PalScriptEntry.from_bytes(script_bytes, 0)
 	_expect(script != null and script.operation == 0x46, "script operation parsing")
 	_expect(script.operands == PackedInt32Array([41, 18, 0]), "script operand parsing")
+
+
+func _test_player_roles_structure() -> void:
+	var role_bytes := PackedByteArray()
+	role_bytes.resize(PalPlayerRoles.BYTE_SIZE)
+	var sprite_offset := PalPlayerRoles.SCENE_SPRITE_WORD_OFFSET * 2
+	role_bytes[sprite_offset] = 2
+	role_bytes[sprite_offset + 2] = 7
+	var walk_offset := PalPlayerRoles.WALK_FRAMES_WORD_OFFSET * 2
+	role_bytes[walk_offset] = 4
+	var roles := PalPlayerRoles.from_bytes(role_bytes)
+	_expect(roles.is_valid(), "PLAYERROLES structure length")
+	_expect(roles.scene_sprite_for(0) == 2 and roles.scene_sprite_for(1) == 7, "PLAYERROLES scene sprite numbers")
+	_expect(roles.walk_frame_count_for(0) == 4 and roles.walk_frame_count_for(1) == 3, "PLAYERROLES walk frame fallback")
+
+
+func _test_scene_draw_item_anchors() -> void:
+	var frame := PalIndexedImage.new()
+	frame.width = 10
+	frame.height = 20
+	frame.indices.resize(200)
+	frame.opacity.resize(200)
+	frame.opacity.fill(255)
+	var player := PalSceneRenderer.player_item(frame, Vector2i(160, 112))
+	_expect(player.x == 155 and player.baseline_y == 122 and player.logical_layer == 6, "scene player anchor")
+	var event := PalSceneRenderer.event_item(frame, Vector2i(40, 50), 2)
+	_expect(event.x == 35 and event.baseline_y == 75 and event.logical_layer == 18, "scene event layer anchor")
+
+
+func _test_scene_y_sorting() -> void:
+	var map_bytes := PackedByteArray()
+	map_bytes.resize(PalMapData.BYTE_SIZE)
+	var map_data := PalMapData.from_bytes(map_bytes)
+	var tile_sprite := PalSprite.from_bytes(PackedByteArray([2, 0, 0, 0, 1, 0, 1, 0, 1, 1]))
+	var first := PalIndexedImage.new()
+	first.width = 1
+	first.height = 1
+	first.indices = PackedByteArray([7])
+	first.opacity = PackedByteArray([255])
+	var second := PalIndexedImage.new()
+	second.width = 1
+	second.height = 1
+	second.indices = PackedByteArray([8])
+	second.opacity = PackedByteArray([255])
+	var items: Array = [
+		PalSceneRenderer.DrawItem.new(second, 0, 2, 1),
+		PalSceneRenderer.DrawItem.new(first, 0, 1, 0),
+	]
+	var rendered := PalSceneRenderer.render(map_data, tile_sprite, Rect2i(0, 0, 4, 4), items)
+	_expect(rendered.is_valid(), "scene synthetic render")
+	_expect(rendered.indices[0] == 8, "scene sprites sorted by baseline Y")
+
+
+func _test_party_trail() -> void:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.set_party_world_position(Vector2i(320, 160))
+	session.record_party_step(1, Vector2i(16, 8))
+	_expect(session.party_world_position() == Vector2i(336, 168), "party leader trail movement")
+	_expect(session.trail_positions[0] == Vector2i(320, 160) and session.trail_directions[0] == 1, "party trail records previous leader")
+	_expect(session.party_member_world_position(1) == Vector2i(304, 168), "party second member formation")
+	_expect(session.party_member_world_position(2) == Vector2i(336, 168), "party third member formation")
 
 
 func _test_script_vm_foundation() -> void:

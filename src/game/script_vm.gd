@@ -70,7 +70,7 @@ func run_trigger(entry_index: int, _event_object_id: int = 0) -> int:
 				if session != null:
 					var world_x := entry.operands[0] * 32 + entry.operands[2] * 16
 					var world_y := entry.operands[1] * 16 + entry.operands[2] * 8
-					session.viewport_position = Vector2i(world_x, world_y) - GameSession.PARTY_OFFSET
+					session.set_party_world_position(Vector2i(world_x, world_y))
 			0x0047:
 				sound_requested.emit(entry.operands[0])
 			0x0065:

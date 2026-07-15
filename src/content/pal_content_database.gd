@@ -8,9 +8,11 @@ var error_message: String = ""
 var scenes: Array[PalSceneDefinition] = []
 var event_objects: Array[PalEventObject] = []
 var scripts: Array[PalScriptEntry] = []
+var player_roles: PalPlayerRoles
 var words: Array = []
 var messages: Array = []
 var source_encoding: String = ""
+var _mgo_sprites: Dictionary = {}
 
 
 func load_generated(path: String = "res://generated/pal/content") -> bool:
@@ -19,8 +21,10 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	scenes.clear()
 	event_objects.clear()
 	scripts.clear()
+	player_roles = null
 	words.clear()
 	messages.clear()
+	_mgo_sprites.clear()
 	var core := root_path.path_join("core")
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
@@ -36,6 +40,10 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		scenes.append(PalSceneDefinition.from_bytes(scene_bytes, offset))
 	for offset in range(0, script_bytes.size(), PalScriptEntry.BYTE_SIZE):
 		scripts.append(PalScriptEntry.from_bytes(script_bytes, offset))
+	player_roles = PalPlayerRoles.from_bytes(_read_file(root_path.path_join("data/03.bin")))
+	if player_roles == null or not player_roles.is_valid():
+		error_message = player_roles.error_message if player_roles != null else "PLAYERROLES 数据缺失"
+		return false
 	_load_text_database()
 	return not scenes.is_empty() and not scripts.is_empty()
 
@@ -52,6 +60,16 @@ func load_map_tiles(map_number: int) -> PalSprite:
 
 func load_palette(index: int = 0, night: bool = false) -> PackedByteArray:
 	return _read_file(root_path.path_join("palettes/%02d_%s.rgb" % [index, "night" if night else "day"]))
+
+
+func load_mgo_sprite(sprite_number: int) -> PalSprite:
+	if _mgo_sprites.has(sprite_number):
+		return _mgo_sprites[sprite_number]
+	var path := root_path.path_join("sprites/mgo/%03d.spr" % sprite_number)
+	var file := FileAccess.open(path, FileAccess.READ)
+	var sprite := PalSprite.from_bytes(file.get_buffer(file.get_length()) if file != null else PackedByteArray())
+	_mgo_sprites[sprite_number] = sprite
+	return sprite
 
 
 func events_for_scene(scene_index: int) -> Array[PalEventObject]:

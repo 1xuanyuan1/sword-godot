@@ -65,6 +65,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 
 	_generate_palette_previews(files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_content_database(files_by_lowercase, absolute_output, report)
+	_convert_mgo_sprites(files_by_lowercase["mgo.mkf"], absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)
 	_generate_fbp_preview(files_by_lowercase["fbp.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_rng_preview(files_by_lowercase["rng.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
@@ -165,6 +166,49 @@ static func _generate_content_database(files_by_lowercase: Dictionary, absolute_
 		"maps": imported_maps,
 		"output": content_root,
 	}
+
+
+static func _convert_mgo_sprites(mgo_path: String, absolute_output: String, report: PalImportReport) -> void:
+	var archive := MkfArchive.load_file(mgo_path)
+	if not archive.is_valid():
+		return
+	var output_dir := absolute_output.path_join("content/sprites/mgo")
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	var previous_output := DirAccess.open(output_dir)
+	if previous_output != null:
+		for file_name in previous_output.get_files():
+			if file_name.ends_with(".spr") or file_name.ends_with(".invalid"):
+				previous_output.remove(file_name)
+	var converted := 0
+	var decode_failures: Array[Dictionary] = []
+	var invalid_sprites: Array[Dictionary] = []
+	for sprite_index in range(archive.chunk_count()):
+		var compressed := archive.get_chunk(sprite_index)
+		if compressed.is_empty():
+			continue
+		var decoder := Yj1Decoder.new()
+		var sprite_bytes := decoder.decompress(compressed, 8 * 1024 * 1024)
+		if sprite_bytes.is_empty():
+			decode_failures.append({"index": sprite_index, "error": decoder.error_message})
+			continue
+		var sprite := PalSprite.from_bytes(sprite_bytes)
+		if not sprite.is_valid():
+			invalid_sprites.append({"index": sprite_index, "error": sprite.error_message})
+			continue
+		if _write_bytes(output_dir.path_join("%03d.spr" % sprite_index), sprite_bytes):
+			converted += 1
+		else:
+			report.warnings.append("无法写入 MGO Sprite %d" % sprite_index)
+	report.files["mgo_conversion"] = {
+		"converted": converted,
+		"decode_failures": decode_failures,
+		"invalid_sprites": invalid_sprites,
+		"output": output_dir,
+	}
+	if converted == 0:
+		report.warnings.append("mgo.mkf 中没有成功转换的场景 Sprite")
+	if not decode_failures.is_empty() or not invalid_sprites.is_empty():
+		report.errors.append("MGO 场景 Sprite 校验失败：%d 个解压失败，%d 个帧表无效" % [decode_failures.size(), invalid_sprites.size()])
 
 
 static func _convert_text_and_font(files_by_lowercase: Dictionary, absolute_output: String, report: PalImportReport) -> void:
