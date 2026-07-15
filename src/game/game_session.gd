@@ -18,6 +18,7 @@ var palette_index: int = 0
 var night_palette: bool = false
 var music_number: int = 0
 var battle_music_number: int = 0
+var world_layer: int = 0
 var party_roles: PackedInt32Array = PackedInt32Array([0])
 var trail_positions: Array[Vector2i] = []
 var trail_directions: PackedInt32Array = PackedInt32Array()
@@ -86,6 +87,7 @@ func reset_new_game() -> void:
 	night_palette = false
 	music_number = 0
 	battle_music_number = 0
+	world_layer = 0
 	party_roles = PackedInt32Array([0])
 	_initialize_trail(party_world_position())
 

@@ -27,6 +27,7 @@ func _init() -> void:
 	_test_pal_direction_mapping()
 	_test_party_trail()
 	_test_script_vm_foundation()
+	_test_script_vm_dialog_pause()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
 		quit(0)
@@ -297,4 +298,26 @@ func _test_script_vm_foundation() -> void:
 	vm.configure(database, session)
 	vm.run_trigger(1)
 	_expect(session.viewport_position == Vector2i(1152, 176), "script VM party position opcode")
+	vm.free()
+
+
+func _test_script_vm_dialog_pause() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x003d, 0xffff, 0xffff, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[2].operands[0] = 12
+	database.scripts[3].operands[0] = 13
+	var messages: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database)
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.run_trigger(1)
+	_expect(vm.waiting_for_dialog and messages == [12], "script VM pauses at first dialog message")
+	vm.advance_dialog()
+	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM advances one dialog message")
+	vm.advance_dialog()
+	_expect(not vm.waiting_for_dialog and not vm.running, "script VM finishes after final dialog message")
 	vm.free()

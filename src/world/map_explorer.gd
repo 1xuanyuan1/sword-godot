@@ -12,12 +12,14 @@ var _tile_sprite: PalSprite
 var _scene_events: Array[PalEventObject] = []
 var _map_view: TextureRect
 var _status: Label
+var _dialog_box: PalDialogBox
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
 var _player_sprites: Dictionary = {}
 var _event_sprites: Dictionary = {}
 var _walk_phase: int = 0
 var _showing_walk_frame: bool = false
+var _pending_scene_index: int = -1
 
 
 func _ready() -> void:
@@ -26,25 +28,17 @@ func _ready() -> void:
 		_set_error(_database.error_message + "。请返回资源实验室重新导入。")
 		return
 	_session.reset_new_game()
-	var scene := _database.scenes[_session.scene_index]
-	_map_data = _database.load_map(scene.map_number)
-	_tile_sprite = _database.load_map_tiles(scene.map_number)
-	_scene_events = _database.events_for_scene(_session.scene_index)
-	if not _map_data.is_valid() or not _tile_sprite.is_valid():
-		_set_error("首场景地图加载失败：%s %s" % [_map_data.error_message, _tile_sprite.error_message])
-		return
-	if not _load_scene_sprites():
-		return
 	_script_vm = ScriptVM.new()
 	_script_vm.configure(_database, _session)
 	_script_vm.unsupported_instruction.connect(_on_unsupported_instruction)
 	_script_vm.redraw_requested.connect(_on_script_redraw)
+	_script_vm.dialog_started.connect(_on_dialog_started)
 	_script_vm.dialog_message.connect(_on_dialog_message)
+	_script_vm.dialog_ended.connect(_on_dialog_ended)
+	_script_vm.scene_change_requested.connect(_on_scene_change_requested)
+	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
 	add_child(_script_vm)
-	if scene.script_on_enter > 0:
-		_script_vm.run_trigger(scene.script_on_enter)
-	_refresh_world()
-	_status.text = "方向键移动｜空格/回车查看附近事件｜Esc 返回｜场景 %d / 地图 %d / 事件 %d" % [_session.scene_index + 1, scene.map_number, _scene_events.size()]
+	_load_scene(_session.scene_index, true)
 
 
 func _build_interface() -> void:
@@ -72,9 +66,15 @@ func _build_interface() -> void:
 	_status.add_theme_color_override("font_color", Color("f8fafc"))
 	add_child(_status)
 
+	_dialog_box = PalDialogBox.new()
+	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_dialog_box)
+
 
 func _process(delta: float) -> void:
 	if _map_data == null or not _map_data.is_valid():
+		return
+	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog):
 		return
 	_move_cooldown = maxf(0.0, _move_cooldown - delta)
 	var movement := Vector2i.ZERO
@@ -110,6 +110,9 @@ func _process(delta: float) -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
+		return
+	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _script_vm != null and _script_vm.waiting_for_dialog:
+		_script_vm.advance_dialog()
 		return
 	if event is InputEventKey and event.keycode == KEY_ESCAPE:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -158,7 +161,28 @@ func _inspect_nearby_event() -> void:
 		return
 	_status.text = "事件：脚本 0x%04X，自动脚本 0x%04X，Sprite %d（VM 基础阶段）" % [closest.trigger_script, closest.auto_script, closest.sprite_number]
 	if closest.trigger_script > 0:
-		_script_vm.run_trigger(closest.trigger_script)
+		_script_vm.run_trigger(closest.trigger_script, closest.object_id)
+
+
+func _load_scene(scene_index: int, run_enter_script: bool) -> void:
+	if scene_index < 0 or scene_index >= _database.scenes.size():
+		_set_error("场景索引越界：%d" % scene_index)
+		return
+	_session.scene_index = scene_index
+	var scene := _database.scenes[scene_index]
+	_map_data = _database.load_map(scene.map_number)
+	_tile_sprite = _database.load_map_tiles(scene.map_number)
+	_scene_events = _database.events_for_scene(scene_index)
+	_event_sprites.clear()
+	if not _map_data.is_valid() or not _tile_sprite.is_valid():
+		_set_error("场景 %d 地图加载失败：%s %s" % [scene_index + 1, _map_data.error_message, _tile_sprite.error_message])
+		return
+	if not _load_scene_sprites():
+		return
+	_refresh_world()
+	_status.text = "方向键移动｜空格/回车交互｜Esc 返回｜场景 %d / 地图 %d / 事件 %d" % [scene_index + 1, scene.map_number, _scene_events.size()]
+	if run_enter_script and scene.script_on_enter > 0:
+		_script_vm.run_trigger(scene.script_on_enter)
 
 
 func _refresh_world() -> void:
@@ -204,7 +228,7 @@ func _build_scene_draw_items() -> Array:
 		var member_world_position := _session.party_member_world_position(party_index)
 		if party_index > 0 and _is_blocked(member_world_position):
 			member_world_position = _session.trail_positions[1]
-		result.append(PalSceneRenderer.player_item(player_frame, member_world_position - _session.viewport_position))
+		result.append(PalSceneRenderer.player_item(player_frame, member_world_position - _session.viewport_position, _session.world_layer))
 	for event in _scene_events:
 		if not event.is_visible() or not _event_sprites.has(event.sprite_number):
 			continue
@@ -265,7 +289,32 @@ func _on_script_redraw(_delay_units: int) -> void:
 
 func _on_dialog_message(message_index: int) -> void:
 	var message := _database.get_message(message_index)
-	_status.text = "消息 #%d：%s" % [message_index, message if not message.is_empty() else "（文本未导入）"]
+	_dialog_box.show_message(message if not message.is_empty() else "（文本未导入）")
+
+
+func _on_dialog_started(position: int, color: int, portrait: int) -> void:
+	_dialog_box.begin(position, color, portrait)
+
+
+func _on_dialog_ended() -> void:
+	_dialog_box.hide_dialog()
+
+
+func _on_scene_change_requested(scene_index: int) -> void:
+	_pending_scene_index = scene_index
+	call_deferred("_apply_pending_scene")
+
+
+func _apply_pending_scene() -> void:
+	if _pending_scene_index < 0:
+		return
+	var scene_index := _pending_scene_index
+	_pending_scene_index = -1
+	_load_scene(scene_index, true)
+
+
+func _on_player_sprites_changed() -> void:
+	_player_sprites.clear()
 
 
 func _set_error(message: String) -> void:

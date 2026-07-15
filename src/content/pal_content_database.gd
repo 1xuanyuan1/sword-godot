@@ -35,7 +35,9 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		error_message = "生成数据库的结构长度不匹配"
 		return false
 	for offset in range(0, event_bytes.size(), PalEventObject.BYTE_SIZE):
-		event_objects.append(PalEventObject.from_bytes(event_bytes, offset))
+		var event := PalEventObject.from_bytes(event_bytes, offset)
+		event.object_id = event_objects.size() + 1
+		event_objects.append(event)
 	for offset in range(0, scene_bytes.size(), PalSceneDefinition.BYTE_SIZE):
 		scenes.append(PalSceneDefinition.from_bytes(scene_bytes, offset))
 	for offset in range(0, script_bytes.size(), PalScriptEntry.BYTE_SIZE):

@@ -6,6 +6,7 @@ extends RefCounted
 
 const BYTE_SIZE := 32
 
+var object_id: int = 0
 var vanish_time: int
 var position: Vector2i
 var layer: int
@@ -51,4 +52,3 @@ func is_visible() -> bool:
 
 func blocks_movement() -> bool:
 	return state >= 2
-
