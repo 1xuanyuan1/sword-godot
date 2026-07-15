@@ -40,6 +40,7 @@ func _init() -> void:
 	_test_script_vm_title_and_body()
 	_test_script_vm_dialog_page_break()
 	_test_script_vm_frame_delay_and_auto_walk()
+	_test_script_vm_auto_event_lifecycle()
 	_test_script_vm_inn_conversation_operations()
 	_test_script_vm_inventory_and_party_walk()
 	_test_script_vm_center_toast()
@@ -658,6 +659,75 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	var called_event := call_database.event_objects[1]
 	_expect(called_event.state == 1 and called_event.current_frame == 2, "event auto script executes an instant nested trigger call")
 	call_vm.free()
+
+
+func _test_script_vm_auto_event_lifecycle() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x0003, 0, 0x0014, 0x0047, 0x0087, 0, 0x004c, 0, 0x0006, 0x0014, 0x0014, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands[0] = 3
+	database.scripts[3].operands[0] = 2
+	database.scripts[4].operands[0] = 98
+	database.scripts[7].operands = PackedInt32Array([8, 4, 1])
+	database.scripts[9].operands = PackedInt32Array([0, 11, 0])
+	database.scripts[10].operands[0] = 1
+	database.scripts[11].operands[0] = 3
+	var scene := PalSceneDefinition.new()
+	scene.event_object_index = 0
+	database.scenes.append(scene)
+	var jump_event := PalEventObject.new()
+	jump_event.object_id = 1
+	jump_event.state = 2
+	jump_event.sprite_frames = 3
+	jump_event.auto_script = 1
+	database.event_objects.append(jump_event)
+	var timed_event := PalEventObject.new()
+	timed_event.object_id = 2
+	timed_event.state = 1
+	timed_event.vanish_time = -2
+	database.event_objects.append(timed_event)
+	var hidden_event := PalEventObject.new()
+	hidden_event.object_id = 3
+	hidden_event.state = -2
+	hidden_event.vanish_time = 1
+	hidden_event.current_frame = 3
+	hidden_event.position = Vector2i(160, 112)
+	database.event_objects.append(hidden_event)
+	var chase_event := PalEventObject.new()
+	chase_event.object_id = 4
+	chase_event.state = 2
+	chase_event.sprite_frames = 3
+	chase_event.position = Vector2i(96, 80)
+	chase_event.auto_script = 7
+	database.event_objects.append(chase_event)
+	var random_event := PalEventObject.new()
+	random_event.object_id = 5
+	random_event.state = 2
+	random_event.auto_script = 9
+	database.event_objects.append(random_event)
+	var session := GameSession.new()
+	session.scene_index = 0
+	var sounds: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.sound_requested.connect(func(number: int) -> void: sounds.append(number))
+	vm.tick_frame()
+	_expect(jump_event.current_frame == 2 and jump_event.auto_script == 4, "auto opcode 0003 continues its target instruction in the same frame")
+	_expect(timed_event.vanish_time == -1 and not timed_event.is_visible(), "negative vanish timer keeps an event hidden while counting toward zero")
+	_expect(hidden_event.vanish_time == 0 and hidden_event.state == -2, "positive hide timer does not pop a negative-state event back inside the viewport")
+	_expect(chase_event.position == Vector2i(104, 84) and chase_event.direction == GameSession.DIR_EAST, "auto chase moves a floating event toward the party at the requested speed")
+	_expect(random_event.current_frame == 3 and random_event.auto_script == 12, "deterministic auto random jump continues at its target in the same frame")
+	vm.tick_frame()
+	_expect(sounds == [98] and jump_event.auto_script == 5, "auto opcode 0047 forwards its VOC number and advances")
+	_expect(timed_event.is_visible(), "negative vanish timer restores a positive-state event at zero")
+	hidden_event.position = Vector2i(400, 400)
+	vm.tick_frame()
+	_expect(hidden_event.state == 2 and hidden_event.current_frame == 0, "negative-state event reactivates only after leaving the SDLPal viewport guard area")
+	_expect(jump_event.auto_script == 6 and jump_event.current_frame == 3, "auto opcode 0087 advances animation without moving the event")
+	vm.free()
 
 
 func _test_script_vm_inn_conversation_operations() -> void:

@@ -64,6 +64,8 @@ var _close_dialog_after_frame_wait: bool = false
 var _next_trigger_entry: int = 0
 var _party_walk_target: Vector2i = Vector2i.ZERO
 var _party_walk_speed: int = 0
+var _scene_map_data: PalMapData
+var _reported_auto_instructions: Dictionary = {}
 
 
 #region Public lifecycle
@@ -72,6 +74,13 @@ var _party_walk_speed: int = 0
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
 	database = content_database
 	session = game_session
+	_reported_auto_instructions.clear()
+
+
+## 设置当前场景的原始 PAL 地图，供追逐类自动脚本检查地图和事件阻挡。
+## 只保存只读引用，不修改地图数据；场景切换后应由 MapExplorer 重新调用。
+func set_scene_map(map_data: PalMapData) -> void:
+	_scene_map_data = map_data
 
 
 ## 从指定脚本入口执行一个触发事件。
@@ -564,13 +573,17 @@ func _tick_auto_scripts() -> bool:
 		return false
 	var changed := false
 	for event in database.events_for_scene(session.scene_index):
+		changed = _update_event_lifecycle(event) or changed
 		if event.is_visible() and event.auto_script > 0:
 			changed = _run_auto_script_step(event) or changed
 	return changed
 
 
-func _run_auto_script_step(event: PalEventObject) -> bool:
+func _run_auto_script_step(event: PalEventObject, jump_budget: int = 64) -> bool:
 	if event.auto_script <= 0 or event.auto_script >= database.scripts.size():
+		return false
+	if jump_budget <= 0:
+		_report_unsupported_auto(event.auto_script, database.scripts[event.auto_script].operation)
 		return false
 	var entry := database.scripts[event.auto_script]
 	match entry.operation:
@@ -581,8 +594,8 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 		0x0001:
 			event.auto_script += 1
 			return false
-		# 带空闲帧计数的“替换入口/跳转”；operand[1] 次后才允许继续下一条。
-		0x0002, 0x0003:
+		# 停止并替换入口；operand[1] 次后才允许进入下一条。
+		0x0002:
 			if entry.operands[1] == 0 or event.auto_script_idle_count + 1 < entry.operands[1]:
 				event.auto_script_idle_count += 1
 				event.auto_script = entry.operands[0]
@@ -590,11 +603,29 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				event.auto_script_idle_count = 0
 				event.auto_script += 1
 			return false
+		# 无条件跳转；官方 `goto begin` 会在同一脚本帧继续执行目标指令。
+		0x0003:
+			if entry.operands[1] == 0 or event.auto_script_idle_count + 1 < entry.operands[1]:
+				event.auto_script_idle_count += 1
+				event.auto_script = entry.operands[0]
+				return _run_auto_script_step(event, jump_budget - 1)
+			event.auto_script_idle_count = 0
+			event.auto_script += 1
+			return false
 		# 同步调用 operand[0] 子脚本；自动脚本不能在这里进入对话等待。
 		0x0004:
 			_run_instant_trigger_script(entry.operands[0], entry.operands[1] if entry.operands[1] > 0 else event.object_id)
 			event.auto_script += 1
 			return true
+		# 按官方概率语义跳转；命中且目标非零时同帧继续目标指令。
+		0x0006:
+			if randi_range(1, 100) >= entry.operands[0]:
+				if entry.operands[1] > 0:
+					event.auto_script = entry.operands[1]
+					return _run_auto_script_step(event, jump_budget - 1)
+				return false
+			event.auto_script += 1
+			return false
 		# 自动脚本等待 operand[0] 帧。
 		0x0009:
 			event.auto_script_idle_count += 1
@@ -630,6 +661,34 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 					event.auto_script += 1
 				return true
 			return false
+		# 设置当前自动事件动作帧，并按官方规则重置为朝南。
+		0x0014:
+			event.current_frame = entry.operands[0]
+			event.direction = GameSession.DIR_SOUTH
+			event.auto_script += 1
+			return true
+		# 设置队员脚本动作；自动脚本下一帧继续。
+		0x0015:
+			if session != null:
+				session.set_party_gesture(entry.operands[0], entry.operands[1], entry.operands[2])
+			event.auto_script += 1
+			return session != null
+		# 设置指定事件方向和动作帧。
+		0x0016:
+			var target := _resolve_auto_event(entry.operands[0], event)
+			if target != null and entry.operands[0] != 0:
+				target.direction = entry.operands[1]
+				target.current_frame = entry.operands[2]
+			event.auto_script += 1
+			return target != null
+		# 修改目标事件的自动脚本入口。
+		0x0024:
+			var target := _resolve_auto_event(entry.operands[0], event)
+			if target != null and entry.operands[0] != 0:
+				target.auto_script = entry.operands[1]
+				target.auto_script_idle_count = 0
+			event.auto_script += 1
+			return false
 		# 修改目标事件的触发脚本入口。
 		0x0025:
 			var target := _resolve_auto_event(entry.operands[0], event)
@@ -644,12 +703,33 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				target.trigger_mode = entry.operands[1]
 			event.auto_script += 1
 			return false
+		# 播放剧情指定的 VOC 音效。
+		0x0047:
+			sound_requested.emit(entry.operands[0])
+			event.auto_script += 1
+			return false
 		# 修改目标事件状态。
 		0x0049:
 			if entry.operands[0] != 0:
 				var target := _resolve_auto_event(entry.operands[0], event)
 				if target != null:
 					target.state = _signed_word(entry.operands[1])
+			event.auto_script += 1
+			return true
+		# 让当前事件暂时消失 15 帧，正计时到零后自动重现。
+		0x004b:
+			event.vanish_time = -15
+			event.auto_script += 1
+			return true
+		# 按范围和速度追逐队伍；operand[2] 非零时忽略阻挡。
+		0x004c:
+			_monster_chase_player(event, entry.operands[1] if entry.operands[1] > 0 else 4, entry.operands[0] if entry.operands[0] > 0 else 8, entry.operands[2] != 0)
+			event.auto_script += 1
+			return true
+		# 临时隐藏当前事件；计时结束后等事件离开视口再恢复正状态。
+		0x0052:
+			event.state *= -1
+			event.vanish_time = entry.operands[0] if entry.operands[0] > 0 else 800
 			event.auto_script += 1
 			return true
 		# 当比较事件达到指定状态时，同步当前自动事件状态。
@@ -668,7 +748,124 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				_advance_npc_frame(target)
 			event.auto_script += 1
 			return target != null
+		# NPC 隔帧以速度 4 走到目标；用于普通场景路线。
+		0x007c:
+			if ((event.object_id & 1) ^ (_auto_frame_number & 1)) != 0:
+				var reached := _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 4)
+				if reached:
+					event.auto_script += 1
+				return true
+			return false
+		# 直接移动指定事件，不推进动作帧。
+		0x007d:
+			var target := _resolve_auto_event(entry.operands[0], event)
+			if target != null:
+				target.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
+			event.auto_script += 1
+			return target != null
+		# 设置指定事件的逻辑层。
+		0x007e:
+			var target := _resolve_auto_event(entry.operands[0], event)
+			if target != null:
+				target.layer = _signed_word(entry.operands[1])
+			event.auto_script += 1
+			return target != null
+		# NPC 以速度 8 走到目标；到达前保持当前入口。
+		0x0082:
+			if _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 8):
+				event.auto_script += 1
+			return true
+		# 目标事件不在当前场景或离当前事件过远时跳到 operand[2]。
+		0x0083:
+			var target := _event_by_id(entry.operands[0])
+			if target == null or not _event_is_in_current_scene(entry.operands[0]) or _event_distance(target, event) >= entry.operands[1] * 32 + 16:
+				event.auto_script = entry.operands[2]
+			else:
+				event.auto_script += 1
+			return false
+		# 只推进当前事件动画，不改变位置。
+		0x0087:
+			_advance_npc_frame(event)
+			event.auto_script += 1
+			return true
+		# DOS 自动说明文字与新版占位指令只推进入口，不阻塞探索场景。
+		0xffff, 0x00a7:
+			event.auto_script += 1
+			return false
+	_report_unsupported_auto(event.auto_script, entry.operation)
 	return false
+
+
+func _update_event_lifecycle(event: PalEventObject) -> bool:
+	var was_visible := event.is_visible()
+	if event.vanish_time != 0:
+		event.vanish_time += 1 if event.vanish_time < 0 else -1
+	elif event.state < 0 and _event_outside_reactivation_area(event):
+		# SDLPal 避免隐藏对象在镜头内突然弹回；离开 320×320 检查区后才恢复。
+		event.state = absi(event.state)
+		event.current_frame = 0
+	return was_visible != event.is_visible()
+
+
+func _event_outside_reactivation_area(event: PalEventObject) -> bool:
+	if session == null:
+		return false
+	var viewport := session.viewport_position
+	return event.position.x < viewport.x or event.position.x > viewport.x + 320 or event.position.y < viewport.y or event.position.y > viewport.y + 320
+
+
+func _event_is_in_current_scene(event_object_id: int) -> bool:
+	if database == null or session == null:
+		return false
+	for scene_event in database.events_for_scene(session.scene_index):
+		if scene_event.object_id == event_object_id:
+			return true
+	return false
+
+
+func _event_distance(first: PalEventObject, second: PalEventObject) -> int:
+	return absi(first.position.x - second.position.x) + absi(first.position.y - second.position.y) * 2
+
+
+func _monster_chase_player(event: PalEventObject, speed: int, chase_range: int, floating: bool) -> void:
+	if session == null:
+		return
+	var offset := session.party_world_position() - event.position
+	if absi(offset.x) + absi(offset.y) * 2 < chase_range * 32:
+		if offset.y < 0:
+			event.direction = GameSession.DIR_WEST if offset.x < 0 else GameSession.DIR_NORTH
+		else:
+			event.direction = GameSession.DIR_SOUTH if offset.x < 0 else GameSession.DIR_EAST
+		var candidate := event.position + GameSession.movement_for_direction(event.direction)
+		_npc_walk_one_step(event, speed if floating or not _npc_position_blocked(candidate, event.object_id) else 0)
+	else:
+		# 官方即使没有进入追逐范围，也会用零速度推进怪物原地动画。
+		_npc_walk_one_step(event, 0)
+
+
+func _npc_position_blocked(world_position: Vector2i, moving_event_id: int) -> bool:
+	if _scene_map_data != null and _scene_map_data.is_valid():
+		var half := 0 if posmod(world_position.x, 32) == 0 else 1
+		var tile_x := floori(world_position.x / 32.0)
+		var tile_y := floori(world_position.y / 16.0)
+		if tile_x < 0 or tile_x >= PalMapData.WIDTH or tile_y < 0 or tile_y >= PalMapData.HEIGHT:
+			return true
+		if PalMapData.is_blocked(_scene_map_data.tile_value(tile_x, tile_y, half)):
+			return true
+	for other in database.events_for_scene(session.scene_index):
+		if other.object_id == moving_event_id or not other.is_visible() or not other.blocks_movement():
+			continue
+		if absi(other.position.x - world_position.x) + absi(other.position.y - world_position.y) * 2 <= 12:
+			return true
+	return false
+
+
+func _report_unsupported_auto(index: int, operation: int) -> void:
+	var key := "%d:%d" % [index, operation]
+	if _reported_auto_instructions.has(key):
+		return
+	_reported_auto_instructions[key] = true
+	unsupported_instruction.emit(index, operation)
 
 
 func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool:

@@ -48,6 +48,8 @@ flowchart LR
 
 `Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast 和经典菜单统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。
 
+每个 10 FPS 脚本帧中，`ScriptVM` 还会遍历当前场景的 EventObject：先更新临时消失/重现生命周期，再执行一条自动脚本。追逐事件通过 `set_scene_map()` 读取当前 PAL 地图阻挡；自动移动进入玩家接触范围后，`MapExplorer` 在同一更新周期运行触发脚本。
+
 ## 输入、事件与重绘
 
 ```mermaid

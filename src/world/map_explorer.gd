@@ -141,6 +141,9 @@ func _process(delta: float) -> void:
 			auto_world_changed = _script_vm.tick_frame() or auto_world_changed
 	if auto_world_changed:
 		_refresh_world()
+		# 自动脚本可能让 NPC 主动走入接触范围；官方会在同一游戏更新周期检查触发。
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog:
+			_trigger_touch_event()
 	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog):
 		return
 	_move_cooldown = maxf(0.0, _move_cooldown - delta)
@@ -293,6 +296,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 	var scene := _database.scenes[scene_index]
 	_map_data = _database.load_map(scene.map_number)
 	_tile_sprite = _database.load_map_tiles(scene.map_number)
+	_script_vm.set_scene_map(_map_data)
 	_scene_events = _database.events_for_scene(scene_index)
 	_event_sprites.clear()
 	if not _map_data.is_valid() or not _tile_sprite.is_valid():

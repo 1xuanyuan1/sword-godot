@@ -185,3 +185,21 @@ keywords:
   - `docs/AUDIO.md`
   - `docs/CLASSIC_UI.md`
   - `tools/rix_renderer/README.md`
+
+---
+
+### [FT-012] [feat] 补齐早期场景 EventObject 自动行为
+
+- **关联需求**: M2–M3 场景探索
+- **关联 TODO**: TD-002
+- **功能描述**: 对齐 SDLPal `PAL_RunAutoScript` 与 `play.c`，补齐自动脚本同帧跳转、概率分支、NPC 动作、剧情音效、临时隐藏、追逐、速度 4/8 路线、直接移动、逻辑层、区域判断和原地动画。EventObject 的正负消失计时与镜头外重现恢复官方生命周期；追逐读取当前 PAL 地图和事件阻挡，NPC 自动进入接触范围后可在同一更新周期触发剧情。
+- **验证情况**: 173 项合成测试通过；前六个剧情场景各运行 120 个自动脚本帧，无未支持指令，35 个事件发生动作或状态变化；开场 67 条对话、黑苗客栈对话/NPC 入房、500 文、出口、楼梯、厨房、酒菜 Toast 与桂花酒流程全部回归通过。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_early_auto_script_test.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `README.md`
