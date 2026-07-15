@@ -29,6 +29,7 @@ func _init() -> void:
 	_test_script_vm_foundation()
 	_test_script_vm_dialog_pause()
 	_test_script_vm_title_and_body()
+	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
 		quit(0)
@@ -316,11 +317,9 @@ func _test_script_vm_dialog_pause() -> void:
 	vm.configure(database)
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
 	vm.run_trigger(1)
-	_expect(vm.waiting_for_dialog and messages == [12], "script VM pauses at first dialog message")
+	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM combines consecutive dialog body messages")
 	vm.advance_dialog()
-	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM advances one dialog message")
-	vm.advance_dialog()
-	_expect(not vm.waiting_for_dialog and not vm.running, "script VM finishes after final dialog message")
+	_expect(not vm.waiting_for_dialog and not vm.running, "script VM finishes after one dialog round")
 	vm.free()
 
 
@@ -345,3 +344,20 @@ func _test_script_vm_title_and_body() -> void:
 	vm.advance_dialog()
 	_expect(not vm.waiting_for_dialog, "script VM title does not require a separate key press")
 	vm.free()
+
+
+func _test_dialog_box_typewriter() -> void:
+	var dialog := PalDialogBox.new()
+	dialog._ready()
+	dialog.begin(1)
+	dialog.show_message("李逍遥：")
+	dialog.show_message("行侠仗义")
+	dialog.show_message("丢下我不管！")
+	_expect(dialog._full_text == "行侠仗义丢下我不管！", "dialog body fragments concatenate without forced line breaks")
+	_expect(dialog._message.vertical_alignment == VERTICAL_ALIGNMENT_TOP, "dialog body aligns to the top")
+	_expect(dialog._message.autowrap_mode == TextServer.AUTOWRAP_ARBITRARY and dialog._message.clip_contents, "dialog body wraps within its content width")
+	dialog._process(0.2)
+	_expect(dialog.is_typing() and dialog._message.visible_characters > 0, "dialog body reveals characters progressively")
+	dialog.reveal_all()
+	_expect(not dialog.is_typing() and dialog._message.visible_characters == dialog._full_text.length(), "dialog reveal shows the whole current round")
+	dialog.free()

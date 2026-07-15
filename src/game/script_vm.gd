@@ -27,6 +27,7 @@ var _cursor: int = 0
 var _event_object_id: int = 0
 var _last_event_object_id: int = 0
 var _call_stack: Array[Dictionary] = []
+var _dialog_has_body: bool = false
 
 
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
@@ -42,6 +43,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	if event_object_id != 0:
 		_last_event_object_id = event_object_id
 	_call_stack.clear()
+	_dialog_has_body = false
 	_cursor = entry_index
 	_event_object_id = event_object_id
 	running = true
@@ -52,6 +54,7 @@ func advance_dialog() -> void:
 	if not waiting_for_dialog:
 		return
 	waiting_for_dialog = false
+	_dialog_has_body = false
 	running = true
 	_continue_execution()
 
@@ -59,6 +62,7 @@ func advance_dialog() -> void:
 func stop() -> void:
 	running = false
 	waiting_for_dialog = false
+	_dialog_has_body = false
 	_call_stack.clear()
 	dialog_ended.emit()
 
@@ -71,14 +75,20 @@ func _continue_execution() -> int:
 		var next_cursor := _cursor + 1
 		match entry.operation:
 			0x0000:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				if _return_from_call():
 					continue
 				return _finish(0)
 			0x0001:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				if _return_from_call():
 					continue
 				return _finish(next_cursor)
 			0x0002:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				if _return_from_call():
 					continue
 				return _finish(entry.operands[0])
@@ -91,6 +101,8 @@ func _continue_execution() -> int:
 				_event_object_id = _event_object_id if entry.operands[1] == 0 else entry.operands[1]
 				continue
 			0x0005:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				redraw_requested.emit(entry.operands[1])
 			0x0009:
@@ -124,12 +136,20 @@ func _continue_execution() -> int:
 					event.direction = entry.operands[1]
 					event.current_frame = entry.operands[2]
 			0x003b:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				dialog_started.emit(2, entry.operands[0], 0)
 			0x003c:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				dialog_started.emit(0, entry.operands[1], entry.operands[0])
 			0x003d:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				dialog_started.emit(1, entry.operands[1], entry.operands[0])
 			0x003e:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				dialog_started.emit(3, entry.operands[0], 0)
 			0x0040:
 				var event := _resolve_event(entry.operands[0])
@@ -206,17 +226,17 @@ func _continue_execution() -> int:
 				if event != null:
 					event.layer = _signed_word(entry.operands[1])
 			0x008e:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				redraw_requested.emit(0)
 			0xffff:
 				dialog_message.emit(entry.operands[0])
 				_cursor = next_cursor
-				if _is_dialog_title(database.get_message(entry.operands[0])):
-					executed += 1
-					continue
-				waiting_for_dialog = true
-				running = false
-				return _cursor
+				if not _is_dialog_title(database.get_message(entry.operands[0])):
+					_dialog_has_body = true
+				executed += 1
+				continue
 			_:
 				unsupported_instruction.emit(_cursor, entry.operation)
 				return _finish(_cursor)
@@ -240,9 +260,16 @@ func _return_from_call() -> bool:
 func _finish(next_entry: int) -> int:
 	running = false
 	waiting_for_dialog = false
+	_dialog_has_body = false
 	dialog_ended.emit()
 	script_finished.emit(next_entry)
 	return next_entry
+
+
+func _pause_at_dialog_boundary() -> int:
+	running = false
+	waiting_for_dialog = true
+	return _cursor
 
 
 func _event_by_id(event_object_id: int) -> PalEventObject:

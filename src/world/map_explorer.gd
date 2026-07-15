@@ -111,9 +111,13 @@ func _process(delta: float) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
-	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _script_vm != null and _script_vm.waiting_for_dialog:
-		_script_vm.advance_dialog()
-		return
+	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
+		if _dialog_box != null and _dialog_box.is_typing():
+			_dialog_box.reveal_all()
+			return
+		if _script_vm != null and _script_vm.waiting_for_dialog:
+			_script_vm.advance_dialog()
+			return
 	if event is InputEventKey and event.keycode == KEY_ESCAPE:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
 		return

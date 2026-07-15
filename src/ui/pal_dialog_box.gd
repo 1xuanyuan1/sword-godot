@@ -3,31 +3,51 @@
 class_name PalDialogBox
 extends Control
 
+const TYPEWRITER_CHARACTERS_PER_SECOND := 28.0
+
 var _panel: PanelContainer
 var _portrait_column: VBoxContainer
 var _portrait: TextureRect
 var _speaker: Label
 var _inline_speaker: Label
-var _message: Label
+var _message: RichTextLabel
 var _separator: ColorRect
 var _hint: Label
 var _position_mode: int = 1
-var _lines: Array[String] = []
+var _full_text: String = ""
+var _visible_characters: int = 0
+var _typing_progress: float = 0.0
+var _typing: bool = false
 
 
 func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_build_interface()
 	hide_dialog()
+	set_process(false)
+
+
+func _process(delta: float) -> void:
+	if not _typing:
+		return
+	_typing_progress += delta * TYPEWRITER_CHARACTERS_PER_SECOND
+	var target_count := mini(_full_text.length(), floori(_typing_progress))
+	if target_count > _visible_characters:
+		_set_visible_characters(target_count)
 
 
 func begin(position_mode: int, _color_index: int = 0, portrait_texture: Texture2D = null) -> void:
 	_position_mode = position_mode
 	_apply_position()
-	_lines.clear()
+	_full_text = ""
+	_visible_characters = 0
+	_typing_progress = 0.0
+	_typing = false
+	set_process(false)
 	_speaker.text = ""
 	_inline_speaker.text = ""
 	_message.text = ""
+	_message.visible_characters = 0
 	_portrait.texture = portrait_texture
 	_portrait_column.visible = portrait_texture != null
 	_inline_speaker.visible = portrait_texture == null
@@ -46,18 +66,38 @@ func show_message(text: String) -> void:
 		_inline_speaker.text = content
 		_separator.visible = not content.is_empty()
 		return
-	_lines.append(content)
-	while _lines.size() > 3:
-		_lines.pop_front()
-	_message.text = "\n".join(_lines)
+	if content.is_empty():
+		return
+	_full_text += content
+	_message.text = _full_text
+	_typing_progress = float(_visible_characters)
+	_typing = _visible_characters < _full_text.length()
+	set_process(_typing)
+	_hint.text = "▶" if _typing else "▼"
 	_hint.visible = true
+
+
+func is_typing() -> bool:
+	return _typing
+
+
+func reveal_all() -> void:
+	if _full_text.is_empty():
+		return
+	_typing_progress = float(_full_text.length())
+	_set_visible_characters(_full_text.length())
 
 
 func hide_dialog() -> void:
 	visible = false
-	_lines.clear()
+	_full_text = ""
+	_visible_characters = 0
+	_typing_progress = 0.0
+	_typing = false
+	set_process(false)
 	if _message != null:
 		_message.text = ""
+		_message.visible_characters = 0
 
 
 func _build_interface() -> void:
@@ -124,10 +164,14 @@ func _build_interface() -> void:
 	_separator.custom_minimum_size.y = 1
 	content_column.add_child(_separator)
 
-	_message = Label.new()
+	_message = RichTextLabel.new()
+	_message.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_message.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_message.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_message.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	_message.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	_message.scroll_active = false
+	_message.bbcode_enabled = false
+	_message.clip_contents = true
 	_message.add_theme_font_size_override("font_size", 10)
 	_message.add_theme_color_override("font_color", Color("fff7e8"))
 	content_column.add_child(_message)
@@ -156,6 +200,15 @@ func _apply_position() -> void:
 	_panel.position = rect.position
 	_panel.size = rect.size
 	_hint.position = rect.position + rect.size - Vector2(17, 16)
+
+
+func _set_visible_characters(count: int) -> void:
+	_visible_characters = clampi(count, 0, _full_text.length())
+	_message.visible_characters = _visible_characters
+	if _visible_characters >= _full_text.length():
+		_typing = false
+		set_process(false)
+		_hint.text = "▼"
 
 
 static func _is_speaker_title(text: String) -> bool:
