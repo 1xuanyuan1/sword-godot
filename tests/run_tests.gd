@@ -278,6 +278,10 @@ func _test_party_trail() -> void:
 	_expect(session.trail_positions[0] == Vector2i(320, 160) and session.trail_directions[0] == GameSession.DIR_EAST, "party trail records previous leader")
 	_expect(session.party_member_world_position(1) == Vector2i(336, 152), "party second member formation")
 	_expect(session.party_member_world_position(2) == Vector2i(336, 168), "party third member formation")
+	session.set_party_gesture(GameSession.DIR_EAST, 2, 0)
+	_expect(session.scripted_party_frame(0) == 11, "party script gesture stores the absolute PAL sprite frame")
+	session.record_party_step(GameSession.DIR_EAST, Vector2i(16, 8))
+	_expect(session.scripted_party_frame(0) == -1, "party movement clears scripted gestures")
 
 
 func _test_pal_direction_mapping() -> void:
@@ -417,6 +421,24 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 		vm.tick_frame()
 	_expect(event.position == Vector2i(32, 16) and event.state == 0, "event auto script walks to its target and exits")
 	vm.free()
+	var gesture_database := PalContentDatabase.new()
+	gesture_database.scripts.append(PalScriptEntry.new())
+	for operation in [0x0015, 0x0009, 0x0015, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		gesture_database.scripts.append(entry)
+	gesture_database.scripts[1].operands = PackedInt32Array([3, 2, 0])
+	gesture_database.scripts[2].operands[0] = 2
+	var gesture_session := GameSession.new()
+	var gesture_vm := ScriptVM.new()
+	gesture_vm.configure(gesture_database, gesture_session)
+	gesture_vm.run_trigger(1)
+	_expect(gesture_session.scripted_party_frame(0) == 11 and gesture_vm.waiting_for_frames, "script VM keeps a party gesture during its frame delay")
+	gesture_vm.tick_frame()
+	gesture_vm.tick_frame()
+	_expect(gesture_session.scripted_party_frame(0) == 0 and not gesture_vm.running, "script VM advances to the next party gesture after its delay")
+	gesture_vm.free()
 
 
 func _test_dialog_box_typewriter() -> void:

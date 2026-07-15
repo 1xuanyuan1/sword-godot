@@ -157,7 +157,7 @@ func _continue_execution() -> int:
 					event.direction = GameSession.DIR_SOUTH
 			0x0015:
 				if session != null:
-					session.party_direction = entry.operands[0]
+					session.set_party_gesture(entry.operands[0], entry.operands[1], entry.operands[2])
 			0x0016:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
@@ -244,6 +244,7 @@ func _continue_execution() -> int:
 							session.party_roles.append(role - 1)
 					if session.party_roles.is_empty():
 						session.party_roles.append(0)
+					session.clear_party_gestures()
 					player_sprites_changed.emit()
 			0x007d:
 				var event := _resolve_event(entry.operands[0])

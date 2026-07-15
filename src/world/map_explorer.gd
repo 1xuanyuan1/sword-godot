@@ -280,6 +280,9 @@ func _player_sprite_for_role(role_index: int) -> PalSprite:
 func _party_frame(sprite: PalSprite, role_index: int, party_index: int) -> PalIndexedImage:
 	if sprite == null or not sprite.is_valid():
 		return PalIndexedImage.new()
+	var scripted_frame := _session.scripted_party_frame(party_index)
+	if scripted_frame >= 0 and not _showing_walk_frame:
+		return _decode_sprite_frame(sprite, scripted_frame)
 	var walk_frames := _database.player_roles.walk_frame_count_for(role_index)
 	var direction := _session.party_member_direction(party_index)
 	var frame_index := direction * walk_frames

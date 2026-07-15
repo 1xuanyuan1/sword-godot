@@ -20,6 +20,7 @@ var music_number: int = 0
 var battle_music_number: int = 0
 var world_layer: int = 0
 var party_roles: PackedInt32Array = PackedInt32Array([0])
+var party_script_frames: PackedInt32Array = PackedInt32Array([-1, -1, -1])
 var trail_positions: Array[Vector2i] = []
 var trail_directions: PackedInt32Array = PackedInt32Array()
 
@@ -47,6 +48,7 @@ func set_party_world_position(world_position: Vector2i) -> void:
 
 
 func record_party_step(direction: int, movement: Vector2i) -> void:
+	clear_party_gestures()
 	if trail_positions.size() != TRAIL_SIZE or trail_directions.size() != TRAIL_SIZE:
 		_initialize_trail(party_world_position())
 	for index in range(TRAIL_SIZE - 1, 0, -1):
@@ -78,6 +80,24 @@ func party_member_direction(member_index: int) -> int:
 	return trail_directions[2]
 
 
+func set_party_gesture(direction: int, gesture: int, member_index: int) -> void:
+	if member_index < 0:
+		return
+	while party_script_frames.size() <= member_index:
+		party_script_frames.append(-1)
+	party_direction = direction
+	party_script_frames[member_index] = direction * 3 + gesture
+
+
+func scripted_party_frame(member_index: int) -> int:
+	return party_script_frames[member_index] if member_index >= 0 and member_index < party_script_frames.size() else -1
+
+
+func clear_party_gestures() -> void:
+	party_script_frames.resize(maxi(3, party_roles.size()))
+	party_script_frames.fill(-1)
+
+
 func reset_new_game() -> void:
 	scene_index = 0
 	viewport_position = Vector2i.ZERO
@@ -89,6 +109,7 @@ func reset_new_game() -> void:
 	battle_music_number = 0
 	world_layer = 0
 	party_roles = PackedInt32Array([0])
+	clear_party_gestures()
 	_initialize_trail(party_world_position())
 
 
