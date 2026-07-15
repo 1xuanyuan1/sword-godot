@@ -69,13 +69,13 @@ Godot 版 `ScriptVM` 以固定 SDLPal 基准的 `script.c` 为行为参考。当
 
 测试只记录指令是否完成和消息数量，不输出或提交原版对话内容。当前资源的首场景进入脚本可以执行到结束，不含未支持指令。
 
-前六个早期剧情场景的自动事件回归：
+全部剧情场景的自动事件回归：
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
-  --script res://tests/run_local_early_auto_script_test.gd
+  --script res://tests/run_local_event_auto_script_test.gd
 ```
 
-该测试让 EventObject 自动脚本各运行 120 帧，检查 NPC 动作、状态和入口发生变化，同时禁止静默停在未支持指令。
+该测试让 294 个场景的 EventObject 自动脚本各运行 120 帧，检查 NPC 动作、状态和入口发生变化，同时禁止直接指令或即时嵌套子脚本静默停在未支持操作。只需快速检查前六个场景时可追加 `-- --early-scenes`。
 
 日常画面验证可从资源实验室进入“剧情测试”。人工入口只保留桂花酒流程相关的待验收问题；已确认完成的开场、厨房入口、对话和楼梯检查点会从界面移除，继续由本地自动回归测试覆盖。该入口仅修改本次运行的临时会话，不读写正式存档。

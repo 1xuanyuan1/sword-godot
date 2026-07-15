@@ -203,3 +203,18 @@ keywords:
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
   - `README.md`
+
+---
+
+### [FT-013] [feat] 建立全剧情场景自动事件门禁
+
+- **关联需求**: M2–M3 场景探索
+- **关联 TODO**: TD-002
+- **功能描述**: 补齐 EventObject 自动脚本调用的即时子脚本安全子集，使修改自动/触发入口、剧情音效和直接移动不会静默提前结束；将早期六场景检查升级为全部 294 个剧情场景的 120 帧自动事件回归，并保留 `--early-scenes` 快速模式。
+- **验证情况**: 175 项合成测试通过；294 个剧情场景全量自动脚本门禁无未支持指令，约 1,500 个事件发生动作、路线、状态或入口变化；开场和桂花酒真实剧情回归继续通过。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_event_auto_script_test.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`

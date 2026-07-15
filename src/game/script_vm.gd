@@ -922,6 +922,17 @@ func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool
 				if target != null and entry.operands[0] != 0:
 					target.direction = entry.operands[1]
 					target.current_frame = entry.operands[2]
+			# 设置目标事件自动脚本入口，并清空旧等待计数。
+			0x0024:
+				var target := _instant_target_event(entry.operands[0], current_event_object_id)
+				if target != null and entry.operands[0] != 0:
+					target.auto_script = entry.operands[1]
+					target.auto_script_idle_count = 0
+			# 设置目标事件触发脚本入口。
+			0x0025:
+				var target := _instant_target_event(entry.operands[0], current_event_object_id)
+				if target != null and entry.operands[0] != 0:
+					target.trigger_script = entry.operands[1]
 			# 设置目标事件触发模式。
 			0x0040:
 				var target := _instant_target_event(entry.operands[0], current_event_object_id)
@@ -932,7 +943,16 @@ func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool
 				var target := _instant_target_event(entry.operands[0], current_event_object_id)
 				if target != null and entry.operands[0] != 0:
 					target.state = _signed_word(entry.operands[1])
+			# 播放不会阻塞自动脚本的剧情音效。
+			0x0047:
+				sound_requested.emit(entry.operands[0])
+			# 直接移动目标事件。
+			0x007d:
+				var target := _instant_target_event(entry.operands[0], current_event_object_id)
+				if target != null:
+					target.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
 			_:
+				_report_unsupported_auto(cursor, entry.operation)
 				return false
 		cursor = next_cursor
 		executed += 1

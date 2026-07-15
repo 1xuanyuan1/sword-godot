@@ -634,7 +634,7 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	_expect(step_signals.size() == 1 and step_session.party_world_position() == Vector2i(170, 117), "scripted party step emits an animation signal")
 	step_vm.free()
 	var call_database := PalContentDatabase.new()
-	for operation in [0, 0x0004, 0x0000, 0x0000, 0x0000, 0x0049, 0x0014, 0x0000]:
+	for operation in [0, 0x0004, 0x0000, 0x0000, 0x0000, 0x0049, 0x0014, 0x0024, 0x0025, 0x0047, 0x007d, 0x0000]:
 		var entry := PalScriptEntry.new()
 		entry.operation = operation
 		entry.operands = PackedInt32Array([0, 0, 0])
@@ -642,10 +642,14 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	call_database.scripts[1].operands = PackedInt32Array([5, 2, 0])
 	call_database.scripts[5].operands = PackedInt32Array([0xffff, 1, 0])
 	call_database.scripts[6].operands[0] = 2
+	call_database.scripts[7].operands = PackedInt32Array([3, 10, 0])
+	call_database.scripts[8].operands = PackedInt32Array([3, 11, 0])
+	call_database.scripts[9].operands[0] = 14
+	call_database.scripts[10].operands = PackedInt32Array([3, 6, 0xfffd])
 	var call_scene := PalSceneDefinition.new()
 	call_scene.event_object_index = 0
 	call_database.scenes.append(call_scene)
-	for object_id in range(1, 3):
+	for object_id in range(1, 4):
 		var called_object := PalEventObject.new()
 		called_object.object_id = object_id
 		called_object.state = 0
@@ -653,11 +657,16 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	call_database.event_objects[0].state = 2
 	call_database.event_objects[0].auto_script = 1
 	var call_session := GameSession.new()
+	var instant_sounds: Array[int] = []
 	var call_vm := ScriptVM.new()
 	call_vm.configure(call_database, call_session)
+	call_vm.sound_requested.connect(func(number: int) -> void: instant_sounds.append(number))
 	call_vm.tick_frame()
 	var called_event := call_database.event_objects[1]
 	_expect(called_event.state == 1 and called_event.current_frame == 2, "event auto script executes an instant nested trigger call")
+	var modified_event := call_database.event_objects[2]
+	_expect(modified_event.auto_script == 10 and modified_event.trigger_script == 11, "instant auto subscript updates target auto/trigger entries")
+	_expect(modified_event.position == Vector2i(6, -3) and instant_sounds == [14], "instant auto subscript moves targets and forwards sound effects")
 	call_vm.free()
 
 

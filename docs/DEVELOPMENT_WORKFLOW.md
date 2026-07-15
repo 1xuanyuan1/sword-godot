@@ -41,11 +41,11 @@
   --script res://tests/run_local_audio_test.gd
 ```
 
-早期场景 EventObject 自动行为回归：
+全部场景 EventObject 自动行为回归：
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
-  --script res://tests/run_local_early_auto_script_test.gd
+  --script res://tests/run_local_event_auto_script_test.gd
 ```
 
 ### 人工剧情检查点

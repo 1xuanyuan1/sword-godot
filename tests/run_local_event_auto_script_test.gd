@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用本机数据验证前六个剧情场景的 EventObject 自动脚本不会停在未支持指令。
+## 使用本机数据验证全部剧情场景的 EventObject 自动脚本不会停在未支持指令。
 extends SceneTree
 
 
@@ -10,9 +10,10 @@ func _init() -> void:
 		printerr("SKIP: 本地生成资源不存在：%s" % database.error_message)
 		quit(0)
 		return
+	var scene_count := mini(6, database.scenes.size()) if "--early-scenes" in OS.get_cmdline_user_args() else database.scenes.size()
 	var unsupported: Array[String] = []
 	var changed_events := 0
-	for scene_index in range(mini(6, database.scenes.size())):
+	for scene_index in range(scene_count):
 		var session := GameSession.new()
 		session.scene_index = scene_index
 		var vm := ScriptVM.new()
@@ -30,12 +31,12 @@ func _init() -> void:
 				changed_events += 1
 		vm.free()
 	if not unsupported.is_empty():
-		printerr("FAIL: 前六个场景自动脚本遇到未支持指令：%s" % ", ".join(unsupported))
+		printerr("FAIL: %d 个场景自动脚本遇到未支持指令：%s" % [scene_count, ", ".join(unsupported)])
 		quit(1)
 		return
 	if changed_events == 0:
-		printerr("FAIL: 前六个场景的自动脚本没有改变任何事件状态")
+		printerr("FAIL: %d 个场景的自动脚本没有改变任何事件状态" % scene_count)
 		quit(1)
 		return
-	print("PASS: 前六个剧情场景自动脚本运行 120 帧，无未支持指令；%d 个事件发生动作或状态变化" % changed_events)
+	print("PASS: %d 个剧情场景自动脚本运行 120 帧，无未支持指令；%d 个事件发生动作或状态变化" % [scene_count, changed_events])
 	quit(0)
