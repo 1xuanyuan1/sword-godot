@@ -39,6 +39,7 @@ func _init() -> void:
 	_test_script_vm_center_toast()
 	_test_debug_checkpoints()
 	_test_game_menu_inventory()
+	_test_explorer_input_keys()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -648,6 +649,14 @@ func _test_game_menu_inventory() -> void:
 	menu._request_item_use(272, wine)
 	_expect(requested == [272], "usable story item can be selected from the inventory menu")
 	menu.free()
+
+
+func _test_explorer_input_keys() -> void:
+	var explorer_script: Script = load("res://src/world/map_explorer.gd")
+	var constants := explorer_script.get_script_constant_map()
+	var menu_keys: Array = constants.get("MENU_KEYCODES", [])
+	_expect(KEY_ESCAPE in menu_keys and KEY_M in menu_keys and KEY_I in menu_keys, "explorer Escape/M/I keys open the game menu")
+	_expect(constants.get("RETURN_TO_LAB_KEYCODE") == KEY_F10 and KEY_F10 not in menu_keys, "explorer F10 returns to the lab without overloading Escape")
 
 
 func _test_dialog_box_typewriter() -> void:

@@ -6,6 +6,8 @@ extends Control
 const MOVE_REPEAT_SECONDS := 0.10
 const SCRIPT_FRAME_SECONDS := 0.10
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
+const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
+const RETURN_TO_LAB_KEYCODE := KEY_F10
 
 var _database := PalContentDatabase.new()
 var _session := GameSession.new()
@@ -147,7 +149,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_game_menu.go_back()
 			get_viewport().set_input_as_handled()
 		return
-	if event is InputEventKey and event.keycode in [KEY_M, KEY_TAB, KEY_I]:
+	if event is InputEventKey and event.keycode in MENU_KEYCODES:
 		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
@@ -164,7 +166,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			return
 		if _script_vm != null and _script_vm.running:
 			return
-	if event is InputEventKey and event.keycode == KEY_ESCAPE:
+	if event is InputEventKey and event.keycode == RETURN_TO_LAB_KEYCODE:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
 		return
 	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
@@ -259,7 +261,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 	if not _load_scene_sprites():
 		return
 	_refresh_world()
-	_status.text = "方向键｜空格交互｜M 菜单｜Esc 返回｜场景%d/地图%d" % [scene_index + 1, scene.map_number]
+	_status.text = "方向键｜空格交互｜Esc 菜单｜F10 返回｜场景%d/地图%d" % [scene_index + 1, scene.map_number]
 	if run_enter_script and scene.script_on_enter > 0:
 		_script_vm.run_trigger(scene.script_on_enter)
 
