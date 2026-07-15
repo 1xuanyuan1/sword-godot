@@ -4,8 +4,6 @@ extends Control
 
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 
-var _toast: PalDialogBox
-
 
 func _ready() -> void:
 	_build_interface()
@@ -53,25 +51,16 @@ func _build_interface() -> void:
 	grid.add_theme_constant_override("v_separation", 5)
 	page.add_child(grid)
 
-	_add_checkpoint_button(grid, "开场对话与动作", "intro")
-	_add_checkpoint_button(grid, "嘿嘿／李大娘回应", "secret_passage")
-	_add_checkpoint_button(grid, "黑苗人客栈对话", "miao_inn")
-	_add_checkpoint_button(grid, "楼梯八步动画", "stairs")
+	_add_checkpoint_button(grid, "厨房入口（待验收）", "kitchen_entry")
 	_add_checkpoint_button(grid, "端酒菜给黑苗人", "meal_delivery")
 	_add_checkpoint_button(grid, "醉道士喝桂花酒", "drunken_swordsman")
 	_add_checkpoint_button(grid, "桂花酒物品菜单", "wine_menu")
-	_add_checkpoint_button(grid, "500 文 Toast", "toast")
 
 	var back_button := Button.new()
 	back_button.text = "返回资源实验室（Esc）"
 	back_button.add_theme_font_size_override("font_size", 9)
 	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://scenes/main.tscn"))
 	page.add_child(back_button)
-
-	_toast = PalDialogBox.new()
-	_toast.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_toast)
-
 
 func _add_checkpoint_button(parent: Control, label: String, checkpoint_id: String) -> void:
 	var button := Button.new()
@@ -84,11 +73,5 @@ func _add_checkpoint_button(parent: Control, label: String, checkpoint_id: Strin
 
 
 func _open_checkpoint(checkpoint_id: String) -> void:
-	if checkpoint_id == "toast":
-		_toast.begin(3)
-		_toast.show_message("获得500文钱")
-		await get_tree().create_timer(1.4).timeout
-		_toast.hide_dialog()
-		return
 	if DebugCheckpoint.request(checkpoint_id):
 		get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")

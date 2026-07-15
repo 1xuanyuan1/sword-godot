@@ -37,6 +37,7 @@ func _init() -> void:
 	_test_script_vm_inn_conversation_operations()
 	_test_script_vm_inventory_and_party_walk()
 	_test_script_vm_center_toast()
+	_test_explorer_scene_enter_persistence()
 	_test_debug_checkpoints()
 	_test_game_menu_inventory()
 	_test_explorer_input_keys()
@@ -614,16 +615,45 @@ func _test_script_vm_center_toast() -> void:
 	vm.free()
 
 
+func _test_explorer_scene_enter_persistence() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 1, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	var scene := PalSceneDefinition.new()
+	scene.script_on_enter = 1
+	database.scenes.append(scene)
+	var vm := ScriptVM.new()
+	vm.configure(database, GameSession.new())
+	var explorer_script: Script = load("res://src/world/map_explorer.gd")
+	var explorer: Control = explorer_script.new()
+	explorer._database = database
+	explorer._script_vm = vm
+	vm.script_finished.connect(explorer._on_script_finished)
+	var executed_entries: Array[int] = []
+	vm.instruction_started.connect(func(index: int, _operation: int, _operands: PackedInt32Array) -> void: executed_entries.append(index))
+	explorer._run_scene_enter_script(0)
+	_expect(scene.script_on_enter == 2 and explorer._active_scene_enter_index == -1, "scene enter script persists its returned entry")
+	explorer._run_scene_enter_script(0)
+	_expect(executed_entries == [1, 2], "re-entering a scene resumes from the persisted entry instead of replaying the intro")
+	explorer.free()
+	vm.free()
+
+
 func _test_debug_checkpoints() -> void:
-	_expect(DebugCheckpoint.request("miao_inn"), "known debug story checkpoint is accepted")
+	_expect(DebugCheckpoint.request("kitchen_entry"), "current kitchen checkpoint is accepted")
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
-	_expect(checkpoint.get("scene") == 2 and checkpoint.get("script") == 4701 and checkpoint.get("event") == 57, "debug story checkpoint contains scene and script context")
+	_expect(checkpoint.get("scene") == 2 and checkpoint.get("script") == 4631 and checkpoint.get("event") == 52, "kitchen checkpoint runs the original portal script")
+	_expect(checkpoint.get("scene_enter_scripts", {}).get(0) == 8145, "kitchen checkpoint restores the completed intro entry")
 	_expect(DebugCheckpoint.request("meal_delivery"), "meal delivery checkpoint is accepted")
 	checkpoint = DebugCheckpoint.consume()
 	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4885 and checkpoint.get("player_sprite") == 208, "meal delivery checkpoint restores carrying state")
 	_expect(DebugCheckpoint.request("drunken_swordsman"), "drunken swordsman checkpoint is accepted")
 	checkpoint = DebugCheckpoint.consume()
 	_expect(checkpoint.get("script") == 5079 and checkpoint.get("inventory", {}).get(272) == 1, "drunken swordsman checkpoint restores osmanthus wine")
+	_expect(not DebugCheckpoint.request("miao_inn") and not DebugCheckpoint.request("stairs"), "completed non-wine manual checkpoints are archived from the test lab")
 	_expect(DebugCheckpoint.consume().is_empty() and not DebugCheckpoint.request("missing"), "debug story checkpoint is consumed once and rejects unknown ids")
 
 

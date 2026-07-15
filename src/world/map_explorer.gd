@@ -27,6 +27,7 @@ var _showing_walk_frame: bool = false
 var _pending_scene_index: int = -1
 var _script_frame_accumulator: float = 0.0
 var _active_trigger_event: PalEventObject
+var _active_scene_enter_index: int = -1
 var _pending_used_item_id: int = 0
 
 
@@ -262,13 +263,31 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 		return
 	_refresh_world()
 	_status.text = "方向键｜空格交互｜Esc 菜单｜F10 返回｜场景%d/地图%d" % [scene_index + 1, scene.map_number]
-	if run_enter_script and scene.script_on_enter > 0:
-		_script_vm.run_trigger(scene.script_on_enter)
+	if run_enter_script:
+		_run_scene_enter_script(scene_index)
+
+
+func _run_scene_enter_script(scene_index: int) -> void:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+		return
+	if scene_index < 0 or scene_index >= _database.scenes.size():
+		return
+	var entry := _database.scenes[scene_index].script_on_enter
+	if entry <= 0 or entry >= _database.scripts.size():
+		return
+	# SDLPal 会把触发脚本返回的新入口写回 rgScene，避免再次进入时重跑一次性剧情。
+	_active_scene_enter_index = scene_index
+	_script_vm.run_trigger(entry)
 
 
 func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
 	var scene_index := int(checkpoint.get("scene", 0))
 	_session.scene_index = scene_index
+	var scene_enter_scripts: Dictionary = checkpoint.get("scene_enter_scripts", {})
+	for overridden_scene_index in scene_enter_scripts:
+		var index := int(overridden_scene_index)
+		if index >= 0 and index < _database.scenes.size():
+			_database.scenes[index].script_on_enter = int(scene_enter_scripts[overridden_scene_index])
 	if checkpoint.has("direction"):
 		_session.party_direction = int(checkpoint["direction"])
 	if checkpoint.has("position"):
@@ -446,6 +465,10 @@ func _on_scene_change_requested(scene_index: int) -> void:
 
 
 func _on_script_finished(next_entry: int) -> void:
+	if _active_scene_enter_index >= 0:
+		if _active_scene_enter_index < _database.scenes.size():
+			_database.scenes[_active_scene_enter_index].script_on_enter = next_entry
+		_active_scene_enter_index = -1
 	if _active_trigger_event != null:
 		_active_trigger_event.trigger_script = next_entry
 		_active_trigger_event = null
