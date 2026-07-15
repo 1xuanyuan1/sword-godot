@@ -87,6 +87,16 @@ func show_message(text: String) -> void:
 	_hint.visible = _position_mode != 3
 
 
+func show_speaker_title(text: String, fallback_portrait: Texture2D = null) -> void:
+	# A redraw or wait may hide the previous dialog while leaving its texture cached.
+	# Start the implicit round first so fallback portrait selection sees the real state.
+	if not visible:
+		begin(_position_mode)
+	if not has_portrait() and fallback_portrait != null:
+		set_portrait(fallback_portrait)
+	show_message(text)
+
+
 func is_typing() -> bool:
 	return _typing
 

@@ -396,15 +396,14 @@ func _on_dialog_message(message_index: int) -> void:
 	if overridden_role >= 0 and not _dialog_box.visible:
 		var speaker := _database.get_word(_database.player_roles.name_word_for(overridden_role))
 		var portrait := _database.player_roles.avatar_for(overridden_role)
-		_dialog_box.begin(1, 0, _load_portrait_texture(portrait))
-		_dialog_box.show_message(speaker + "：")
-	if PalDialogBox._is_speaker_title(displayed_message) and not _dialog_box.has_portrait():
+		_dialog_box.show_speaker_title(speaker + "：", _load_portrait_texture(portrait))
+	if PalDialogBox._is_speaker_title(displayed_message):
 		var speaker := PalDialogBox.speaker_name_from_title(displayed_message)
 		var fallback_portrait := _portrait_number_for_player(speaker)
 		if fallback_portrait <= 0:
 			fallback_portrait = _database.portrait_for_speaker(speaker)
-		if fallback_portrait > 0:
-			_dialog_box.set_portrait(_load_portrait_texture(fallback_portrait))
+		_dialog_box.show_speaker_title(displayed_message, _load_portrait_texture(fallback_portrait))
+		return
 	_dialog_box.show_message(displayed_message)
 
 
