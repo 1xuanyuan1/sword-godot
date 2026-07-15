@@ -22,6 +22,7 @@ var _walk_phase: int = 0
 var _showing_walk_frame: bool = false
 var _pending_scene_index: int = -1
 var _script_frame_accumulator: float = 0.0
+var _active_trigger_event: PalEventObject
 
 
 func _ready() -> void:
@@ -38,6 +39,7 @@ func _ready() -> void:
 	_script_vm.dialog_message.connect(_on_dialog_message)
 	_script_vm.dialog_page_break.connect(_on_dialog_page_break)
 	_script_vm.dialog_ended.connect(_on_dialog_ended)
+	_script_vm.script_finished.connect(_on_script_finished)
 	_script_vm.scene_change_requested.connect(_on_scene_change_requested)
 	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
 	add_child(_script_vm)
@@ -113,6 +115,7 @@ func _process(delta: float) -> void:
 		_walk_phase = (_walk_phase + 1) % 4
 		_try_move(movement)
 		_refresh_world()
+		_trigger_touch_event()
 		_move_cooldown = MOVE_REPEAT_SECONDS
 	elif _showing_walk_frame and _move_cooldown <= 0.0:
 		_showing_walk_frame = false
@@ -167,7 +170,7 @@ func _inspect_nearby_event() -> void:
 	var closest: PalEventObject
 	var closest_distance := 999999
 	for event in _scene_events:
-		if not event.is_visible() or event.trigger_mode == 0:
+		if not event.is_visible() or not event.is_search_trigger() or event.trigger_script <= 0:
 			continue
 		var distance := absi(event.position.x - party.x) + absi(event.position.y - party.y) * 2
 		if distance < closest_distance:
@@ -177,8 +180,36 @@ func _inspect_nearby_event() -> void:
 		_status.text = "附近没有可交互事件｜世界坐标 %s" % party
 		return
 	_status.text = "事件：脚本 0x%04X，自动脚本 0x%04X，Sprite %d（VM 基础阶段）" % [closest.trigger_script, closest.auto_script, closest.sprite_number]
-	if closest.trigger_script > 0:
-		_script_vm.run_trigger(closest.trigger_script, closest.object_id)
+	_run_event_trigger(closest)
+
+
+func _trigger_touch_event() -> bool:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+		return false
+	var party := _session.party_world_position()
+	for event in _scene_events:
+		if not event.is_visible() or not event.is_touch_trigger() or event.trigger_script <= 0:
+			continue
+		var distance := absi(event.position.x - party.x) + absi(event.position.y - party.y) * 2
+		if distance >= event.touch_trigger_distance():
+			continue
+		if event.sprite_frames > 0:
+			event.current_frame = 0
+			var offset := party - event.position
+			if offset.x > 0:
+				event.direction = GameSession.DIR_EAST if offset.y > 0 else GameSession.DIR_NORTH
+			else:
+				event.direction = GameSession.DIR_SOUTH if offset.y > 0 else GameSession.DIR_WEST
+		_run_event_trigger(event)
+		return true
+	return false
+
+
+func _run_event_trigger(event: PalEventObject) -> void:
+	if event == null or event.trigger_script <= 0 or _script_vm == null:
+		return
+	_active_trigger_event = event
+	_script_vm.run_trigger(event.trigger_script, event.object_id)
 
 
 func _load_scene(scene_index: int, run_enter_script: bool) -> void:
@@ -359,6 +390,12 @@ func _load_portrait_texture(portrait_number: int) -> Texture2D:
 func _on_scene_change_requested(scene_index: int) -> void:
 	_pending_scene_index = scene_index
 	call_deferred("_apply_pending_scene")
+
+
+func _on_script_finished(next_entry: int) -> void:
+	if _active_trigger_event != null:
+		_active_trigger_event.trigger_script = next_entry
+		_active_trigger_event = null
 
 
 func _apply_pending_scene() -> void:

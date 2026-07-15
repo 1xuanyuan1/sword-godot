@@ -30,8 +30,11 @@ var _event_object_id: int = 0
 var _last_event_object_id: int = 0
 var _call_stack: Array[Dictionary] = []
 var _dialog_has_body: bool = false
+var _dialog_is_toast: bool = false
 var _frames_remaining: int = 0
 var _auto_frame_number: int = 0
+var _close_dialog_after_frame_wait: bool = false
+var _next_trigger_entry: int = 0
 
 
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
@@ -48,9 +51,12 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 		_last_event_object_id = event_object_id
 	_call_stack.clear()
 	_dialog_has_body = false
+	_dialog_is_toast = false
 	waiting_for_frames = false
 	_frames_remaining = 0
+	_close_dialog_after_frame_wait = false
 	_cursor = entry_index
+	_next_trigger_entry = entry_index
 	_event_object_id = event_object_id
 	running = true
 	return _continue_execution()
@@ -70,7 +76,9 @@ func stop() -> void:
 	waiting_for_dialog = false
 	waiting_for_frames = false
 	_dialog_has_body = false
+	_dialog_is_toast = false
 	_frames_remaining = 0
+	_close_dialog_after_frame_wait = false
 	_call_stack.clear()
 	dialog_ended.emit()
 
@@ -78,13 +86,18 @@ func stop() -> void:
 func tick_frame() -> bool:
 	_auto_frame_number += 1
 	# SDLPal pauses scene updates while waiting for a dialog key.
-	var world_changed := false if waiting_for_dialog else _tick_auto_scripts()
+	var world_changed := false if waiting_for_dialog or _close_dialog_after_frame_wait else _tick_auto_scripts()
 	if not waiting_for_frames:
 		return world_changed
 	_frames_remaining -= 1
 	world_changed = true
 	if _frames_remaining <= 0:
 		waiting_for_frames = false
+		if _close_dialog_after_frame_wait:
+			_close_dialog_after_frame_wait = false
+			_dialog_has_body = false
+			_dialog_is_toast = false
+			dialog_ended.emit()
 		_continue_execution()
 	return world_changed
 
@@ -101,7 +114,7 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				if _return_from_call():
 					continue
-				return _finish(0)
+				return _finish(_next_trigger_entry)
 			0x0001:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
@@ -179,18 +192,22 @@ func _continue_execution() -> int:
 			0x003b:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
+				_dialog_is_toast = false
 				dialog_started.emit(2, entry.operands[0], 0)
 			0x003c:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
+				_dialog_is_toast = false
 				dialog_started.emit(0, entry.operands[1], entry.operands[0])
 			0x003d:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
+				_dialog_is_toast = false
 				dialog_started.emit(1, entry.operands[1], entry.operands[0])
 			0x003e:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
+				_dialog_is_toast = true
 				dialog_started.emit(3, entry.operands[0], 0)
 			0x0040:
 				var event := _resolve_event(entry.operands[0])
@@ -214,6 +231,9 @@ func _continue_execution() -> int:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
 					event.state = _signed_word(entry.operands[1])
+			0x0050:
+				# 场景淡出效果尚未实现；先安全刷新并继续场景切换脚本。
+				redraw_requested.emit(0)
 			0x0052:
 				var event := _event_by_id(_event_object_id)
 				if event != null:
@@ -280,6 +300,8 @@ func _continue_execution() -> int:
 				_cursor = next_cursor
 				if not _is_dialog_title(database.get_message(entry.operands[0])):
 					_dialog_has_body = true
+					if _dialog_is_toast:
+						return _wait_for_frames(next_cursor, 14, true)
 				executed += 1
 				continue
 			_:
@@ -307,7 +329,9 @@ func _finish(next_entry: int) -> int:
 	waiting_for_dialog = false
 	waiting_for_frames = false
 	_dialog_has_body = false
+	_dialog_is_toast = false
 	_frames_remaining = 0
+	_close_dialog_after_frame_wait = false
 	dialog_ended.emit()
 	script_finished.emit(next_entry)
 	return next_entry
@@ -319,10 +343,11 @@ func _pause_at_dialog_boundary() -> int:
 	return _cursor
 
 
-func _wait_for_frames(next_cursor: int, frame_count: int) -> int:
+func _wait_for_frames(next_cursor: int, frame_count: int, close_dialog_after_wait: bool = false) -> int:
 	_cursor = next_cursor
 	_frames_remaining = maxi(1, frame_count)
 	waiting_for_frames = true
+	_close_dialog_after_frame_wait = close_dialog_after_wait
 	return _cursor
 
 

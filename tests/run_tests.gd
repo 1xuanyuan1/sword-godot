@@ -32,6 +32,7 @@ func _init() -> void:
 	_test_script_vm_dialog_page_break()
 	_test_script_vm_frame_delay_and_auto_walk()
 	_test_script_vm_inn_conversation_operations()
+	_test_script_vm_center_toast()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -215,6 +216,11 @@ func _test_content_structures() -> void:
 	_expect(script != null and script.operation == 0x46, "script operation parsing")
 	_expect(script.operands == PackedInt32Array([41, 18, 0]), "script operand parsing")
 	_expect(PalContentDatabase.speaker_role_for_message(585) == 0 and PalContentDatabase.speaker_role_for_message(584) == -1, "explicit speaker metadata only applies to confirmed untitled dialog")
+	var event_bytes := PackedByteArray()
+	event_bytes.resize(PalEventObject.BYTE_SIZE)
+	event_bytes[14] = PalEventObject.TRIGGER_TOUCH_NEAR + 1
+	var event := PalEventObject.from_bytes(event_bytes, 0)
+	_expect(event.is_touch_trigger() and event.touch_trigger_distance() == 48, "touch event trigger distance follows SDLPal mode")
 
 
 func _test_player_roles_structure() -> void:
@@ -309,8 +315,9 @@ func _test_script_vm_foundation() -> void:
 	var session := GameSession.new()
 	var vm := ScriptVM.new()
 	vm.configure(database, session)
-	vm.run_trigger(1)
+	var next_entry := vm.run_trigger(1)
 	_expect(session.viewport_position == Vector2i(1152, 176), "script VM party position opcode")
+	_expect(next_entry == 1, "opcode 0000 preserves a repeatable trigger entry")
 	vm.free()
 
 
@@ -477,6 +484,28 @@ func _test_script_vm_inn_conversation_operations() -> void:
 	vm.free()
 
 
+func _test_script_vm_center_toast() -> void:
+	var database := PalContentDatabase.new()
+	database.messages.append("获得500文钱")
+	for operation in [0, 0x003e, 0xffff, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	var messages: Array[int] = []
+	var ended: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database)
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.dialog_ended.connect(func() -> void: ended.append(1))
+	vm.run_trigger(1)
+	_expect(vm.running and vm.waiting_for_frames and not vm.waiting_for_dialog and messages == [0], "center toast waits without requiring dialog input")
+	for frame in range(14):
+		vm.tick_frame()
+	_expect(not vm.running and ended.size() >= 1, "center toast closes automatically after 1.4 seconds")
+	vm.free()
+
+
 func _test_dialog_box_typewriter() -> void:
 	var dialog := PalDialogBox.new()
 	dialog._ready()
@@ -498,4 +527,7 @@ func _test_dialog_box_typewriter() -> void:
 	dialog.show_message("上一页")
 	dialog.next_page()
 	_expect(dialog.has_portrait() and dialog._speaker.text == "李大娘" and dialog._full_text.is_empty(), "dialog page break preserves speaker context")
+	dialog.begin(3)
+	dialog.show_message("获得500文钱")
+	_expect(dialog._panel.size == Vector2(176, 32) and dialog._message.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and not dialog._hint.visible, "center toast uses compact centered presentation")
 	dialog.free()

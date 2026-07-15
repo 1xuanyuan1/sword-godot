@@ -5,6 +5,9 @@ class_name PalEventObject
 extends RefCounted
 
 const BYTE_SIZE := 32
+const TRIGGER_SEARCH_NEAR := 1
+const TRIGGER_TOUCH_NEAR := 4
+const TRIGGER_TOUCH_FARTHEST := 8
 
 var object_id: int = 0
 var vanish_time: int
@@ -52,3 +55,15 @@ func is_visible() -> bool:
 
 func blocks_movement() -> bool:
 	return state >= 2
+
+
+func is_search_trigger() -> bool:
+	return trigger_mode >= TRIGGER_SEARCH_NEAR and trigger_mode < TRIGGER_TOUCH_NEAR
+
+
+func is_touch_trigger() -> bool:
+	return trigger_mode >= TRIGGER_TOUCH_NEAR and trigger_mode <= TRIGGER_TOUCH_FARTHEST
+
+
+func touch_trigger_distance() -> int:
+	return (trigger_mode - TRIGGER_TOUCH_NEAR) * 32 + 16 if is_touch_trigger() else 0
