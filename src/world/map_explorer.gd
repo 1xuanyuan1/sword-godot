@@ -239,9 +239,10 @@ func _is_blocked(world_position: Vector2i) -> bool:
 	if map_blocked:
 		return true
 	for event in _scene_events:
-		if not event.is_visible() or not event.blocks_movement():
+		# PAL_CheckObstacle 只检查 state；正 vanish_time 会暂时隐藏对象，但不会解除阻挡。
+		if not event.blocks_movement():
 			continue
-		if absi(event.position.x - world_position.x) + absi(event.position.y - world_position.y) * 2 <= 12:
+		if PalMapCoordinates.positions_collide(event.position, world_position):
 			return true
 	return false
 
@@ -254,7 +255,7 @@ func _displace_party_from_blockers() -> bool:
 		if not event.is_visible() or not event.blocks_movement() or event.sprite_number <= 0:
 			continue
 		var party := _session.party_world_position()
-		if absi(event.position.x - party.x) + absi(event.position.y - party.y) * 2 > 12:
+		if PalMapCoordinates.weighted_distance(event.position, party) > PalMapCoordinates.PARTY_OVERLAP_DISTANCE:
 			continue
 		var direction := (event.direction + 1) % 4
 		for _attempt in range(4):
@@ -369,7 +370,7 @@ func _continue_touch_scan() -> bool:
 func _is_touch_event_in_range(event: PalEventObject, party_position: Vector2i) -> bool:
 	if event == null or not event.is_visible() or not event.is_touch_trigger():
 		return false
-	var distance := absi(event.position.x - party_position.x) + absi(event.position.y - party_position.y) * 2
+	var distance := PalMapCoordinates.weighted_distance(event.position, party_position)
 	return distance < event.touch_trigger_distance()
 
 

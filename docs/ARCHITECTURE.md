@@ -86,6 +86,8 @@ sequenceDiagram
 
 需要判断地图阻挡时，`MapExplorer`、`PalTileMapWorld` 和 `ScriptVM` 不各自推测 half，而是统一调用 `PalMapCoordinates.world_to_tile()`。这样主动移动、TileSet 的 `pal_blocked` 和 NPC 追逐在菱形边缘读取同一条 MAP 记录；坐标越界仍一律视为阻挡。
 
+事件对象碰撞也统一使用 `PalMapCoordinates.positions_collide()` 的严格加权距离 `<16`。`vanish_time` 只控制临时显示和事件更新；只要对象 `state >= 2`，移动阻挡仍按 SDLPal 保留。NPC 与队伍真正重叠后的脱困另用 `≤12`，两种阈值不能混用。
+
 ## 调色板与像素输出
 
 地图和人物纹理保存“颜色索引 + 透明度”，`indexed_palette.gdshader` 在 GPU 上映射到当前 PAL 调色板。这样日夜切换和后续淡入淡出只更新材质，不需要每次移动都重新生成 320×200 RGBA 图片。

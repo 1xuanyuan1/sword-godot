@@ -244,7 +244,7 @@ func _is_blocked_with_events(world_position: Vector2i, events: Array[PalEventObj
 	if is_map_blocked(world_position):
 		return true
 	for event in events:
-		if event.is_visible() and event.blocks_movement() and absi(event.position.x - world_position.x) + absi(event.position.y - world_position.y) * 2 <= 12:
+		if event.blocks_movement() and PalMapCoordinates.positions_collide(event.position, world_position):
 			return true
 	return false
 

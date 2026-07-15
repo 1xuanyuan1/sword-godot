@@ -211,6 +211,9 @@ func _test_map_helpers() -> void:
 	_expect(PalMapCoordinates.world_to_tile(Vector2i(24, 12)) == Vector3i(1, 1, 0), "PAL collision maps the southeast triangle diagonally")
 	_expect(PalMapCoordinates.is_within_player_walk_range(Vector2i(160, 112)), "party offset is the first valid manual walk coarse tile")
 	_expect(not PalMapCoordinates.is_within_player_walk_range(Vector2i(159, 112)) and not PalMapCoordinates.is_within_player_walk_range(Vector2i(160, 111)), "manual walk range protects the viewport top and left edges")
+	_expect(PalMapCoordinates.weighted_distance(Vector2i.ZERO, Vector2i(7, 4)) == 15, "PAL weighted distance doubles the vertical offset")
+	_expect(PalMapCoordinates.positions_collide(Vector2i.ZERO, Vector2i(7, 4)), "EventObject collision accepts weighted distance 15")
+	_expect(not PalMapCoordinates.positions_collide(Vector2i.ZERO, Vector2i(8, 4)), "EventObject collision rejects strict boundary 16")
 
 
 func _test_tileset_builder() -> void:
@@ -507,6 +510,16 @@ func _test_explorer_blocker_displacement() -> void:
 	events = [overlapping]
 	explorer._scene_events = events
 	_expect(not explorer._displace_party_from_blockers() and explorer._session.party_world_position() == party, "sprite-less blocker trigger does not push the party")
+
+	var vanished_blocker := PalEventObject.new()
+	vanished_blocker.position = party + Vector2i(7, 4)
+	vanished_blocker.state = 2
+	vanished_blocker.vanish_time = 5
+	events = [vanished_blocker]
+	explorer._scene_events = events
+	_expect(explorer._is_blocked(party), "positive-state vanished EventObject keeps SDLPal movement blocking")
+	vanished_blocker.position = party + Vector2i(8, 4)
+	_expect(not explorer._is_blocked(party), "EventObject does not block at weighted boundary 16")
 	explorer.free()
 
 

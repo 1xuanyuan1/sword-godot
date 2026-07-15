@@ -841,7 +841,7 @@ func _event_is_in_current_scene(event_object_id: int) -> bool:
 
 
 func _event_distance(first: PalEventObject, second: PalEventObject) -> int:
-	return absi(first.position.x - second.position.x) + absi(first.position.y - second.position.y) * 2
+	return PalMapCoordinates.weighted_distance(first.position, second.position)
 
 
 func _monster_chase_player(event: PalEventObject, speed: int, chase_range: int, floating: bool) -> void:
@@ -868,9 +868,9 @@ func _npc_position_blocked(world_position: Vector2i, moving_event_id: int) -> bo
 		if PalMapData.is_blocked(_scene_map_data.tile_value(tile.x, tile.y, tile.z)):
 			return true
 	for other in database.events_for_scene(session.scene_index):
-		if other.object_id == moving_event_id or not other.is_visible() or not other.blocks_movement():
+		if other.object_id == moving_event_id or not other.blocks_movement():
 			continue
-		if absi(other.position.x - world_position.x) + absi(other.position.y - world_position.y) * 2 <= 12:
+		if PalMapCoordinates.positions_collide(other.position, world_position):
 			return true
 	return false
 

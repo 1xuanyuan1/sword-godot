@@ -7,6 +7,8 @@ class_name PalMapCoordinates
 extends RefCounted
 
 const PLAYER_MIN_COARSE_TILE := Vector2i(5, 7)
+const EVENT_COLLISION_DISTANCE := 16
+const PARTY_OVERLAP_DISTANCE := 12
 
 
 ## 将任意 PAL 世界像素位置映射到碰撞所属的地图 half，以 `Vector3i(x,y,half)` 返回。
@@ -44,3 +46,13 @@ static func is_within_player_walk_range(world_position: Vector2i) -> bool:
 	if coarse_x < PLAYER_MIN_COARSE_TILE.x or coarse_y < PLAYER_MIN_COARSE_TILE.y:
 		return false
 	return is_valid_tile(world_to_tile(world_position))
+
+
+## 返回两个 PAL 世界位置的等距加权距离 `abs(dx) + abs(dy) × 2`。
+static func weighted_distance(first: Vector2i, second: Vector2i) -> int:
+	return absi(first.x - second.x) + absi(first.y - second.y) * 2
+
+
+## 返回两个位置是否落在 EventObject 的严格 `<16` 移动阻挡范围内。
+static func positions_collide(first: Vector2i, second: Vector2i) -> bool:
+	return weighted_distance(first, second) < EVENT_COLLISION_DISTANCE

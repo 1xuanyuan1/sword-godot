@@ -305,3 +305,21 @@ keywords:
   - `docs/ARCHITECTURE.md`
   - `docs/SCENE_RENDERING.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-019] [fix] 对齐 EventObject 移动阻挡半径
+
+- **关联需求**: M2 等距地图探索
+- **关联 TODO**: TD-002（阶段性）
+- **功能描述**: 将 MapExplorer、TileMap 队员回退和 ScriptVM NPC 路径的事件阻挡从临时近似 `≤12` 统一为 SDLPal `PAL_CheckObstacle` 的严格加权距离 `<16`；`≤12` 只保留给 NPC 已挤占队伍脚点后的脱困。碰撞按原版读取正 `state`，正 `vanish_time` 临时隐藏不会解除阻挡。
+- **验证情况**: 222 项合成测试通过，覆盖加权距离、15/16 边界和临时隐藏阻挡；294 个剧情场景自动脚本无未支持指令，1536 个 EventObject 正常发生动作或状态变化，黑苗 NPC 入房、楼梯、厨房、传送离开和桂花酒流程继续通过。
+- **涉及文件**:
+  - `src/world/pal_map_coordinates.gd`
+  - `src/world/map_explorer.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `src/game/script_vm.gd`
+  - `tests/run_tests.gd`
+  - `docs/ARCHITECTURE.md`
+  - `docs/SCENE_RENDERING.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
