@@ -1,12 +1,11 @@
-# Resource policy
+# 资源管理规则
 
-The repository must never contain original or derived PAL game content.
+本仓库禁止包含原版或由原版转换得到的《仙剑奇侠传》内容。
 
-Ignored local-only locations include:
+以下路径只允许保存在本机，并已加入 Git 忽略规则：
 
-- `Data/`, `data/`, `local_data/`: original resource files.
-- `generated/`: images, audio, manifests and databases produced by the importer.
-- `*.rpg`: original save files.
+- `Data/`、`data/`、`local_data/`：原版资源文件。
+- `generated/`：导入器产生的图片、音频、清单和运行时数据库。
+- `*.rpg`：原版存档。
 
-Tests committed to the repository use small synthetic byte arrays created for format edge cases. Integration tests that require original data run locally and report only structural results; they must not commit screenshots, converted audio, dialogue, hashes intended to identify unauthorized downloads, or other derived content.
-
+提交到仓库的测试只能使用为格式边界专门构造的小型合成字节数组。依赖原版数据的集成测试只在本机运行并报告结构化结果；不得提交截图、转换音频、对话文本、用于识别非授权下载的散列值或其他衍生内容。

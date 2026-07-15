@@ -70,6 +70,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_generate_sprite_preview(files_by_lowercase["ball.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_map_preview(files_by_lowercase["map.mkf"], files_by_lowercase["gop.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_convert_voc_audio(files_by_lowercase["voc.mkf"], absolute_output, report)
+	_convert_rix_previews(files_by_lowercase["mus.mkf"], absolute_output, report)
 	_write_manifest(absolute_output, report)
 	report.success = report.errors.is_empty()
 	return report
@@ -300,6 +301,37 @@ static func _convert_voc_audio(voc_path: String, absolute_output: String, report
 	report.files["voc_conversion"] = {"converted": converted, "unsupported": unsupported, "output": audio_dir}
 	if converted == 0:
 		report.warnings.append("voc.mkf 中没有成功转换的 8-bit type 01 音效")
+
+
+static func _convert_rix_previews(mus_path: String, absolute_output: String, report: PalImportReport) -> void:
+	if OS.get_name() not in ["macOS", "Linux"]:
+		report.warnings.append("当前平台暂不自动构建 RIX 离线转换器")
+		return
+	var project_root := ProjectSettings.globalize_path("res://").trim_suffix("/")
+	var upstream := project_root.get_base_dir().path_join("sdlpal-official")
+	var executable := project_root.path_join("tools/rix_renderer/build/rix_renderer")
+	if not FileAccess.file_exists(executable):
+		var build_output: Array = []
+		var build_script := project_root.path_join("tools/rix_renderer/build.py")
+		var build_exit := OS.execute("python3", [build_script, "--upstream", upstream, "--output", executable], build_output, true)
+		if build_exit != 0:
+			report.warnings.append("RIX 离线转换器构建失败：%s" % "\n".join(build_output))
+			return
+	var output_dir := absolute_output.path_join("audio/rix")
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	var rendered: Array[int] = []
+	for song_index in [4, 5]:
+		var output_path := output_dir.path_join("%03d.wav" % song_index)
+		if FileAccess.file_exists(output_path):
+			rendered.append(song_index)
+			continue
+		var render_output: Array = []
+		var render_exit := OS.execute(executable, [mus_path, str(song_index), output_path, "300"], render_output, true)
+		if render_exit == 0:
+			rendered.append(song_index)
+		else:
+			report.warnings.append("RIX 曲目 %d 转换失败：%s" % [song_index, "\n".join(render_output)])
+	report.files["rix_conversion"] = {"rendered_preview_songs": rendered, "output": output_dir, "sample_rate": 44100}
 
 
 static func _write_manifest(absolute_output: String, report: PalImportReport) -> void:

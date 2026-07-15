@@ -1,32 +1,32 @@
-# SDLPal upstream baseline
+# SDLPal 上游基准
 
-The behavior and data-format reference is a separate, read-only sibling checkout:
+行为和数据格式参考使用独立、只读的同级检出：
 
-- Local path: `/Users/xuanyuan/Documents/godotwork/sdlpal-official`
-- Primary mirror: `https://gitee.com/sdlpal/sdlpal.git`
-- Verification remote: `https://github.com/sdlpal/sdlpal.git`
-- Branch: `master`
-- Pinned commit: `79718a1aa2fb889994d1d084765025994d429706`
-- Commit date: 2026-07-13 19:40:35 +0800
+- 本地路径：`/Users/xuanyuan/Documents/godotwork/sdlpal-official`
+- 主要镜像：`https://gitee.com/sdlpal/sdlpal.git`
+- 核验远端：`https://github.com/sdlpal/sdlpal.git`
+- 分支：`master`
+- 固定提交：`79718a1aa2fb889994d1d084765025994d429706`
+- 提交时间：2026-07-13 19:40:35 +0800
 
-The older `/Users/xuanyuan/Documents/godotwork/sdlpal` snapshot is retained only for historical and executable-behavior comparison.
+旧目录 `/Users/xuanyuan/Documents/godotwork/sdlpal` 仅保留用于历史代码和旧 EXE 行为对照。
 
-The local integration data was initially assumed to be Simplified Chinese, but byte-level detection and decoded labels identify it as the DOS Traditional Chinese CP950/Big5 edition. The importer records this detected edition in its ignored manifest.
+本地集成数据最初被假定为简体版，但字节级编码检测和词条解码确认它是 DOS 繁体 CP950/Big5 版本。导入器会把检测结果写入被 Git 忽略的本地清单。
 
-## Update policy
+## 更新规则
 
-Upstream is not updated automatically. A new SDLPal revision must be reviewed manually, with behavior changes and relevant source mappings recorded here before the pin changes. The Godot port targets SDLPal's default classic battle path (`ENABLE_REVISIED_BATTLE` disabled).
+不会自动更新上游。若要切换 SDLPal 版本，必须先人工审查行为变化，在本文记录相关源码映射后再修改固定提交。Godot 复刻以 SDLPal 默认经典战斗路径为准，即不启用 `ENABLE_REVISIED_BATTLE`。
 
-## Initial source mapping
+## 初始源码映射
 
-| Godot subsystem | SDLPal reference |
+| Godot 子系统 | SDLPal 参考文件 |
 | --- | --- |
-| MKF, sprite and RLE formats | `palcommon.c` |
-| YJ1/YJ2 compression | `yj1.c` |
-| Palettes and fades | `palette.c` |
-| Isometric maps | `map.c`, `scene.c`, `res.c` |
-| Structured game data/save state | `global.c`, `global.h` |
-| Script virtual machine | `script.c` |
-| Classic battle loop | `battle.c`, `fight.c`, `uibattle.c` |
-| Text/code pages/font | `text.c`, `font.c`, `codepage.h` |
-| RIX/VOC audio | `rixplay.cpp`, `sound.c`, `adplug/` |
+| MKF、Sprite、RLE 格式 | `palcommon.c` |
+| YJ1/YJ2 压缩 | `yj1.c` |
+| 调色板和渐变 | `palette.c` |
+| 等距地图 | `map.c`、`scene.c`、`res.c` |
+| 结构化游戏数据和存档状态 | `global.c`、`global.h` |
+| 脚本虚拟机 | `script.c` |
+| 经典战斗循环 | `battle.c`、`fight.c`、`uibattle.c` |
+| 文本、代码页和字库 | `text.c`、`font.c`、`codepage.h` |
+| RIX/VOC 音频 | `rixplay.cpp`、`sound.c`、`adplug/` |
