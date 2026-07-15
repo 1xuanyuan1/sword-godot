@@ -32,7 +32,7 @@ func _build_interface() -> void:
 	add_child(margin)
 
 	var page := VBoxContainer.new()
-	page.add_theme_constant_override("separation", 6)
+	page.add_theme_constant_override("separation", 4)
 	margin.add_child(page)
 
 	var title := Label.new()
@@ -66,17 +66,31 @@ func _build_interface() -> void:
 	_import_button.pressed.connect(_run_import)
 	picker.add_child(_import_button)
 
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 4)
+	page.add_child(actions)
+
+	var actions_label := Label.new()
+	actions_label.text = "可玩入口"
+	actions_label.add_theme_font_size_override("font_size", 9)
+	actions_label.add_theme_color_override("font_color", Color("93c5fd"))
+	actions.add_child(actions_label)
+
 	_explore_button = Button.new()
 	_explore_button.text = "探索样板"
+	_explore_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_explore_button.add_theme_font_size_override("font_size", 9)
 	_explore_button.disabled = true
 	_explore_button.pressed.connect(_open_explorer)
-	picker.add_child(_explore_button)
+	actions.add_child(_explore_button)
 
 	_rng_button = Button.new()
 	_rng_button.text = "RNG 动画"
+	_rng_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_rng_button.add_theme_font_size_override("font_size", 9)
 	_rng_button.disabled = true
 	_rng_button.pressed.connect(_open_rng_preview)
-	picker.add_child(_rng_button)
+	actions.add_child(_rng_button)
 
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -108,7 +122,7 @@ func _build_interface() -> void:
 	_status = RichTextLabel.new()
 	_status.bbcode_enabled = true
 	_status.fit_content = false
-	_status.custom_minimum_size.y = 38
+	_status.custom_minimum_size.y = 28
 	_status.add_theme_font_size_override("normal_font_size", 9)
 	page.add_child(_status)
 
