@@ -62,3 +62,4 @@ static func is_blocked(value: int) -> bool:
 static func tile_height(value: int, top_layer: bool = false) -> int:
 	var packed := value >> 16 if top_layer else value
 	return (packed >> 8) & 0x0f
+
