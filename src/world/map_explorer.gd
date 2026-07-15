@@ -1,6 +1,8 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal map.c, scene.c and play.c movement behavior.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 可玩探索场景的编排控制器，连接输入、会话、ScriptVM、地图世界、对话和菜单。
+## 它决定何时触发或同步各模块，但不直接定义 PAL 内容和剧情规则。
 extends Control
 
 const MOVE_REPEAT_SECONDS := 0.10

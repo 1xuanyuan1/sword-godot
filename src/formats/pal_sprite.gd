@@ -1,28 +1,35 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal palcommon.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## PAL Sprite 帧表读取器；每帧仍保持原始 RLE 字节，按需交给 `RleDecoder`。
+## 解析保留 SDLPal 对损坏末尾哨兵和 17 位偏移回绕的兼容行为。
 class_name PalSprite
 extends RefCounted
 
+## 帧表长度、偏移顺序或边界错误。
 var error_message: String = ""
 var _data: PackedByteArray = PackedByteArray()
 var _frame_offsets: PackedInt64Array = PackedInt64Array()
 
 
+## 从完整 Sprite 分块解析帧偏移表。
 static func from_bytes(data: PackedByteArray) -> PalSprite:
 	var sprite := PalSprite.new()
 	sprite._parse(data)
 	return sprite
 
 
+## 返回帧表是否至少包含一个合法帧。
 func is_valid() -> bool:
 	return error_message.is_empty() and _frame_offsets.size() >= 2
 
 
+## 返回可读取帧数，无效 Sprite 返回 0。
 func frame_count() -> int:
 	return maxi(0, _frame_offsets.size() - 1) if is_valid() else 0
 
 
+## 返回指定帧的原始 RLE 字节，越界时返回空数组。
 func get_frame(index: int) -> PackedByteArray:
 	if index < 0 or index >= frame_count():
 		return PackedByteArray()

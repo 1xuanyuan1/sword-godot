@@ -1,5 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 播放导入器生成的首个 RNG 增量动画预览，用于验证帧序和 16 FPS 时序。
+## 最终剧情过场将由 ScriptVM 和专用播放器接管，本界面仅属资源实验室。
 extends Control
 
 const FRAME_DIRECTORY := "res://generated/pal/rng/000"

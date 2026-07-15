@@ -1,10 +1,14 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal map.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## SDLPal `PAL_MapBlitToSurface` 的 CPU 索引画布实现。
+## TileMapLayer 迁移期间保留为导入预览和逐像素参考，不持有运行时状态。
 class_name PalMapRenderer
 extends RefCounted
 
 
+## 把指定 PAL 世界视口的底层和可选上层合成为索引图像。
+## 地图或 GOP Sprite 无效时返回带错误信息的图像。
 static func render(map_data: PalMapData, tile_sprite: PalSprite, viewport: Rect2i, include_top_layer: bool = true) -> PalIndexedImage:
 	var canvas := PalIndexedImage.new()
 	canvas.width = viewport.size.x
@@ -68,4 +72,3 @@ static func _blit(source: PalIndexedImage, destination: PalIndexedImage, x_offse
 			var destination_index := destination_y * destination.width + destination_x
 			destination.indices[destination_index] = source.indices[source_index]
 			destination.opacity[destination_index] = source.opacity[source_index]
-

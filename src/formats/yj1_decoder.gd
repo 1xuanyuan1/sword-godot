@@ -1,11 +1,14 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal yj1.c and PalLibrary by Lou Yihua.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## PAL `YJ_1` 分块解压器，实现 Huffman 树和 LZSS 复制语义。
+## 实例只保存最近一次错误；每次 `decompress` 都会重新初始化解析状态。
 class_name Yj1Decoder
 extends RefCounted
 
 const SIGNATURE := 0x315f4a59 # "YJ_1" as a little-endian uint32.
 
+## 签名、树结构、块边界或输出长度错误。
 var error_message: String = ""
 
 
@@ -19,6 +22,7 @@ class BitReader:
 		data = source
 		base_offset = source_offset
 
+	## 按 YJ1 的 16 位大端位序读取 `count` 位；输入耗尽时设置 `failed`。
 	func read(count: int) -> int:
 		if failed or count < 0 or count > 16:
 			failed = true
@@ -43,6 +47,8 @@ class BitReader:
 		return ((first_word << bit_in_word) & 0xffff) >> (16 - count)
 
 
+## 解压一个完整 YJ1 分块，并用 `destination_limit` 防止损坏数据无限扩张。
+## 失败时返回空数组并设置 `error_message`。
 func decompress(source: PackedByteArray, destination_limit: int = 64 * 1024 * 1024) -> PackedByteArray:
 	error_message = ""
 	if source.size() < 16:
@@ -205,4 +211,3 @@ func _read_repeat_count(reader: BitReader, repeat_table: PackedInt32Array, code_
 func _fail(message: String) -> PackedByteArray:
 	error_message = message
 	return PackedByteArray()
-

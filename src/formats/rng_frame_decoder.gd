@@ -1,6 +1,8 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal rngplay.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## SDLPal RNG 增量帧解释器，持有一张持续更新的 320×200 索引画布。
+## 每帧操作都基于上一帧，因此播放或导出时必须按原始顺序调用。
 class_name RngFrameDecoder
 extends RefCounted
 
@@ -8,7 +10,9 @@ const WIDTH := 320
 const HEIGHT := 200
 const PIXEL_COUNT := WIDTH * HEIGHT
 
+## 当前完整画面的 64000 个调色板索引。
 var indices: PackedByteArray = PackedByteArray()
+## 最近一次画布设置或增量解析失败原因。
 var error_message: String = ""
 
 
@@ -16,12 +20,14 @@ func _init() -> void:
 	reset()
 
 
+## 用单一颜色清空画布和错误状态。
 func reset(color_index: int = 0) -> void:
 	error_message = ""
 	indices.resize(PIXEL_COUNT)
 	indices.fill(clampi(color_index, 0, 255))
 
 
+## 用完整 320×200 索引数据替换当前画布，长度不符时返回 `false`。
 func set_canvas(source: PackedByteArray) -> bool:
 	error_message = ""
 	if source.size() != PIXEL_COUNT:
@@ -30,6 +36,7 @@ func set_canvas(source: PackedByteArray) -> bool:
 	return true
 
 
+## 按 SDLPal `PAL_RNGBlitToSurface` 操作码把一帧增量应用到当前画布。
 func apply_delta(delta: PackedByteArray) -> bool:
 	error_message = ""
 	if indices.size() != PIXEL_COUNT:
@@ -117,6 +124,7 @@ func apply_delta(delta: PackedByteArray) -> bool:
 	return true
 
 
+## 返回当前画布副本，所有像素均视为不透明。
 func to_indexed_image() -> PalIndexedImage:
 	var image := PalIndexedImage.new()
 	image.width = WIDTH

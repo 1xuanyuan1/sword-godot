@@ -1,10 +1,13 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal scene.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## SDLPal `PAL_MakeScene` 的 CPU 参考渲染器，把地图、人物、事件和覆盖块合成。
+## Godot 原生渲染必须与这里的基准 Y 和逻辑层公式保持像素一致。
 class_name PalSceneRenderer
 extends RefCounted
 
 
+## CPU 队列中的一个基准 Y 绘制项。
 class DrawItem:
 	var frame: PalIndexedImage
 	var x: int
@@ -19,14 +22,17 @@ class DrawItem:
 		logical_layer = source_layer
 
 
+## 按 SDLPal 队伍锚点把一帧角色图像转换为 CPU 绘制项。
 static func player_item(frame: PalIndexedImage, screen_position: Vector2i, world_layer: int = 0) -> DrawItem:
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + world_layer + 10, world_layer + 6)
 
 
+## 按 EVENTOBJECT 逻辑层把一帧事件图像转换为 CPU 绘制项。
 static func event_item(frame: PalIndexedImage, screen_position: Vector2i, event_layer: int) -> DrawItem:
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + event_layer * 8 + 9, event_layer * 8 + 2)
 
 
+## 先绘制完整地图，再加入角色及可能盖住角色的地图块并按基准 Y 排序。
 static func render(map_data: PalMapData, tile_sprite: PalSprite, viewport: Rect2i, scene_items: Array) -> PalIndexedImage:
 	var canvas := PalMapRenderer.render(map_data, tile_sprite, viewport, true)
 	if not canvas.is_valid():

@@ -1,5 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 经典 PAL 对话框与系统 Toast 控件，支持肖像、说话人、分页和逐字显示。
+## 文本轮次由 `ScriptVM` 控制；本控件只维护当前页面的视觉状态。
 class_name PalDialogBox
 extends Control
 
@@ -42,6 +44,7 @@ func _process(delta: float) -> void:
 		_set_visible_characters(target_count)
 
 
+## 开始新的对话上下文并清空旧页面；位置模式与 SDLPal 对话操作码一致。
 func begin(position_mode: int, _color_index: int = 0, portrait_texture: Texture2D = null) -> void:
 	_position_mode = position_mode
 	var is_toast := _position_mode == 3
@@ -66,6 +69,7 @@ func begin(position_mode: int, _color_index: int = 0, portrait_texture: Texture2
 	visible = true
 
 
+## 把一行正文追加到当前轮次，按可用像素宽度自动换行并启动逐字显示。
 func show_message(text: String) -> void:
 	if not visible:
 		begin(_position_mode)
@@ -87,6 +91,7 @@ func show_message(text: String) -> void:
 	_hint.visible = _position_mode != 3
 
 
+## 设置说话人标题，并在原脚本缺少肖像时使用推断得到的后备肖像。
 func show_speaker_title(text: String, fallback_portrait: Texture2D = null) -> void:
 	# A redraw or wait may hide the previous dialog while leaving its texture cached.
 	# Start the implicit round first so fallback portrait selection sees the real state.
@@ -97,10 +102,12 @@ func show_speaker_title(text: String, fallback_portrait: Texture2D = null) -> vo
 	show_message(text)
 
 
+## 返回当前页面是否仍在逐字显示。
 func is_typing() -> bool:
 	return _typing
 
 
+## 立即显示本轮已收到的全部文字，不跳过下一轮角色对话。
 func reveal_all() -> void:
 	if _full_text.is_empty():
 		return
@@ -108,22 +115,26 @@ func reveal_all() -> void:
 	_set_visible_characters(_full_text.length())
 
 
+## 保留对话上下文和肖像，清空正文并开始下一页。
 func next_page() -> void:
 	if not visible:
 		return
 	_reset_body()
 
 
+## 返回当前对话上下文是否拥有有效肖像。
 func has_portrait() -> bool:
 	return _portrait != null and _portrait.texture != null
 
 
+## 替换当前肖像纹理；传入 `null` 时隐藏肖像区域。
 func set_portrait(portrait_texture: Texture2D) -> void:
 	_portrait.texture = portrait_texture
 	_portrait_column.visible = _position_mode != 3 and portrait_texture != null
 	_inline_speaker.visible = _position_mode != 3 and portrait_texture == null
 
 
+## 结束对话并清空标题、正文、肖像和逐字状态。
 func hide_dialog() -> void:
 	visible = false
 	if _dialog_panel != null:
@@ -289,5 +300,6 @@ static func _is_speaker_title(text: String) -> bool:
 	return text.ends_with(":") or text.ends_with("：") or text.ends_with("∶")
 
 
+## 从带中文或英文冒号的标题行提取说话人名字。
 static func speaker_name_from_title(text: String) -> String:
 	return text.strip_edges().trim_suffix(":").trim_suffix("：").trim_suffix("∶")

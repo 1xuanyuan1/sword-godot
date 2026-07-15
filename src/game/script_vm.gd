@@ -1,32 +1,55 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal script.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## SDLPal 事件脚本解释器，以异步等待状态执行触发、自动、对话和移动指令。
+## VM 修改注入的 `GameSession` 和事件对象，并用信号请求 UI 或世界层执行副作用。
 class_name ScriptVM
 extends Node
 
+## 每条指令执行前发出，供测试和调试器记录入口、操作码及参数。
 signal instruction_started(index: int, operation: int, operands: PackedInt32Array)
+## 遇到尚未实现的操作码或安全指令上限时发出。
 signal unsupported_instruction(index: int, operation: int)
+## 当前触发脚本结束时发出，`next_entry` 应写回可重复触发入口。
 signal script_finished(next_entry: int)
+## 脚本要求当前场景刷新时发出；延迟单位保留原版语义。
 signal redraw_requested(delay_units: int)
+## 开始一轮对话，携带位置、颜色和 RGM 肖像编号。
 signal dialog_started(position: int, color: int, portrait: int)
+## 输出一条 M.MSG 消息索引。
 signal dialog_message(message_index: int)
+## 原版脚本要求保留对话上下文并切换页面。
 signal dialog_page_break
+## 当前对话上下文结束或 VM 被停止。
 signal dialog_ended
+## 请求音频层切换场景音乐。
 signal music_requested(music_number: int)
+## 请求播放一次音效。
 signal sound_requested(sound_number: int)
+## 请求探索控制器切换到从 0 开始的场景索引。
 signal scene_change_requested(scene_index: int)
+## PLAYERROLES 场景 Sprite 或队伍成员发生变化。
 signal player_sprites_changed
+## 脚本驱动队伍完成一个小步，世界层应同步步态。
 signal party_step_performed
+## 脚本自动行走抵达目标。
 signal party_walk_finished
 
 const MAX_INSTRUCTIONS_PER_RUN := 10000
 
+## 当前 VM 使用的静态脚本和事件数据库。
 var database: PalContentDatabase
+## 当前 VM 修改的游戏会话；格式测试可不提供。
 var session: GameSession
+## 是否正在同步解释指令。
 var running: bool = false
+## 是否等待玩家推进当前对话轮次。
 var waiting_for_dialog: bool = false
+## 是否等待脚本帧计数归零。
 var waiting_for_frames: bool = false
+## 是否正在逐帧把队伍移动到脚本目标。
 var waiting_for_party_walk: bool = false
+## 最近一次条件指令是否成功，供后续分支判断。
 var script_success: bool = true
 
 var _cursor: int = 0
@@ -43,11 +66,16 @@ var _party_walk_target: Vector2i = Vector2i.ZERO
 var _party_walk_speed: int = 0
 
 
+#region Public lifecycle
+
+## 注入内容数据库和可选会话；会话为空时只适合无状态格式测试。
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
 	database = content_database
 	session = game_session
 
 
+## 从指定脚本入口执行一个触发事件。
+## VM 忙碌或入口无效时不修改状态并返回原入口；暂停或结束时返回未来入口。
 func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog:
 		return entry_index
@@ -70,6 +98,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	return _continue_execution()
 
 
+## 结束当前对话等待并从暂停指令继续执行。
 func advance_dialog() -> void:
 	if not waiting_for_dialog:
 		return
@@ -79,6 +108,7 @@ func advance_dialog() -> void:
 	_continue_execution()
 
 
+## 立即清空所有等待、调用栈和对话状态，并发出 `dialog_ended`。
 func stop() -> void:
 	running = false
 	waiting_for_dialog = false
@@ -92,6 +122,8 @@ func stop() -> void:
 	dialog_ended.emit()
 
 
+## 推进一个 10 FPS SDLPal 脚本帧，包括自动脚本、等待和队伍自动行走。
+## 返回本帧是否可能改变世界画面。
 func tick_frame() -> bool:
 	_auto_frame_number += 1
 	# SDLPal pauses scene updates while waiting for a dialog key.
@@ -112,53 +144,67 @@ func tick_frame() -> bool:
 		_continue_execution()
 	return world_changed
 
+#endregion
+
+#region Instruction interpreter
+
 
 func _continue_execution() -> int:
+	# SDLPal 用脚本表索引而不是字节地址跳转；每条普通指令默认前进一项。
 	var executed := 0
 	while running and _cursor > 0 and _cursor < database.scripts.size() and executed < MAX_INSTRUCTIONS_PER_RUN:
 		var entry := database.scripts[_cursor]
 		instruction_started.emit(_cursor, entry.operation, entry.operands)
 		var next_cursor := _cursor + 1
 		match entry.operation:
+			# 停止脚本；触发入口保持在本轮入口，适合可重复事件。
 			0x0000:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				if _return_from_call():
 					continue
 				return _finish(_next_trigger_entry)
+			# 停止脚本，并把下一条指令保存为事件未来的触发入口。
 			0x0001:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				if _return_from_call():
 					continue
 				return _finish(next_cursor)
+			# 停止脚本，并把 operand[0] 指定入口保存为未来触发入口。
 			0x0002:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				if _return_from_call():
 					continue
 				return _finish(entry.operands[0])
+			# 无条件跳转到 operand[0]。
 			0x0003:
 				_cursor = entry.operands[0]
 				continue
+			# 调用子脚本：operand[0] 为入口，operand[1] 为事件编号；0 表示沿用当前事件。
 			0x0004:
 				_call_stack.append({"cursor": next_cursor, "event_object_id": _event_object_id})
 				_cursor = entry.operands[0]
 				_event_object_id = _event_object_id if entry.operands[1] == 0 else entry.operands[1]
 				continue
+			# 清除对话并重绘场景；operand[1] 保留原版重绘延迟单位。
 			0x0005:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				redraw_requested.emit(entry.operands[1])
+			# 将下一条指令设为事件未来入口，但继续执行当前脚本。
 			0x0008:
 				# Keep running, but make the next instruction the event's future trigger entry.
 				_next_trigger_entry = next_cursor
+			# 等待 operand[0] 个脚本帧；0 按 1 帧处理。
 			0x0009:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				return _wait_for_frames(next_cursor, entry.operands[0] if entry.operands[0] > 0 else 1)
+			# 设置当前事件方向和当前帧；对应 operand[0]/operand[1]，0xFFFF 表示不修改。
 			0x000f:
 				var event := _event_by_id(_event_object_id)
 				if event != null:
@@ -166,27 +212,33 @@ func _continue_execution() -> int:
 						event.direction = entry.operands[0]
 					if entry.operands[1] != 0xffff:
 						event.current_frame = entry.operands[1]
+			# 把 operand[0] 事件放到队伍相对位置，operand[1]/operand[2] 为有符号偏移。
 			0x0012:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and session != null:
 					event.position = session.party_world_position() + Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
+			# 把 operand[0] 事件放到绝对世界坐标 operand[1], operand[2]。
 			0x0013:
 				var event := _resolve_event(entry.operands[0])
 				if event != null:
 					event.position = Vector2i(entry.operands[1], entry.operands[2])
+			# 设置当前触发事件的动作帧为 operand[0]，并把方向重置为南。
 			0x0014:
 				var event := _event_by_id(_event_object_id)
 				if event != null:
 					event.current_frame = entry.operands[0]
 					event.direction = GameSession.DIR_SOUTH
+			# 设置队员动作：方向 operand[0]、动作 operand[1]、队员索引 operand[2]。
 			0x0015:
 				if session != null:
 					session.set_party_gesture(entry.operands[0], entry.operands[1], entry.operands[2])
+			# 设置 operand[0] 事件的方向 operand[1] 和当前帧 operand[2]。
 			0x0016:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
 					event.direction = entry.operands[1]
 					event.current_frame = entry.operands[2]
+			# 增减金钱 signed(operand[0])；不足以扣除时跳到 operand[1]。
 			0x001e:
 				if session != null:
 					var cash_delta := _signed_word(entry.operands[0])
@@ -194,10 +246,12 @@ func _continue_execution() -> int:
 						_cursor = entry.operands[1]
 						continue
 					session.cash += cash_delta
+			# 增加物品 operand[0]；数量为 signed(operand[1])，0 在当前实现按 1 处理。
 			0x001f:
 				if session != null:
 					var amount := _signed_word(entry.operands[1])
 					session.change_item_count(entry.operands[0], 1 if amount == 0 else amount)
+			# 移除物品 operand[0]×operand[1]；数量不足时跳到 operand[2]。
 			0x0020:
 				if session != null:
 					var amount := entry.operands[1] if entry.operands[1] > 0 else 1
@@ -205,97 +259,119 @@ func _continue_execution() -> int:
 						_cursor = entry.operands[2]
 						continue
 					session.change_item_count(entry.operands[0], -amount)
+			# 把 operand[0] 事件的自动脚本入口改为 operand[1]。
 			0x0024:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
 					event.auto_script = entry.operands[1]
 					event.auto_script_idle_count = 0
+			# 把 operand[0] 事件的触发脚本入口改为 operand[1]。
 			0x0025:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
 					event.trigger_script = entry.operands[1]
+			# 开始屏幕中央普通对话；operand[0] 为文字颜色。
 			0x003b:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				_dialog_is_toast = _starts_quoted_narration(next_cursor)
 				dialog_started.emit(3 if _dialog_is_toast else 2, entry.operands[0], 0)
+			# 开始上方肖像对话；operand[0] 为 RGM 肖像，operand[1] 为颜色。
 			0x003c:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				_dialog_is_toast = false
 				dialog_started.emit(0, entry.operands[1], entry.operands[0])
+			# 开始下方肖像对话；operand[0] 为 RGM 肖像，operand[1] 为颜色。
 			0x003d:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				_dialog_is_toast = false
 				dialog_started.emit(1, entry.operands[1], entry.operands[0])
+			# 显示中央窗口文字；本项目用于无角色系统 Toast。
 			0x003e:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				_dialog_is_toast = true
 				dialog_started.emit(3, entry.operands[0], 0)
+			# 设置 operand[0] 事件的触发模式为 operand[1]。
 			0x0040:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
 					event.trigger_mode = entry.operands[1]
+			# 切换背景音乐为 operand[0]；播放层通过信号完成实际音频切换。
 			0x0043:
 				if session != null:
 					session.music_number = entry.operands[0]
 				music_requested.emit(entry.operands[0])
+			# 设置下一场战斗的音乐编号为 operand[0]。
 			0x0045:
 				if session != null:
 					session.battle_music_number = entry.operands[0]
+			# 设置队伍地图位置：operand[0]/[1] 为格坐标，operand[2] 为 half。
 			0x0046:
 				if session != null:
 					var world_x := entry.operands[0] * 32 + entry.operands[2] * 16
 					var world_y := entry.operands[1] * 16 + entry.operands[2] * 8
 					session.set_party_world_position(Vector2i(world_x, world_y))
+			# 播放 operand[0] 音效。
 			0x0047:
 				sound_requested.emit(entry.operands[0])
+			# 设置 operand[0] 事件状态为 signed(operand[1])。
 			0x0049:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
 					event.state = _signed_word(entry.operands[1])
+			# 屏幕淡出；当前先请求重绘，完整调色板渐变仍待实现。
 			0x0050:
 				# 场景淡出效果尚未实现；先安全刷新并继续场景切换脚本。
 				redraw_requested.emit(0)
+			# 临时隐藏当前触发事件；operand[0] 为帧数，0 使用原版默认 800。
 			0x0052:
 				var event := _event_by_id(_event_object_id)
 				if event != null:
 					event.state *= -1
 					event.vanish_time = entry.operands[0] if entry.operands[0] > 0 else 800
+			# 切换到当前编号的日间调色板。
 			0x0053:
 				if session != null:
 					session.night_palette = false
+			# 切换到当前编号的夜间调色板。
 			0x0054:
 				if session != null:
 					session.night_palette = true
+			# 切换到 1-based 的 operand[0] 场景，并在下一安全时机载入。
 			0x0059:
 				if session != null and entry.operands[0] > 0 and entry.operands[0] <= database.scenes.size():
 					session.scene_index = entry.operands[0] - 1
 					session.world_layer = 0
 					scene_change_requested.emit(session.scene_index)
+			# 将角色 operand[0] 的普通场景 Sprite 改为 operand[1]。
 			0x0065:
 				if database.player_roles != null and entry.operands[0] < database.player_roles.scene_sprite_numbers.size():
 					database.player_roles.scene_sprite_numbers[entry.operands[0]] = entry.operands[1]
 					player_sprites_changed.emit()
+			# 让 operand[0] 事件移动 signed(operand[1]), signed(operand[2]) 并推进步态。
 			0x006c:
 				var event := _resolve_event(entry.operands[0])
 				if event != null:
 					event.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
 					event.current_frame = (event.current_frame + 1) % maxi(1, event.sprite_frames)
+			# 队伍移动一步：operand[0]/[1] 为世界偏移，operand[2]×8 为逻辑层。
 			0x006e:
 				if session != null:
 					var movement := Vector2i(_signed_word(entry.operands[0]), _signed_word(entry.operands[1]))
 					session.record_party_step(session.party_direction, movement)
 					session.world_layer = entry.operands[2] * 8
 					party_step_performed.emit()
+			# 若 operand[0] 事件状态等于 signed(operand[1])，同步当前触发事件状态。
 			0x006f:
 				var invoking_event := _event_by_id(_event_object_id)
 				var compared_event := _resolve_event(entry.operands[0])
 				var target_state := _signed_word(entry.operands[1])
 				if invoking_event != null and compared_event != null and compared_event.state == target_state:
 					invoking_event.state = target_state
+			# 队伍走到 operand[0]/[1] 格、operand[2] half；0070/007A/007B 速度依次为 2/4/8。
 			0x0070, 0x007a, 0x007b:
 				if session != null:
 					var world_x := entry.operands[0] * 32 + entry.operands[2] * 16
@@ -307,9 +383,11 @@ func _continue_execution() -> int:
 						_cursor = next_cursor
 						waiting_for_party_walk = true
 						return _cursor
+			# 将屏幕渐变到新场景；当前保留重绘时序，视觉渐变仍待实现。
 			0x0073:
 				# The visual fade is still pending; redraw the current scene and preserve script timing.
 				redraw_requested.emit(0)
+			# 用三个 1-based 角色编号重建队伍，零操作数会被跳过。
 			0x0075:
 				if session != null:
 					session.party_roles = PackedInt32Array()
@@ -320,27 +398,33 @@ func _continue_execution() -> int:
 						session.party_roles.append(0)
 					session.clear_party_gestures()
 					player_sprites_changed.emit()
+			# 直接移动 operand[0] 事件，operand[1]/[2] 为有符号世界偏移。
 			0x007d:
 				var event := _resolve_event(entry.operands[0])
 				if event != null:
 					event.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
+			# 设置 operand[0] 事件的逻辑层为 signed(operand[1])。
 			0x007e:
 				var event := _resolve_event(entry.operands[0])
 				if event != null:
 					event.layer = _signed_word(entry.operands[1])
+			# 队伍未面向/接近 operand[0] 事件时跳到 operand[2]；operand[1] 为距离级别。
 			0x0081:
 				if not _is_party_facing_event(entry.operands[0], entry.operands[1]):
 					script_success = false
 					_cursor = entry.operands[2]
 					continue
+			# 恢复场景画面并开启下一页对话，同时保持当前说话人与肖像上下文。
 			0x008e:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				dialog_page_break.emit()
 				redraw_requested.emit(0)
+			# 延迟 operand[0]×80ms；10 FPS VM 换算为相应脚本帧数。
 			0x0085:
 				# SDLPal delays operand × 80 ms; scene scripts advance at 10 FPS here.
 				return _wait_for_frames(next_cursor, maxi(1, ceili(entry.operands[0] * 0.8)))
+			# 输出 M.MSG 的 operand[0] 消息；连续正文会合并成同一轮对话。
 			0xffff:
 				dialog_message.emit(entry.operands[0])
 				_cursor = next_cursor
@@ -359,6 +443,10 @@ func _continue_execution() -> int:
 	if executed >= MAX_INSTRUCTIONS_PER_RUN:
 		unsupported_instruction.emit(_cursor, -1)
 	return _finish(_cursor)
+
+#endregion
+
+#region Wait states and helpers
 
 
 func _return_from_call() -> bool:
@@ -484,11 +572,14 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 		return false
 	var entry := database.scripts[event.auto_script]
 	match entry.operation:
+		# 自动脚本停在当前入口；下一帧仍可重复检查。
 		0x0000:
 			return false
+		# 自动脚本改用下一条入口并结束本帧。
 		0x0001:
 			event.auto_script += 1
 			return false
+		# 带空闲帧计数的“替换入口/跳转”；operand[1] 次后才允许继续下一条。
 		0x0002, 0x0003:
 			if entry.operands[1] == 0 or event.auto_script_idle_count + 1 < entry.operands[1]:
 				event.auto_script_idle_count += 1
@@ -497,21 +588,25 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				event.auto_script_idle_count = 0
 				event.auto_script += 1
 			return false
+		# 同步调用 operand[0] 子脚本；自动脚本不能在这里进入对话等待。
 		0x0004:
 			_run_instant_trigger_script(entry.operands[0], entry.operands[1] if entry.operands[1] > 0 else event.object_id)
 			event.auto_script += 1
 			return true
+		# 自动脚本等待 operand[0] 帧。
 		0x0009:
 			event.auto_script_idle_count += 1
 			if event.auto_script_idle_count >= maxi(1, entry.operands[0]):
 				event.auto_script_idle_count = 0
 				event.auto_script += 1
 			return false
+		# NPC 向南/西/北/东走一步，方向由操作码 000B–000E 决定。
 		0x000b, 0x000c, 0x000d, 0x000e:
 			event.direction = entry.operation - 0x000b
 			_npc_walk_one_step(event, 2)
 			event.auto_script += 1
 			return true
+		# 设置当前自动事件方向和当前帧，0xFFFF 表示不修改。
 		0x000f:
 			if entry.operands[0] != 0xffff:
 				event.direction = entry.operands[0]
@@ -519,11 +614,13 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				event.current_frame = entry.operands[1]
 			event.auto_script += 1
 			return true
+		# NPC 以速度 3 走到 operand[0]/[1] 格、operand[2] half；未到达则停在本入口。
 		0x0010:
 			var reached := _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 3)
 			if reached:
 				event.auto_script += 1
 			return true
+		# NPC 以隔帧速度 2 走到目标；对象编号奇偶用于错开更新。
 		0x0011:
 			if ((event.object_id & 1) ^ (_auto_frame_number & 1)) != 0:
 				var reached := _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 2)
@@ -531,18 +628,21 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 					event.auto_script += 1
 				return true
 			return false
+		# 修改目标事件的触发脚本入口。
 		0x0025:
 			var target := _resolve_auto_event(entry.operands[0], event)
 			if target != null and entry.operands[0] != 0:
 				target.trigger_script = entry.operands[1]
 			event.auto_script += 1
 			return false
+		# 修改目标事件的触发模式。
 		0x0040:
 			var target := _resolve_auto_event(entry.operands[0], event)
 			if target != null and entry.operands[0] != 0:
 				target.trigger_mode = entry.operands[1]
 			event.auto_script += 1
 			return false
+		# 修改目标事件状态。
 		0x0049:
 			if entry.operands[0] != 0:
 				var target := _resolve_auto_event(entry.operands[0], event)
@@ -550,6 +650,7 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 					target.state = _signed_word(entry.operands[1])
 			event.auto_script += 1
 			return true
+		# 当比较事件达到指定状态时，同步当前自动事件状态。
 		0x006f:
 			var compared_event := _resolve_auto_event(entry.operands[0], event)
 			var target_state := _signed_word(entry.operands[1])
@@ -557,6 +658,7 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				event.state = target_state
 			event.auto_script += 1
 			return true
+		# 移动目标事件并推进一帧 NPC 动画。
 		0x006c:
 			var target := _resolve_auto_event(entry.operands[0], event)
 			if target != null:
@@ -575,7 +677,9 @@ func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool
 	while cursor > 0 and cursor < database.scripts.size() and executed < 256:
 		var entry := database.scripts[cursor]
 		var next_cursor := cursor + 1
+		# 即时子脚本只接受不会暂停 UI 的安全操作码；含义与主解释器相同。
 		match entry.operation:
+			# 结束当前即时调用；有调用栈时返回上层。
 			0x0000, 0x0001:
 				if stack.is_empty():
 					return true
@@ -583,15 +687,18 @@ func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool
 				cursor = int(frame["cursor"])
 				current_event_object_id = int(frame["event_object_id"])
 				continue
+			# 无条件跳转。
 			0x0003:
 				cursor = entry.operands[0]
 				continue
+			# 调用另一个即时脚本，并可切换当前事件编号。
 			0x0004:
 				stack.append({"cursor": next_cursor, "event_object_id": current_event_object_id})
 				cursor = entry.operands[0]
 				if entry.operands[1] > 0:
 					current_event_object_id = entry.operands[1]
 				continue
+			# 设置当前事件方向/帧。
 			0x000f:
 				var target := _event_by_id(current_event_object_id)
 				if target != null:
@@ -599,24 +706,29 @@ func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool
 						target.direction = entry.operands[0]
 					if entry.operands[1] != 0xffff:
 						target.current_frame = entry.operands[1]
+			# 设置目标事件绝对位置。
 			0x0013:
 				var target := _instant_target_event(entry.operands[0], current_event_object_id)
 				if target != null:
 					target.position = Vector2i(entry.operands[1], entry.operands[2])
+			# 设置当前事件动作并朝南。
 			0x0014:
 				var target := _event_by_id(current_event_object_id)
 				if target != null:
 					target.current_frame = entry.operands[0]
 					target.direction = GameSession.DIR_SOUTH
+			# 设置目标事件方向和帧。
 			0x0016:
 				var target := _instant_target_event(entry.operands[0], current_event_object_id)
 				if target != null and entry.operands[0] != 0:
 					target.direction = entry.operands[1]
 					target.current_frame = entry.operands[2]
+			# 设置目标事件触发模式。
 			0x0040:
 				var target := _instant_target_event(entry.operands[0], current_event_object_id)
 				if target != null and entry.operands[0] != 0:
 					target.trigger_mode = entry.operands[1]
+			# 设置目标事件状态。
 			0x0049:
 				var target := _instant_target_event(entry.operands[0], current_event_object_id)
 				if target != null and entry.operands[0] != 0:
@@ -675,3 +787,5 @@ static func _signed_word(value: int) -> int:
 static func _is_dialog_title(text: String) -> bool:
 	var content := text.strip_edges()
 	return content.ends_with(":") or content.ends_with("：") or content.ends_with("∶")
+
+#endregion

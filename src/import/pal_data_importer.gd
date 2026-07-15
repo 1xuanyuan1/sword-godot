@@ -1,6 +1,8 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal resource loading and format implementations.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## PAL 本地资源的只读校验与离线转换入口。
+## 只从 `source_dir` 读取，把运行时内容写入被 Git 忽略的 `output_dir`。
 class_name PalDataImporter
 extends RefCounted
 
@@ -17,6 +19,8 @@ const ARCHIVE_FILES: PackedStringArray = [
 ]
 
 
+## 校验必需文件并生成内容数据库、预览、音频和地图资源。
+## 返回报告包含全部错误和警告；原始目录不会被修改。
 static func import_from(source_dir: String, output_dir: String = "res://generated/pal") -> PalImportReport:
 	var report := PalImportReport.new()
 	report.source_directory = source_dir.simplify_path()
@@ -80,6 +84,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	return report
 
 
+## 在 `user://pal_validation` 执行完整校验，避免污染项目正式生成目录。
 static func validate(source_dir: String) -> PalImportReport:
 	return import_from(source_dir, "user://pal_validation")
 

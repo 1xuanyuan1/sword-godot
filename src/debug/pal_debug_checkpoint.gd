@@ -1,11 +1,14 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 剧情测试场景与探索场景之间的一次性内存检查点邮箱。
+## 检查点只修改下一次临时 `GameSession`，不会创建或覆盖正式存档。
 class_name PalDebugCheckpoint
 extends RefCounted
 
 static var _pending: Dictionary = {}
 
 
+## 根据稳定检查点编号准备下一次探索参数；未知编号返回 `false`。
 static func request(checkpoint_id: String) -> bool:
 	match checkpoint_id:
 		"wine_dish_toast":
@@ -22,6 +25,7 @@ static func request(checkpoint_id: String) -> bool:
 	return true
 
 
+## 取走并清空待处理检查点，保证一次请求不会重复应用。
 static func consume() -> Dictionary:
 	var result := _pending.duplicate(true)
 	_pending = {}

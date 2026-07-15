@@ -1,5 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 人工剧情与交互验证入口，只展示尚未完成验收的临时检查点。
+## 已确认问题应移除按钮，并把行为转入 `tests/run_local_*.gd` 自动回归。
 extends Control
 
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")

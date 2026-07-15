@@ -1,5 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 本地生成内容的统一只读入口，负责解析静态结构并缓存 Sprite、肖像和 UI 图像。
+## 玩家位置、背包等可变状态由 `GameSession` 持有，不应写入本数据库。
 class_name PalContentDatabase
 extends RefCounted
 
@@ -9,16 +11,27 @@ const MESSAGE_SPEAKER_ROLE_OVERRIDES: Dictionary = {
 	585: 0, # 李逍遥在客栈密道旁的“嘿嘿．．”
 }
 
+## 当前内容根目录，默认指向被 Git 忽略的本地导入产物。
 var root_path: String = "res://generated/pal/content"
+## 最近一次读取或结构校验失败原因。
 var error_message: String = ""
+## `SSS.MKF` 解析得到的全部剧情场景。
 var scenes: Array[PalSceneDefinition] = []
+## 全局事件对象数组；场景通过起止索引取得自己的区间。
 var event_objects: Array[PalEventObject] = []
+## `ScriptVM` 使用的完整脚本表。
 var scripts: Array[PalScriptEntry] = []
+## DOS OBJECT 表中的物品定义。
 var items: Array[PalItemDefinition] = []
+## 角色肖像、场景 Sprite、名字和步态字段。
 var player_roles: PalPlayerRoles
+## WORD.DAT 解码后的词条。
 var words: Array = []
+## M.MSG 解码后的消息行。
 var messages: Array = []
+## 可选 DESC.DAT 中按对象编号保存的说明。
 var item_descriptions: Dictionary = {}
+## 文本转换器实际识别的源编码。
 var source_encoding: String = ""
 var _mgo_sprites: Dictionary = {}
 var _rgm_portraits: Dictionary = {}
@@ -27,6 +40,8 @@ var _ui_sprite: PalSprite
 var _speaker_portrait_defaults: Dictionary = {}
 
 
+## 从生成目录加载核心结构和文字数据库，并清空旧缓存。
+## 任一必需文件缺失或结构长度错误时返回 `false`，原因写入 `error_message`。
 func load_generated(path: String = "res://generated/pal/content") -> bool:
 	root_path = path
 	error_message = ""
@@ -72,20 +87,24 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	return not scenes.is_empty() and not scripts.is_empty()
 
 
+## 读取并解析指定编号的 64×128 PAL 地图。
 func load_map(map_number: int) -> PalMapData:
 	var bytes := _read_file(root_path.path_join("world/maps/%03d.map" % map_number))
 	return PalMapData.from_bytes(bytes)
 
 
+## 读取指定地图配套的 GOP 图块 Sprite 表。
 func load_map_tiles(map_number: int) -> PalSprite:
 	var bytes := _read_file(root_path.path_join("world/tiles/%03d.gop" % map_number))
 	return PalSprite.from_bytes(bytes)
 
 
+## 读取 256 色 RGB 调色板；`night` 为真时选择同编号的夜间版本。
 func load_palette(index: int = 0, night: bool = false) -> PackedByteArray:
 	return _read_file(root_path.path_join("palettes/%02d_%s.rgb" % [index, "night" if night else "day"]))
 
 
+## 按编号读取并缓存 MGO 场景 Sprite；缺失时返回无效对象。
 func load_mgo_sprite(sprite_number: int) -> PalSprite:
 	if _mgo_sprites.has(sprite_number):
 		return _mgo_sprites[sprite_number]
@@ -96,6 +115,7 @@ func load_mgo_sprite(sprite_number: int) -> PalSprite:
 	return sprite
 
 
+## 按编号读取并缓存 RGM 对话肖像；缺失时返回无效索引图像。
 func load_rgm_portrait(portrait_number: int) -> PalIndexedImage:
 	if _rgm_portraits.has(portrait_number):
 		return _rgm_portraits[portrait_number]
@@ -106,12 +126,14 @@ func load_rgm_portrait(portrait_number: int) -> PalIndexedImage:
 	return portrait
 
 
+## 返回 DATA.MKF 中包含窗口、光标和数字的经典 UI Sprite 表。
 func load_ui_sprite() -> PalSprite:
 	if _ui_sprite == null:
 		_ui_sprite = PalSprite.from_bytes(_read_file(root_path.path_join("data/09.bin")))
 	return _ui_sprite
 
 
+## 按 BALL.MKF 分块编号读取并缓存物品图标。
 func load_item_bitmap(bitmap_number: int) -> PalIndexedImage:
 	if _item_bitmaps.has(bitmap_number):
 		return _item_bitmaps[bitmap_number]
@@ -121,6 +143,7 @@ func load_item_bitmap(bitmap_number: int) -> PalIndexedImage:
 	return image
 
 
+## 返回属于指定场景的事件对象引用；脚本对这些对象的修改会保留在本次会话中。
 func events_for_scene(scene_index: int) -> Array[PalEventObject]:
 	var result: Array[PalEventObject] = []
 	if scene_index < 0 or scene_index >= scenes.size():
@@ -134,31 +157,38 @@ func events_for_scene(scene_index: int) -> Array[PalEventObject]:
 	return result
 
 
+## 返回 WORD 词条，越界时返回空字符串。
 func get_word(index: int) -> String:
 	return str(words[index]) if index >= 0 and index < words.size() else ""
 
 
+## 返回 M.MSG 消息，越界时返回空字符串。
 func get_message(index: int) -> String:
 	return str(messages[index]) if index >= 0 and index < messages.size() else ""
 
 
+## 返回对象说明；当前数据集没有 DESC.DAT 时可能为空。
 func get_item_description(item_id: int) -> String:
 	return str(item_descriptions.get(str(item_id), item_descriptions.get(item_id, "")))
 
 
+## 判断消息是否以成对引号开启无角色剧情叙述。
 func is_quoted_narration_start(index: int) -> bool:
 	# DOS 文本用成对半角引号标记无角色的剧情叙述；续行只在末尾带结束引号。
 	return get_message(index).strip_edges().begins_with("\"")
 
 
+## 返回指定对象编号的物品定义，越界时返回 `null`。
 func item_definition(object_id: int) -> PalItemDefinition:
 	return items[object_id] if object_id >= 0 and object_id < items.size() else null
 
 
+## 返回经人工剧情确认的无标题消息说话角色，未知时为 -1。
 static func speaker_role_for_message(index: int) -> int:
 	return int(MESSAGE_SPEAKER_ROLE_OVERRIDES.get(index, -1))
 
 
+## 返回从原版脚本统计出的说话人默认肖像编号，未知时为 0。
 func portrait_for_speaker(speaker: String) -> int:
 	return int(_speaker_portrait_defaults.get(speaker, 0))
 

@@ -1,9 +1,12 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal ui.c, uigame.c and itemmenu.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 使用原版 UI Sprite、点阵字和物品图标重现经典主菜单与物品页。
+## 菜单读取 `GameSession`，实际物品脚本仍交给探索控制器和 `ScriptVM` 执行。
 class_name PalGameMenu
 extends Control
 
+## 玩家确认使用物品时发出；接收方负责运行脚本并决定是否消耗。
 signal item_use_requested(item_id: int)
 
 enum Page {
@@ -28,8 +31,11 @@ const COLOR_EQUIPPED := 0xc8
 const UI_FRAME_CURSOR := 69
 const UI_FRAME_ITEM_BOX := 70
 
+## 菜单使用的静态文字、UI Sprite 和物品定义。
 var database: PalContentDatabase
+## 菜单读取的队伍、金钱和背包状态。
 var session: GameSession
+## 当前菜单页面。
 var current_page: Page = Page.MAIN
 
 var _main_selection: int = 2
@@ -52,12 +58,14 @@ func _ready() -> void:
 	hide()
 
 
+## 注入内容数据库和会话；调用后菜单仍保持关闭。
 func configure(content_database: PalContentDatabase, game_session: GameSession) -> void:
 	database = content_database
 	session = game_session
 	_load_classic_resources()
 
 
+## 打开经典主菜单并重置选择位置。
 func open_main() -> void:
 	if database == null or session == null:
 		return
@@ -66,6 +74,7 @@ func open_main() -> void:
 	queue_redraw()
 
 
+## 直接打开物品选择页并重建可用物品列表。
 func open_inventory() -> void:
 	if database == null or session == null:
 		return
@@ -73,10 +82,12 @@ func open_inventory() -> void:
 	_open_item_selection()
 
 
+## 关闭整个菜单，返回地图输入。
 func close_menu() -> void:
 	hide()
 
 
+## 返回上一级页面；主菜单上调用时关闭菜单。
 func go_back() -> void:
 	match current_page:
 		Page.INVENTORY:
@@ -298,6 +309,7 @@ func _load_classic_resources() -> void:
 		_font_texture = ImageTexture.create_from_image(atlas_image)
 
 
+## 返回原版 UI Sprite、字库和调色板是否已成功载入。
 func has_classic_resources() -> bool:
 	return _ui_sprite != null and _ui_sprite.is_valid() and _ui_sprite.frame_count() > UI_FRAME_ITEM_BOX and _font_texture != null and not _font_glyphs.is_empty()
 

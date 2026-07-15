@@ -1,16 +1,22 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal sound.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 解码经典 Creative Voice VOC 的 8 位 PCM type 01 数据并封装成 WAV。
+## 当前只覆盖目标 PAL 数据实际使用的格式，其他块会返回明确错误。
 class_name VocDecoder
 extends RefCounted
 
 const SIGNATURE := "Creative Voice File\u001a"
 
+## VOC 头、块类型或 PCM 参数错误。
 var error_message: String = ""
+## 从 VOC 时间常数换算出的采样率。
 var sample_rate: int = 0
+## 无符号 8 位单声道 PCM 样本。
 var samples: PackedByteArray = PackedByteArray()
 
 
+## 解码完整 VOC 文件；不支持或损坏时返回 `false` 并设置错误信息。
 func decode(source: PackedByteArray) -> bool:
 	error_message = ""
 	sample_rate = 0
@@ -51,6 +57,7 @@ func decode(source: PackedByteArray) -> bool:
 	return false
 
 
+## 将已解码样本封装为 RIFF/WAVE 字节；没有有效样本时返回空数组。
 func to_wav() -> PackedByteArray:
 	if samples.is_empty() or sample_rate <= 0:
 		return PackedByteArray()

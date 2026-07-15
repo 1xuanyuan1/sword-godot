@@ -1,5 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 工程主入口的资源实验室，负责选择 Data 目录、调用导入器和导航到各样板。
+## UI 只展示 `PalImportReport`，不会自行解析或发布原版资源。
 extends Control
 
 var _source_path: LineEdit

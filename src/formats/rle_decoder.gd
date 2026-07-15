@@ -1,10 +1,13 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal palcommon.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
+## 解码 PAL RLE 索引图像，完整保留透明跨度和调色板索引。
+## 格式错误不会抛异常，而是返回带 `error_message` 的 `PalIndexedImage`。
 class_name RleDecoder
 extends RefCounted
 
 
+## 解码一帧直接 RLE 数据；支持原版可选的 `02 00 00 00` 前缀。
 static func decode(data: PackedByteArray) -> PalIndexedImage:
 	var result := PalIndexedImage.new()
 	var offset := 0
@@ -50,4 +53,3 @@ static func decode(data: PackedByteArray) -> PalIndexedImage:
 			offset += literal_count
 			cursor += literal_count
 	return result
-
