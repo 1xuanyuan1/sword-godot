@@ -30,6 +30,7 @@ flowchart LR
 | `GameSession` | 当前场景、队伍、位置、轨迹、背包、金钱、调色板 | 解码原版文件、绘制 UI |
 | `ScriptVM` | 当前指令入口、等待原因、自动脚本调度 | 持久化内容、直接绘制画面 |
 | `MapExplorer` | 输入与各模块的编排、当前场景事件引用 | 重新解释资源格式 |
+| `PalMapCoordinates` | 世界像素到菱形 MAP half 的碰撞换算、玩家活动边界 | 读取地图内容、修改队伍位置 |
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
 | UI | 对话、Toast、菜单和资源实验室的显示状态 | 绕过 ScriptVM 修改剧情 |
@@ -82,6 +83,8 @@ sequenceDiagram
 ```
 
 移动和脚本仍使用 PAL 世界像素坐标。TileMapLayer 只是这些数据的 Godot 原生显示投影，不替代 `.map`、场景定义或 ScriptVM 行为基准。
+
+需要判断地图阻挡时，`MapExplorer`、`PalTileMapWorld` 和 `ScriptVM` 不各自推测 half，而是统一调用 `PalMapCoordinates.world_to_tile()`。这样主动移动、TileSet 的 `pal_blocked` 和 NPC 追逐在菱形边缘读取同一条 MAP 记录；坐标越界仍一律视为阻挡。
 
 ## 调色板与像素输出
 

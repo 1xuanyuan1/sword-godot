@@ -107,17 +107,15 @@ func sync_world(session: GameSession, events: Array[PalEventObject]) -> bool:
 func is_map_blocked(world_position: Vector2i) -> bool:
 	if _static_bottom == null or _map_data == null:
 		return true
-	var half := 0 if posmod(world_position.x, 32) == 0 else 1
-	var map_x := floori(world_position.x / 32.0)
-	var map_y := floori(world_position.y / 16.0)
-	if map_x < 0 or map_x >= PalMapData.WIDTH or map_y < 0 or map_y >= PalMapData.HEIGHT:
+	var tile := PalMapCoordinates.world_to_tile(world_position)
+	if not PalMapCoordinates.is_valid_tile(tile):
 		return true
-	var cell := PalTileSetBuilder.pal_half_to_map_cell(map_x, map_y, half)
+	var cell := PalTileSetBuilder.pal_half_to_map_cell(tile.x, tile.y, tile.z)
 	var tile_data := _static_bottom.get_cell_tile_data(cell)
 	if tile_data == null:
 		return true
 	var tilemap_blocked := bool(tile_data.get_custom_data("pal_blocked"))
-	var raw_blocked := PalMapData.is_blocked(_map_data.tile_value(map_x, map_y, half))
+	var raw_blocked := PalMapData.is_blocked(_map_data.tile_value(tile.x, tile.y, tile.z))
 	if tilemap_blocked != raw_blocked and not _reported_block_mismatches.has(cell):
 		_reported_block_mismatches[cell] = true
 		push_warning("TileSet 阻挡与 MAP 不一致：地图 %d，cell %s" % [loaded_map_number, cell])

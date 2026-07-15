@@ -204,6 +204,13 @@ func _test_map_helpers() -> void:
 	_expect(PalMapData.bottom_sprite_index(value) == ((value & 0xff) | ((value >> 4) & 0x100)), "map bottom index")
 	_expect(PalMapData.top_sprite_index(value) == ((((value >> 16) & 0xff) | (((value >> 16) >> 4) & 0x100)) - 1), "map top index")
 	_expect(PalMapData.is_blocked(0x2000), "map blocked flag")
+	_expect(PalMapCoordinates.world_to_tile(Vector2i(0, 0)) == Vector3i(0, 0, 0), "PAL collision maps the north diamond to half 0")
+	_expect(PalMapCoordinates.world_to_tile(Vector2i(16, 8)) == Vector3i(0, 0, 1), "PAL collision maps a half-grid center to half 1")
+	_expect(PalMapCoordinates.world_to_tile(Vector2i(24, 0)) == Vector3i(1, 0, 0), "PAL collision maps the east triangle to the next tile")
+	_expect(PalMapCoordinates.world_to_tile(Vector2i(0, 8)) == Vector3i(0, 1, 0), "PAL collision maps the south triangle to the next row")
+	_expect(PalMapCoordinates.world_to_tile(Vector2i(24, 12)) == Vector3i(1, 1, 0), "PAL collision maps the southeast triangle diagonally")
+	_expect(PalMapCoordinates.is_within_player_walk_range(Vector2i(160, 112)), "party offset is the first valid manual walk coarse tile")
+	_expect(not PalMapCoordinates.is_within_player_walk_range(Vector2i(159, 112)) and not PalMapCoordinates.is_within_player_walk_range(Vector2i(160, 111)), "manual walk range protects the viewport top and left edges")
 
 
 func _test_tileset_builder() -> void:

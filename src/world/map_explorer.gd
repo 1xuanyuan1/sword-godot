@@ -230,12 +230,10 @@ func _try_move(delta: Vector2i) -> bool:
 
 
 func _is_blocked(world_position: Vector2i) -> bool:
-	var half := 0 if posmod(world_position.x, 32) == 0 else 1
-	var tile_x := floori(world_position.x / 32.0)
-	var tile_y := floori(world_position.y / 16.0)
-	if tile_x < 0 or tile_x >= PalMapData.WIDTH or tile_y < 0 or tile_y >= PalMapData.HEIGHT:
+	if not PalMapCoordinates.is_within_player_walk_range(world_position):
 		return true
-	var map_blocked := PalMapData.is_blocked(_map_data.tile_value(tile_x, tile_y, half))
+	var tile := PalMapCoordinates.world_to_tile(world_position)
+	var map_blocked := PalMapData.is_blocked(_map_data.tile_value(tile.x, tile.y, tile.z))
 	if not _use_legacy_renderer and _tile_world != null and _tile_world.loaded_map_number >= 0:
 		map_blocked = _tile_world.is_map_blocked(world_position)
 	if map_blocked:

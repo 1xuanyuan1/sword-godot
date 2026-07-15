@@ -862,12 +862,10 @@ func _monster_chase_player(event: PalEventObject, speed: int, chase_range: int, 
 
 func _npc_position_blocked(world_position: Vector2i, moving_event_id: int) -> bool:
 	if _scene_map_data != null and _scene_map_data.is_valid():
-		var half := 0 if posmod(world_position.x, 32) == 0 else 1
-		var tile_x := floori(world_position.x / 32.0)
-		var tile_y := floori(world_position.y / 16.0)
-		if tile_x < 0 or tile_x >= PalMapData.WIDTH or tile_y < 0 or tile_y >= PalMapData.HEIGHT:
+		var tile := PalMapCoordinates.world_to_tile(world_position)
+		if not PalMapCoordinates.is_valid_tile(tile):
 			return true
-		if PalMapData.is_blocked(_scene_map_data.tile_value(tile_x, tile_y, half)):
+		if PalMapData.is_blocked(_scene_map_data.tile_value(tile.x, tile.y, tile.z)):
 			return true
 	for other in database.events_for_scene(session.scene_index):
 		if other.object_id == moving_event_id or not other.is_visible() or not other.blocks_movement():

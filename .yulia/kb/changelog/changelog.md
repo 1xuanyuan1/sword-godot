@@ -286,3 +286,22 @@ keywords:
   - `docs/SCRIPT_VM.md`
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-018] [refactor] 统一 PAL 菱形地图碰撞坐标
+
+- **关联需求**: M2 等距地图探索
+- **关联 TODO**: TD-002（阶段性）
+- **功能描述**: 新增 `PalMapCoordinates`，按 SDLPal `PAL_CheckObstacleWithRange` 的 32×16 菱形四区规则，把任意世界像素统一映射到 MAP `(x,y,half)`；`MapExplorer` 主动移动、`PalTileMapWorld` TileSet 自定义阻挡和 `ScriptVM` NPC 追逐改用同一换算。玩家主动移动同时恢复固定队伍偏移对应的左上视口边界，脚本和 NPC 路径仍可使用完整地图范围。
+- **验证情况**: 217 项合成测试通过，覆盖 half 0/1、东/南/东南菱形区域和玩家视口边界；223 张导入地图、293 个可玩场景和 221 个唯一地图均可加载，294 个剧情场景自动脚本无未支持指令，开场、黑苗客栈、楼梯、厨房、传送离开和桂花酒流程继续通过。
+- **涉及文件**:
+  - `src/world/pal_map_coordinates.gd`
+  - `src/world/map_explorer.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `src/game/script_vm.gd`
+  - `tests/run_tests.gd`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/SCENE_RENDERING.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`

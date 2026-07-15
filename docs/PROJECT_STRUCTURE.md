@@ -54,7 +54,7 @@ sword/
 
 ### `src/world`
 
-`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排。`PalTileMapWorld` 负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
+`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
 
 ### `src/ui`
 
