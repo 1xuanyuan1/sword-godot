@@ -51,7 +51,7 @@ func _build_interface() -> void:
 	grid.add_theme_constant_override("v_separation", 5)
 	page.add_child(grid)
 
-	_add_checkpoint_button(grid, "厨房入口（待验收）", "kitchen_entry")
+	_add_checkpoint_button(grid, "酒菜描述 Toast（待验收）", "wine_dish_toast")
 	_add_checkpoint_button(grid, "端酒菜给黑苗人", "meal_delivery")
 	_add_checkpoint_button(grid, "醉道士喝桂花酒", "drunken_swordsman")
 	_add_checkpoint_button(grid, "桂花酒物品菜单", "wine_menu")

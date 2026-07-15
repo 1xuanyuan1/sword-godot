@@ -8,16 +8,8 @@ static var _pending: Dictionary = {}
 
 static func request(checkpoint_id: String) -> bool:
 	match checkpoint_id:
-		"kitchen_entry":
-			_pending = {
-				"id": checkpoint_id,
-				"scene": 2,
-				"script": 4631,
-				"event": 52,
-				"position": Vector2i(1456, 1400),
-				"scene_enter_scripts": {0: 8145},
-				"hint": "自动穿过厨房入口；应进入厨房且不重播开场"
-			}
+		"wine_dish_toast":
+			_pending = {"id": checkpoint_id, "scene": 0, "script": 4995, "event": 21, "position": Vector2i(656, 1144), "hint": "酒菜环境描述应显示为居中 Toast"}
 		"meal_delivery":
 			_pending = {"id": checkpoint_id, "scene": 0, "script": 4885, "event": 16, "position": Vector2i(1248, 1040), "player_sprite": 208}
 		"drunken_swordsman":

@@ -217,8 +217,8 @@ func _continue_execution() -> int:
 			0x003b:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
-				_dialog_is_toast = false
-				dialog_started.emit(2, entry.operands[0], 0)
+				_dialog_is_toast = _starts_quoted_narration(next_cursor)
+				dialog_started.emit(3 if _dialog_is_toast else 2, entry.operands[0], 0)
 			0x003c:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
@@ -346,7 +346,7 @@ func _continue_execution() -> int:
 				_cursor = next_cursor
 				if not _is_dialog_title(database.get_message(entry.operands[0])):
 					_dialog_has_body = true
-					if _dialog_is_toast:
+					if _dialog_is_toast and not _is_dialog_message_entry(next_cursor):
 						return _wait_for_frames(next_cursor, 14, true)
 				executed += 1
 				continue
@@ -388,6 +388,16 @@ func _pause_at_dialog_boundary() -> int:
 	running = false
 	waiting_for_dialog = true
 	return _cursor
+
+
+func _starts_quoted_narration(entry_index: int) -> bool:
+	if not _is_dialog_message_entry(entry_index):
+		return false
+	return database.is_quoted_narration_start(database.scripts[entry_index].operands[0])
+
+
+func _is_dialog_message_entry(entry_index: int) -> bool:
+	return database != null and entry_index > 0 and entry_index < database.scripts.size() and database.scripts[entry_index].operation == 0xffff
 
 
 func _tick_party_walk() -> bool:

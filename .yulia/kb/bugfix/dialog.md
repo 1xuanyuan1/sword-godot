@@ -26,3 +26,22 @@ keywords:
   - `tests/run_local_inn_conversation_test.gd`
 - **修复内容**: 增加统一的角色标题显示入口。隐式新一轮对话先重置真实 UI 状态，再按玩家角色或角色历史统计恢复回退立绘；分页仍保留当前角色上下文。新增隐藏后恢复立绘的合成测试及消息 606–607 的真实资源回归。
 - **状态**: ✅ 已修复
+
+---
+
+### [BF-004] 无角色剧情叙述误用大型中央对话框
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M2–M3 主线对话流程
+- **问题描述**: 原版 `0x003B` 同时承载普通中央对白和用成对引号标记的无角色剧情叙述。Godot 版此前统一映射为大型交互式中央对话框，导致“桌上摆着酒菜”和“李逍遥把桂花酒收在怀里”等系统叙述遮挡画面并要求按键推进。
+- **涉及文件**:
+  - `src/content/pal_content_database.gd`
+  - `src/game/script_vm.gd`
+  - `src/debug/pal_debug_checkpoint.gd`
+  - `src/debug/story_test_lab.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_meal_and_wine_test.gd`
+  - `README.md`
+  - `docs/SCRIPT_VM.md`
+- **修复内容**: 增加统一的引号剧情叙述识别规则；`0x003B` 的引号叙述改用与“获得 500 文”一致的居中黑底白字 Toast，连续消息先合并为一轮再自动关闭，未加引号的普通中央对白仍保持交互式显示。厨房入口检查点在用户确认后移除，剧情测试改为保留酒菜 Toast 和桂花酒流程入口。
+- **状态**: ✅ 已修复

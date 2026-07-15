@@ -121,6 +121,11 @@ func get_message(index: int) -> String:
 	return str(messages[index]) if index >= 0 and index < messages.size() else ""
 
 
+func is_quoted_narration_start(index: int) -> bool:
+	# DOS 文本用成对半角引号标记无角色的剧情叙述；续行只在末尾带结束引号。
+	return get_message(index).strip_edges().begins_with("\"")
+
+
 func item_definition(object_id: int) -> PalItemDefinition:
 	return items[object_id] if object_id >= 0 and object_id < items.size() else null
 

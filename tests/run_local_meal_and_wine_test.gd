@@ -17,12 +17,31 @@ func _init() -> void:
 	var vm := ScriptVM.new()
 	vm.configure(database, session)
 	var messages: Array[int] = []
+	var dialog_starts: Array[int] = []
+	var current_dialog_position: Array[int] = [-1]
+	var message_positions: Dictionary = {}
 	var unsupported: Array[String] = []
 	var walk_steps: Array[int] = []
-	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.dialog_started.connect(func(position: int, _color: int, _portrait: int) -> void:
+		current_dialog_position[0] = position
+		dialog_starts.append(position)
+	)
+	vm.dialog_message.connect(func(index: int) -> void:
+		messages.append(index)
+		message_positions[index] = current_dialog_position[0]
+	)
 	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
 	vm.party_step_performed.connect(func() -> void: walk_steps.append(1))
 
+	vm.run_trigger(4995, 21)
+	_drive_script(vm)
+	if messages != [718, 719] or dialog_starts != [3]:
+		_fail("酒菜环境描述没有合并成一个系统 Toast：消息 %s，位置 %s" % [messages, dialog_starts], vm)
+		return
+
+	messages.clear()
+	dialog_starts.clear()
+	message_positions.clear()
 	vm.run_trigger(4885, 16)
 	_drive_script(vm)
 	var expected_delivery: Array[int] = []
@@ -33,6 +52,9 @@ func _init() -> void:
 		return
 	if messages != expected_delivery:
 		_fail("端酒菜对话不完整：%s" % messages, vm)
+		return
+	if message_positions.get(692, -1) != 3:
+		_fail("收起桂花酒的系统叙述没有使用 Toast：%s" % message_positions.get(692, -1), vm)
 		return
 	if session.party_world_position() != Vector2i(1312, 1072) or walk_steps.size() != 16:
 		_fail("端酒菜强制走位不完整：位置 %s，步数 %d" % [session.party_world_position(), walk_steps.size()], vm)
@@ -68,7 +90,7 @@ func _init() -> void:
 	if session.item_count(272) != 0 or database.event_objects[62].state != 0:
 		_fail("醉道士喝酒后物品或人物状态没有正确收尾", vm)
 		return
-	print("PASS: 端酒菜消息 674–692、16 步走位、菜单使用桂花酒与醉道士消息 751–789 均完成")
+	print("PASS: 酒菜描述 718–719 与收酒消息 692 使用 Toast；端酒菜、菜单用酒及醉道士流程均完成")
 	vm.free()
 	quit(0)
 

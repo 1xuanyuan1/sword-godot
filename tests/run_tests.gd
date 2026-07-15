@@ -37,6 +37,7 @@ func _init() -> void:
 	_test_script_vm_inn_conversation_operations()
 	_test_script_vm_inventory_and_party_walk()
 	_test_script_vm_center_toast()
+	_test_script_vm_quoted_narration_toast()
 	_test_explorer_scene_enter_persistence()
 	_test_debug_checkpoints()
 	_test_game_menu_inventory()
@@ -615,6 +616,35 @@ func _test_script_vm_center_toast() -> void:
 	vm.free()
 
 
+func _test_script_vm_quoted_narration_toast() -> void:
+	var database := PalContentDatabase.new()
+	database.messages = ["\"桌上摆着一份丰盛的酒菜", "嗯～看起来很好吃的样子\"", "普通中央对白"]
+	for operation in [0, 0x003b, 0xffff, 0xffff, 0, 0x003b, 0xffff, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[2].operands[0] = 0
+	database.scripts[3].operands[0] = 1
+	database.scripts[6].operands[0] = 2
+	var positions: Array[int] = []
+	var messages: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database)
+	vm.dialog_started.connect(func(position: int, _color: int, _portrait: int) -> void: positions.append(position))
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.run_trigger(1)
+	_expect(positions == [3] and messages == [0, 1], "quoted center narration uses one toast round and keeps consecutive lines together")
+	_expect(vm.waiting_for_frames and not vm.waiting_for_dialog, "quoted narration toast closes on a timer without dialog input")
+	for frame in range(14):
+		vm.tick_frame()
+	positions.clear()
+	messages.clear()
+	vm.run_trigger(5)
+	_expect(positions == [2] and messages == [2] and vm.waiting_for_dialog, "unquoted center dialog keeps the normal interactive presentation")
+	vm.free()
+
+
 func _test_explorer_scene_enter_persistence() -> void:
 	var database := PalContentDatabase.new()
 	for operation in [0, 1, 0]:
@@ -643,17 +673,16 @@ func _test_explorer_scene_enter_persistence() -> void:
 
 
 func _test_debug_checkpoints() -> void:
-	_expect(DebugCheckpoint.request("kitchen_entry"), "current kitchen checkpoint is accepted")
+	_expect(DebugCheckpoint.request("wine_dish_toast"), "current wine dish toast checkpoint is accepted")
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
-	_expect(checkpoint.get("scene") == 2 and checkpoint.get("script") == 4631 and checkpoint.get("event") == 52, "kitchen checkpoint runs the original portal script")
-	_expect(checkpoint.get("scene_enter_scripts", {}).get(0) == 8145, "kitchen checkpoint restores the completed intro entry")
+	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4995 and checkpoint.get("event") == 21, "wine dish checkpoint runs the original table narration")
 	_expect(DebugCheckpoint.request("meal_delivery"), "meal delivery checkpoint is accepted")
 	checkpoint = DebugCheckpoint.consume()
 	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4885 and checkpoint.get("player_sprite") == 208, "meal delivery checkpoint restores carrying state")
 	_expect(DebugCheckpoint.request("drunken_swordsman"), "drunken swordsman checkpoint is accepted")
 	checkpoint = DebugCheckpoint.consume()
 	_expect(checkpoint.get("script") == 5079 and checkpoint.get("inventory", {}).get(272) == 1, "drunken swordsman checkpoint restores osmanthus wine")
-	_expect(not DebugCheckpoint.request("miao_inn") and not DebugCheckpoint.request("stairs"), "completed non-wine manual checkpoints are archived from the test lab")
+	_expect(not DebugCheckpoint.request("kitchen_entry") and not DebugCheckpoint.request("stairs"), "completed non-wine manual checkpoints are archived from the test lab")
 	_expect(DebugCheckpoint.consume().is_empty() and not DebugCheckpoint.request("missing"), "debug story checkpoint is consumed once and rejects unknown ids")
 
 
