@@ -7,6 +7,7 @@ var _status: RichTextLabel
 var _details: Tree
 var _preview: TextureRect
 var _import_button: Button
+var _explore_button: Button
 var _dialog: FileDialog
 
 
@@ -64,6 +65,12 @@ func _build_interface() -> void:
 	_import_button.pressed.connect(_run_import)
 	picker.add_child(_import_button)
 
+	_explore_button = Button.new()
+	_explore_button.text = "探索样板"
+	_explore_button.disabled = true
+	_explore_button.pressed.connect(_open_explorer)
+	picker.add_child(_explore_button)
+
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	split.split_offset = 205
@@ -108,7 +115,9 @@ func _build_interface() -> void:
 
 
 func _show_idle_state() -> void:
-	_status.text = "[color=#93c5fd]等待资源目录。[/color] 本仓库不会复制或上传原版数据。"
+	var has_generated_content := FileAccess.file_exists("res://generated/pal/content/core/scenes.bin")
+	_explore_button.disabled = not has_generated_content
+	_status.text = "[color=#93c5fd]%s[/color] 本仓库不会复制或上传原版数据。" % ("已发现本地生成内容，可以打开探索样板。" if has_generated_content else "等待资源目录。")
 	var root := _details.create_item()
 	var item := _details.create_item(root)
 	item.set_text(0, "尚未校验")
@@ -139,7 +148,7 @@ func _show_report(report: PalImportReport) -> void:
 	_details.clear()
 	var root := _details.create_item()
 	for file_name: String in report.files.keys():
-		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "voc_conversion"]:
+		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "voc_conversion", "content_database", "text_conversion"]:
 			continue
 		var metadata: Dictionary = report.files[file_name]
 		var item := _details.create_item(root)
@@ -155,6 +164,7 @@ func _show_report(report: PalImportReport) -> void:
 		lines.append("[color=#fde68a]提示：%s[/color]" % warning)
 	if report.success:
 		lines.append("本地清单：%s" % report.manifest_path)
+		_explore_button.disabled = false
 	_status.text = "\n".join(lines)
 
 	_preview.texture = null
@@ -162,6 +172,10 @@ func _show_report(report: PalImportReport) -> void:
 		var image := Image.load_from_file(report.preview_path)
 		if not image.is_empty():
 			_preview.texture = ImageTexture.create_from_image(image)
+
+
+func _open_explorer() -> void:
+	get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
 
 
 func _format_size(bytes: int) -> String:

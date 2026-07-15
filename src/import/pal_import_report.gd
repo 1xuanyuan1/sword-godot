@@ -11,6 +11,7 @@ var warnings: Array[String] = []
 var files: Dictionary = {}
 var preview_path: String = ""
 var manifest_path: String = ""
+var source_edition: String = "DOS PAL candidate"
 
 
 func summary() -> String:
@@ -22,10 +23,9 @@ func summary() -> String:
 func to_dictionary() -> Dictionary:
 	return {
 		"format_version": 1,
-		"source_edition": "DOS Simplified Chinese candidate",
+		"source_edition": source_edition,
 		"source_directory": source_directory,
 		"generated_at_utc": Time.get_datetime_string_from_system(true),
 		"files": files,
 		"warnings": warnings,
 	}
-

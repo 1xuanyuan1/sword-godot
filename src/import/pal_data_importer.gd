@@ -64,6 +64,8 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 		return report
 
 	_generate_palette_previews(files_by_lowercase["pat.mkf"], absolute_output, report)
+	_generate_content_database(files_by_lowercase, absolute_output, report)
+	_convert_text_and_font(files_by_lowercase, absolute_output, report)
 	_generate_fbp_preview(files_by_lowercase["fbp.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_sprite_preview(files_by_lowercase["ball.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_map_preview(files_by_lowercase["map.mkf"], files_by_lowercase["gop.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
@@ -107,6 +109,98 @@ static func _generate_palette_previews(palette_path: String, absolute_output: St
 		if chunk.size() >= PaletteDecoder.PALETTE_BYTES * 2:
 			var night_path := palette_dir.path_join("palette_%02d_night.png" % index)
 			PaletteDecoder.to_strip_image(PaletteDecoder.decode_rgb(chunk, true)).save_png(night_path)
+
+
+static func _generate_content_database(files_by_lowercase: Dictionary, absolute_output: String, report: PalImportReport) -> void:
+	var content_root := absolute_output.path_join("content")
+	var core_dir := content_root.path_join("core")
+	var data_dir := content_root.path_join("data")
+	var map_dir := content_root.path_join("world/maps")
+	var tile_dir := content_root.path_join("world/tiles")
+	var palette_dir := content_root.path_join("palettes")
+	for path in [core_dir, data_dir, map_dir, tile_dir, palette_dir]:
+		DirAccess.make_dir_recursive_absolute(path)
+
+	var sss := MkfArchive.load_file(files_by_lowercase["sss.mkf"])
+	var core_names := ["event_objects.bin", "scenes.bin", "objects_dos.bin", "message_offsets.bin", "scripts.bin"]
+	for index in range(mini(core_names.size(), sss.chunk_count())):
+		if not _write_bytes(core_dir.path_join(core_names[index]), sss.get_chunk(index)):
+			report.errors.append("无法写入核心数据：%s" % core_names[index])
+
+	var data_archive := MkfArchive.load_file(files_by_lowercase["data.mkf"])
+	for index in range(data_archive.chunk_count()):
+		if not _write_bytes(data_dir.path_join("%02d.bin" % index), data_archive.get_chunk(index)):
+			report.errors.append("无法写入 DATA.MKF 分块 %d" % index)
+
+	var palette_archive := MkfArchive.load_file(files_by_lowercase["pat.mkf"])
+	for index in range(palette_archive.chunk_count()):
+		var chunk := palette_archive.get_chunk(index)
+		var day := PaletteDecoder.decode_rgb(chunk, false)
+		if not day.is_empty():
+			_write_bytes(palette_dir.path_join("%02d_day.rgb" % index), day)
+		if chunk.size() >= PaletteDecoder.PALETTE_BYTES * 2:
+			_write_bytes(palette_dir.path_join("%02d_night.rgb" % index), PaletteDecoder.decode_rgb(chunk, true))
+
+	var map_archive := MkfArchive.load_file(files_by_lowercase["map.mkf"])
+	var gop_archive := MkfArchive.load_file(files_by_lowercase["gop.mkf"])
+	var imported_maps := 0
+	for index in range(1, mini(map_archive.chunk_count(), gop_archive.chunk_count())):
+		var compressed := map_archive.get_chunk(index)
+		var tiles := gop_archive.get_chunk(index)
+		if compressed.is_empty() or tiles.is_empty():
+			continue
+		var decoder := Yj1Decoder.new()
+		var map_bytes := decoder.decompress(compressed, PalMapData.BYTE_SIZE)
+		if map_bytes.size() != PalMapData.BYTE_SIZE:
+			report.warnings.append("地图 %d 解压失败：%s" % [index, decoder.error_message])
+			continue
+		if _write_bytes(map_dir.path_join("%03d.map" % index), map_bytes) and _write_bytes(tile_dir.path_join("%03d.gop" % index), tiles):
+			imported_maps += 1
+	report.files["content_database"] = {
+		"scenes": sss.chunk_size(1) / PalSceneDefinition.BYTE_SIZE,
+		"events": sss.chunk_size(0) / PalEventObject.BYTE_SIZE,
+		"scripts": sss.chunk_size(4) / PalScriptEntry.BYTE_SIZE,
+		"maps": imported_maps,
+		"output": content_root,
+	}
+
+
+static func _convert_text_and_font(files_by_lowercase: Dictionary, absolute_output: String, report: PalImportReport) -> void:
+	var output_dir := absolute_output.path_join("content/text")
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	var helper := ProjectSettings.globalize_path("res://tools/pal_text_convert.py")
+	var offsets := absolute_output.path_join("content/core/message_offsets.bin")
+	var arguments := [
+		helper,
+		"--word", files_by_lowercase["word.dat"],
+		"--message", files_by_lowercase["m.msg"],
+		"--offsets", offsets,
+		"--font", files_by_lowercase["wor16.fon"],
+		"--characters", files_by_lowercase["wor16.asc"],
+		"--output", output_dir,
+	]
+	var output: Array = []
+	var exit_code := -1
+	var command_used := ""
+	for command in ["python3", "python", "py"]:
+		output.clear()
+		exit_code = OS.execute(command, arguments, output, true)
+		if exit_code == 0:
+			command_used = command
+			break
+	if exit_code != 0:
+		report.warnings.append("文本/字库转换辅助工具失败；需要 Python 3：%s" % "\n".join(output))
+		return
+	var metadata: Dictionary = {}
+	if not output.is_empty():
+		var parsed = JSON.parse_string(str(output[-1]).strip_edges())
+		if parsed is Dictionary:
+			metadata = parsed
+	metadata["helper"] = command_used
+	metadata["output"] = output_dir
+	report.files["text_conversion"] = metadata
+	var encoding := str(metadata.get("encoding", "unknown"))
+	report.source_edition = "DOS Traditional Chinese (CP950/Big5)" if encoding == "cp950" else "DOS Simplified Chinese (GBK/GB18030)"
 
 
 static func _generate_fbp_preview(fbp_path: String, palette_path: String, absolute_output: String, report: PalImportReport) -> void:
@@ -216,3 +310,11 @@ static func _write_manifest(absolute_output: String, report: PalImportReport) ->
 		return
 	file.store_string(JSON.stringify(report.to_dictionary(), "  ", false))
 	report.manifest_path = path
+
+
+static func _write_bytes(path: String, data: PackedByteArray) -> bool:
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		return false
+	file.store_buffer(data)
+	return true

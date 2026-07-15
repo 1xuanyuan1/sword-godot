@@ -11,6 +11,8 @@ The behavior and data-format reference is a separate, read-only sibling checkout
 
 The older `/Users/xuanyuan/Documents/godotwork/sdlpal` snapshot is retained only for historical and executable-behavior comparison.
 
+The local integration data was initially assumed to be Simplified Chinese, but byte-level detection and decoded labels identify it as the DOS Traditional Chinese CP950/Big5 edition. The importer records this detected edition in its ignored manifest.
+
 ## Update policy
 
 Upstream is not updated automatically. A new SDLPal revision must be reviewed manually, with behavior changes and relevant source mappings recorded here before the pin changes. The Godot port targets SDLPal's default classic battle path (`ENABLE_REVISIED_BATTLE` disabled).
@@ -28,4 +30,3 @@ Upstream is not updated automatically. A new SDLPal revision must be reviewed ma
 | Classic battle loop | `battle.c`, `fight.c`, `uibattle.c` |
 | Text/code pages/font | `text.c`, `font.c`, `codepage.h` |
 | RIX/VOC audio | `rixplay.cpp`, `sound.c`, `adplug/` |
-

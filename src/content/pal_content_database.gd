@@ -1,0 +1,96 @@
+# Copyright (C) 2026 sword-godot contributors
+# SPDX-License-Identifier: GPL-3.0-or-later
+class_name PalContentDatabase
+extends RefCounted
+
+var root_path: String = "res://generated/pal/content"
+var error_message: String = ""
+var scenes: Array[PalSceneDefinition] = []
+var event_objects: Array[PalEventObject] = []
+var scripts: Array[PalScriptEntry] = []
+var words: Array = []
+var messages: Array = []
+var source_encoding: String = ""
+
+
+func load_generated(path: String = "res://generated/pal/content") -> bool:
+	root_path = path
+	error_message = ""
+	scenes.clear()
+	event_objects.clear()
+	scripts.clear()
+	words.clear()
+	messages.clear()
+	var core := root_path.path_join("core")
+	var event_bytes := _read_file(core.path_join("event_objects.bin"))
+	var scene_bytes := _read_file(core.path_join("scenes.bin"))
+	var script_bytes := _read_file(core.path_join("scripts.bin"))
+	if not error_message.is_empty():
+		return false
+	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0:
+		error_message = "生成数据库的结构长度不匹配"
+		return false
+	for offset in range(0, event_bytes.size(), PalEventObject.BYTE_SIZE):
+		event_objects.append(PalEventObject.from_bytes(event_bytes, offset))
+	for offset in range(0, scene_bytes.size(), PalSceneDefinition.BYTE_SIZE):
+		scenes.append(PalSceneDefinition.from_bytes(scene_bytes, offset))
+	for offset in range(0, script_bytes.size(), PalScriptEntry.BYTE_SIZE):
+		scripts.append(PalScriptEntry.from_bytes(script_bytes, offset))
+	_load_text_database()
+	return not scenes.is_empty() and not scripts.is_empty()
+
+
+func load_map(map_number: int) -> PalMapData:
+	var bytes := _read_file(root_path.path_join("world/maps/%03d.map" % map_number))
+	return PalMapData.from_bytes(bytes)
+
+
+func load_map_tiles(map_number: int) -> PalSprite:
+	var bytes := _read_file(root_path.path_join("world/tiles/%03d.gop" % map_number))
+	return PalSprite.from_bytes(bytes)
+
+
+func load_palette(index: int = 0, night: bool = false) -> PackedByteArray:
+	return _read_file(root_path.path_join("palettes/%02d_%s.rgb" % [index, "night" if night else "day"]))
+
+
+func events_for_scene(scene_index: int) -> Array[PalEventObject]:
+	var result: Array[PalEventObject] = []
+	if scene_index < 0 or scene_index >= scenes.size():
+		return result
+	var start := scenes[scene_index].event_object_index
+	var finish := event_objects.size()
+	if scene_index + 1 < scenes.size():
+		finish = scenes[scene_index + 1].event_object_index
+	for index in range(start, mini(finish, event_objects.size())):
+		result.append(event_objects[index])
+	return result
+
+
+func get_word(index: int) -> String:
+	return str(words[index]) if index >= 0 and index < words.size() else ""
+
+
+func get_message(index: int) -> String:
+	return str(messages[index]) if index >= 0 and index < messages.size() else ""
+
+
+func _load_text_database() -> void:
+	var path := root_path.path_join("text/text.json")
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return
+	var parsed = JSON.parse_string(file.get_as_text())
+	if parsed is not Dictionary:
+		return
+	source_encoding = str(parsed.get("encoding", ""))
+	words = parsed.get("words", [])
+	messages = parsed.get("messages", [])
+
+
+func _read_file(path: String) -> PackedByteArray:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		error_message = "无法读取生成资源：%s" % path
+		return PackedByteArray()
+	return file.get_buffer(file.get_length())

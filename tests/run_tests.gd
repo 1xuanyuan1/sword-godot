@@ -16,6 +16,8 @@ func _init() -> void:
 	_test_palette_decoder()
 	_test_map_helpers()
 	_test_voc_decoder()
+	_test_content_structures()
+	_test_script_vm_foundation()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
 		quit(0)
@@ -134,3 +136,33 @@ func _test_voc_decoder() -> void:
 	var wav := decoder.to_wav()
 	_expect(wav.slice(0, 4).get_string_from_ascii() == "RIFF", "VOC WAV RIFF header")
 	_expect(wav.size() == 48, "VOC WAV padded length")
+
+
+func _test_content_structures() -> void:
+	var scene_bytes := PackedByteArray([12, 0, 0x10, 0, 0x20, 0, 3, 0])
+	var scene := PalSceneDefinition.from_bytes(scene_bytes, 0)
+	_expect(scene != null and scene.map_number == 12, "scene map parsing")
+	_expect(scene.script_on_enter == 0x10 and scene.event_object_index == 3, "scene script/index parsing")
+	var script_bytes := PackedByteArray([0x46, 0, 41, 0, 18, 0, 0, 0])
+	var script := PalScriptEntry.from_bytes(script_bytes, 0)
+	_expect(script != null and script.operation == 0x46, "script operation parsing")
+	_expect(script.operands == PackedInt32Array([41, 18, 0]), "script operand parsing")
+
+
+func _test_script_vm_foundation() -> void:
+	var database := PalContentDatabase.new()
+	database.scripts.append(PalScriptEntry.new()) # Entry zero is unused by PAL trigger scripts.
+	var set_position := PalScriptEntry.new()
+	set_position.operation = 0x46
+	set_position.operands = PackedInt32Array([41, 18, 0])
+	database.scripts.append(set_position)
+	var stop := PalScriptEntry.new()
+	stop.operation = 0
+	stop.operands = PackedInt32Array([0, 0, 0])
+	database.scripts.append(stop)
+	var session := GameSession.new()
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.run_trigger(1)
+	_expect(session.viewport_position == Vector2i(1152, 176), "script VM party position opcode")
+	vm.free()

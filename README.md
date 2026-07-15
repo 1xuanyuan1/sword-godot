@@ -19,13 +19,13 @@
 - M3–M4：菜单、物品、存档和经典回合制战斗。
 - M5：完整流程、音画、桌面导出和通关回归。
 
-当前可启动资源实验室，选择本机合法取得的 `Data` 目录后执行只读校验和本地导入。生成内容位于 `res://generated/pal/`，已被 Git 忽略。
+当前可启动资源实验室，选择本机合法取得的 `Data` 目录后执行只读校验和本地导入。生成内容位于 `res://generated/pal/`，已被 Git 忽略。导入完成后可进入地图探索样板：它已经读取首场景、双层地图、事件对象和部分场景进入脚本，并支持方向键移动、阻挡检查与事件查看。
 
 ## 开发环境
 
 - Godot 4.7（标准版，类型化 GDScript）
 - 默认逻辑画布 320×200，窗口 960×600，最近邻采样
-- 首阶段目标：DOS 简体中文版、macOS/Windows、经典回合制、新版 Godot 存档
+- 首阶段目标：当前资源实际识别出的 DOS 繁体中文版（CP950/Big5）、macOS/Windows、经典回合制、新版 Godot 存档
 
 运行项目：
 
@@ -49,4 +49,3 @@
 ## 许可证
 
 项目代码采用 GNU General Public License v3.0。移植或改写自 SDLPal 的部分保留对应版权声明和出处。参见 [LICENSE](LICENSE)、[THIRD_PARTY.md](THIRD_PARTY.md) 与 [docs/UPSTREAM.md](docs/UPSTREAM.md)。
-
