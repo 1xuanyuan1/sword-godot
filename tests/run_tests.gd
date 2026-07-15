@@ -31,6 +31,7 @@ func _init() -> void:
 	_test_script_vm_title_and_body()
 	_test_script_vm_dialog_page_break()
 	_test_script_vm_frame_delay_and_auto_walk()
+	_test_script_vm_inn_conversation_operations()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -440,6 +441,40 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	gesture_vm.tick_frame()
 	_expect(gesture_session.scripted_party_frame(0) == 0 and not gesture_vm.running, "script VM advances to the next party gesture after its delay")
 	gesture_vm.free()
+
+
+func _test_script_vm_inn_conversation_operations() -> void:
+	var database := PalContentDatabase.new()
+	database.scripts.append(PalScriptEntry.new())
+	for operation in [0x0085, 0x0024, 0x0025, 0x001e, 0x0000, 0x0000, 0x0000, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands[0] = 4
+	database.scripts[2].operands = PackedInt32Array([2, 6, 0])
+	database.scripts[3].operands = PackedInt32Array([2, 7, 0])
+	database.scripts[4].operands[0] = 500
+	var scene := PalSceneDefinition.new()
+	scene.event_object_index = 0
+	database.scenes.append(scene)
+	for object_id in range(1, 3):
+		var event := PalEventObject.new()
+		event.object_id = object_id
+		event.state = 2
+		database.event_objects.append(event)
+	var session := GameSession.new()
+	session.scene_index = 0
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.run_trigger(1, 1)
+	_expect(vm.waiting_for_frames, "opcode 0085 starts a timed script delay")
+	for frame in range(4):
+		vm.tick_frame()
+	var target := database.event_objects[1]
+	_expect(not vm.running and target.auto_script == 6 and target.trigger_script == 7, "opcodes 0024 and 0025 update event scripts")
+	_expect(session.cash == 500, "opcode 001E updates party cash")
+	vm.free()
 
 
 func _test_dialog_box_typewriter() -> void:

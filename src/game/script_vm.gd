@@ -131,10 +131,7 @@ func _continue_execution() -> int:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
-				_cursor = next_cursor
-				_frames_remaining = entry.operands[0] if entry.operands[0] > 0 else 1
-				waiting_for_frames = true
-				return _cursor
+				return _wait_for_frames(next_cursor, entry.operands[0] if entry.operands[0] > 0 else 1)
 			0x000f:
 				var event := _event_by_id(_event_object_id)
 				if event != null:
@@ -163,6 +160,22 @@ func _continue_execution() -> int:
 				if event != null and entry.operands[0] != 0:
 					event.direction = entry.operands[1]
 					event.current_frame = entry.operands[2]
+			0x001e:
+				if session != null:
+					var cash_delta := _signed_word(entry.operands[0])
+					if cash_delta < 0 and session.cash < -cash_delta and entry.operands[1] > 0:
+						_cursor = entry.operands[1]
+						continue
+					session.cash += cash_delta
+			0x0024:
+				var event := _resolve_event(entry.operands[0])
+				if event != null and entry.operands[0] != 0:
+					event.auto_script = entry.operands[1]
+					event.auto_script_idle_count = 0
+			0x0025:
+				var event := _resolve_event(entry.operands[0])
+				if event != null and entry.operands[0] != 0:
+					event.trigger_script = entry.operands[1]
 			0x003b:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
@@ -259,6 +272,9 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_page_break.emit()
 				redraw_requested.emit(0)
+			0x0085:
+				# SDLPal delays operand × 80 ms; scene scripts advance at 10 FPS here.
+				return _wait_for_frames(next_cursor, maxi(1, ceili(entry.operands[0] * 0.8)))
 			0xffff:
 				dialog_message.emit(entry.operands[0])
 				_cursor = next_cursor
@@ -300,6 +316,13 @@ func _finish(next_entry: int) -> int:
 func _pause_at_dialog_boundary() -> int:
 	running = false
 	waiting_for_dialog = true
+	return _cursor
+
+
+func _wait_for_frames(next_cursor: int, frame_count: int) -> int:
+	_cursor = next_cursor
+	_frames_remaining = maxi(1, frame_count)
+	waiting_for_frames = true
 	return _cursor
 
 
@@ -370,6 +393,18 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				if reached:
 					event.auto_script += 1
 				return true
+			return false
+		0x0025:
+			var target := _resolve_auto_event(entry.operands[0], event)
+			if target != null and entry.operands[0] != 0:
+				target.trigger_script = entry.operands[1]
+			event.auto_script += 1
+			return false
+		0x0040:
+			var target := _resolve_auto_event(entry.operands[0], event)
+			if target != null and entry.operands[0] != 0:
+				target.trigger_mode = entry.operands[1]
+			event.auto_script += 1
 			return false
 		0x0049:
 			if entry.operands[0] != 0:
