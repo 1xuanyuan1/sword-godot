@@ -1,0 +1,28 @@
+; Engine configuration file.
+; Edit through the Godot editor when possible.
+
+config_version=5
+
+[application]
+
+config/name="Sword Godot Study Port"
+config/description="A non-official GPL-3.0 study port inspired by SDLPal"
+run/main_scene="res://scenes/main.tscn"
+
+[display]
+
+[display/window]
+
+size/viewport_width=320
+size/viewport_height=200
+size/window_width_override=960
+size/window_height_override=600
+stretch/mode="canvas_items"
+stretch/aspect="keep"
+
+[rendering]
+
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+textures/canvas_textures/default_texture_filter=0
+

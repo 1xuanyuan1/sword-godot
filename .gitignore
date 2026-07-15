@@ -1,0 +1,23 @@
+# Godot generated state
+.godot/
+
+# Operating-system and editor files
+.DS_Store
+*.swp
+*.tmp
+
+# Exports and local logs
+builds/
+logs/
+
+# Original PAL game data and all derivatives are proprietary and local-only.
+Data/
+data/
+local_data/
+generated/
+*.rpg
+
+# Native helper build products
+tools/rix_renderer/build/
+tools/rix_renderer/out/
+
