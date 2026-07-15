@@ -29,6 +29,7 @@ func _init() -> void:
 	_test_script_vm_foundation()
 	_test_script_vm_dialog_pause()
 	_test_script_vm_title_and_body()
+	_test_script_vm_dialog_page_break()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -216,13 +217,16 @@ func _test_content_structures() -> void:
 func _test_player_roles_structure() -> void:
 	var role_bytes := PackedByteArray()
 	role_bytes.resize(PalPlayerRoles.BYTE_SIZE)
+	role_bytes[PalPlayerRoles.AVATAR_WORD_OFFSET * 2] = 11
 	var sprite_offset := PalPlayerRoles.SCENE_SPRITE_WORD_OFFSET * 2
 	role_bytes[sprite_offset] = 2
 	role_bytes[sprite_offset + 2] = 7
+	role_bytes[PalPlayerRoles.NAME_WORD_OFFSET * 2] = 36
 	var walk_offset := PalPlayerRoles.WALK_FRAMES_WORD_OFFSET * 2
 	role_bytes[walk_offset] = 4
 	var roles := PalPlayerRoles.from_bytes(role_bytes)
 	_expect(roles.is_valid(), "PLAYERROLES structure length")
+	_expect(roles.avatar_for(0) == 11 and roles.name_word_for(0) == 36, "PLAYERROLES avatar and name word")
 	_expect(roles.scene_sprite_for(0) == 2 and roles.scene_sprite_for(1) == 7, "PLAYERROLES scene sprite numbers")
 	_expect(roles.walk_frame_count_for(0) == 4 and roles.walk_frame_count_for(1) == 3, "PLAYERROLES walk frame fallback")
 
@@ -346,6 +350,34 @@ func _test_script_vm_title_and_body() -> void:
 	vm.free()
 
 
+func _test_script_vm_dialog_page_break() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x003d, 0xffff, 0xffff, 0x008e, 0xffff, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.messages.resize(15)
+	database.messages[12] = "李大娘："
+	database.messages[13] = "上一页"
+	database.messages[14] = "下一页"
+	database.scripts[2].operands[0] = 12
+	database.scripts[3].operands[0] = 13
+	database.scripts[5].operands[0] = 14
+	var messages: Array[int] = []
+	var page_breaks: Array[int] = [0]
+	var vm := ScriptVM.new()
+	vm.configure(database)
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.dialog_page_break.connect(func() -> void: page_breaks[0] += 1)
+	vm.run_trigger(1)
+	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM pauses before a dialog page break")
+	vm.advance_dialog()
+	_expect(vm.waiting_for_dialog and page_breaks[0] == 1 and messages == [12, 13, 14], "script VM continues dialog after a page break")
+	vm.advance_dialog()
+	vm.free()
+
+
 func _test_dialog_box_typewriter() -> void:
 	var dialog := PalDialogBox.new()
 	dialog._ready()
@@ -361,4 +393,10 @@ func _test_dialog_box_typewriter() -> void:
 	_expect(dialog.is_typing() and dialog._message.visible_characters > 0, "dialog body reveals characters progressively")
 	dialog.reveal_all()
 	_expect(not dialog.is_typing() and dialog._message.visible_characters == dialog._full_text.length(), "dialog reveal shows the whole current round")
+	var portrait := GradientTexture2D.new()
+	dialog.begin(1, 0, portrait)
+	dialog.show_message("李大娘：")
+	dialog.show_message("上一页")
+	dialog.next_page()
+	_expect(dialog.has_portrait() and dialog._speaker.text == "李大娘" and dialog._full_text.is_empty(), "dialog page break preserves speaker context")
 	dialog.free()

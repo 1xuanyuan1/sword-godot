@@ -10,6 +10,7 @@ signal script_finished(next_entry: int)
 signal redraw_requested(delay_units: int)
 signal dialog_started(position: int, color: int, portrait: int)
 signal dialog_message(message_index: int)
+signal dialog_page_break
 signal dialog_ended
 signal music_requested(music_number: int)
 signal sound_requested(sound_number: int)
@@ -228,7 +229,7 @@ func _continue_execution() -> int:
 			0x008e:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
-				dialog_ended.emit()
+				dialog_page_break.emit()
 				redraw_requested.emit(0)
 			0xffff:
 				dialog_message.emit(entry.operands[0])

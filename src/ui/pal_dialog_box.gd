@@ -88,8 +88,28 @@ func reveal_all() -> void:
 	_set_visible_characters(_full_text.length())
 
 
+func next_page() -> void:
+	if not visible:
+		return
+	_reset_body()
+
+
+func has_portrait() -> bool:
+	return _portrait != null and _portrait.texture != null
+
+
+func set_portrait(portrait_texture: Texture2D) -> void:
+	_portrait.texture = portrait_texture
+	_portrait_column.visible = portrait_texture != null
+	_inline_speaker.visible = portrait_texture == null
+
+
 func hide_dialog() -> void:
 	visible = false
+	_reset_body()
+
+
+func _reset_body() -> void:
 	_full_text = ""
 	_visible_characters = 0
 	_typing_progress = 0.0
@@ -213,3 +233,7 @@ func _set_visible_characters(count: int) -> void:
 
 static func _is_speaker_title(text: String) -> bool:
 	return text.ends_with(":") or text.ends_with("：") or text.ends_with("∶")
+
+
+static func speaker_name_from_title(text: String) -> String:
+	return text.strip_edges().trim_suffix(":").trim_suffix("：").trim_suffix("∶")

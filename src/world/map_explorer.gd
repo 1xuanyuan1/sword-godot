@@ -34,6 +34,7 @@ func _ready() -> void:
 	_script_vm.redraw_requested.connect(_on_script_redraw)
 	_script_vm.dialog_started.connect(_on_dialog_started)
 	_script_vm.dialog_message.connect(_on_dialog_message)
+	_script_vm.dialog_page_break.connect(_on_dialog_page_break)
 	_script_vm.dialog_ended.connect(_on_dialog_ended)
 	_script_vm.scene_change_requested.connect(_on_scene_change_requested)
 	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
@@ -293,21 +294,44 @@ func _on_script_redraw(_delay_units: int) -> void:
 
 func _on_dialog_message(message_index: int) -> void:
 	var message := _database.get_message(message_index)
-	_dialog_box.show_message(message if not message.is_empty() else "（文本未导入）")
+	var displayed_message := message if not message.is_empty() else "（文本未导入）"
+	if PalDialogBox._is_speaker_title(displayed_message) and not _dialog_box.has_portrait():
+		var speaker := PalDialogBox.speaker_name_from_title(displayed_message)
+		var fallback_portrait := _portrait_number_for_player(speaker)
+		if fallback_portrait > 0:
+			_dialog_box.set_portrait(_load_portrait_texture(fallback_portrait))
+	_dialog_box.show_message(displayed_message)
 
 
 func _on_dialog_started(position: int, color: int, portrait: int) -> void:
-	var portrait_texture: Texture2D
-	if portrait > 0:
-		var portrait_image := _database.load_rgm_portrait(portrait)
-		var palette := _database.load_palette(_session.palette_index, _session.night_palette)
-		if portrait_image.is_valid() and not palette.is_empty():
-			portrait_texture = ImageTexture.create_from_image(portrait_image.to_rgba_image(palette))
-	_dialog_box.begin(position, color, portrait_texture)
+	_dialog_box.begin(position, color, _load_portrait_texture(portrait))
+
+
+func _on_dialog_page_break() -> void:
+	_dialog_box.next_page()
 
 
 func _on_dialog_ended() -> void:
 	_dialog_box.hide_dialog()
+
+
+func _portrait_number_for_player(speaker: String) -> int:
+	if _database.player_roles == null:
+		return 0
+	for role_index in range(PalPlayerRoles.ROLE_COUNT):
+		if _database.get_word(_database.player_roles.name_word_for(role_index)) == speaker:
+			return _database.player_roles.avatar_for(role_index)
+	return 0
+
+
+func _load_portrait_texture(portrait_number: int) -> Texture2D:
+	if portrait_number <= 0:
+		return null
+	var portrait_image := _database.load_rgm_portrait(portrait_number)
+	var palette := _database.load_palette(_session.palette_index, _session.night_palette)
+	if not portrait_image.is_valid() or palette.is_empty():
+		return null
+	return ImageTexture.create_from_image(portrait_image.to_rgba_image(palette))
 
 
 func _on_scene_change_requested(scene_index: int) -> void:
