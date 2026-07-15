@@ -112,3 +112,19 @@ keywords:
   - `src/debug/story_test_lab.gd`
   - `tests/run_tests.gd`
   - `tests/run_local_meal_and_wine_test.gd`
+
+---
+
+### [FT-008] [refactor] 按官方 SDLPal 重做菜单与物品页
+
+- **关联需求**: M3 菜单与物品系统
+- **关联 TODO**: TD-003（阶段性）
+- **功能描述**: 移除现代整屏面板和大按钮，按官方 `PAL_InGameMenu`、`PAL_InventoryMenu` 与 `PAL_ItemSelectMenu` 的 320×200 坐标重做主菜单、装备／使用子菜单和 3×7 物品选择页。运行时解码本地 `DATA.MKF #9` 原版窗口、光标和数字 Sprite，使用原版点阵字库及调色板颜色，并从 `BALL.MKF` 显示选中物品图标；原版资源继续隔离在 `generated/`。状态、仙术、系统和装备功能仍按后续里程碑实现。
+- **涉及文件**:
+  - `src/ui/pal_game_menu.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/import/pal_data_importer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `README.md`
+  - `docs/CLASSIC_UI.md`

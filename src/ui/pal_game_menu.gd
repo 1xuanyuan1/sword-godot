@@ -1,4 +1,5 @@
 # Copyright (C) 2026 sword-godot contributors
+# Adapted from SDLPal ui.c, uigame.c and itemmenu.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
 class_name PalGameMenu
 extends Control
@@ -7,42 +8,69 @@ signal item_use_requested(item_id: int)
 
 enum Page {
 	MAIN,
+	INVENTORY_ACTION,
 	INVENTORY,
 }
+
+const MAIN_MENU_POSITION := Vector2i(3, 37)
+const MAIN_ITEM_POSITIONS := [Vector2i(16, 50), Vector2i(16, 68), Vector2i(16, 86), Vector2i(16, 104)]
+const INVENTORY_ACTION_POSITION := Vector2i(30, 60)
+const INVENTORY_COLUMNS := 3
+const INVENTORY_ROWS := 7
+const INVENTORY_ITEM_WIDTH := 100
+const INVENTORY_ROW_HEIGHT := 18
+const COLOR_NORMAL := 0x4f
+const COLOR_INACTIVE := 0x18
+const COLOR_CONFIRMED := 0x2c
+const COLOR_SELECTED_INACTIVE := 0x1c
+const COLOR_SELECTED_FIRST := 0xf9
+const COLOR_EQUIPPED := 0xc8
+const UI_FRAME_CURSOR := 69
+const UI_FRAME_ITEM_BOX := 70
 
 var database: PalContentDatabase
 var session: GameSession
 var current_page: Page = Page.MAIN
 
-var _panel: PanelContainer
-var _content: VBoxContainer
-var _hint: Label
+var _main_selection: int = 2
+var _action_selection: int = 1
+var _inventory_selection: int = 0
+var _inventory_return_page: Page = Page.MAIN
+var _inventory_ids: Array[int] = []
+var _last_feedback: String = ""
+var _ui_sprite: PalSprite
+var _palette: PackedByteArray = PackedByteArray()
+var _ui_textures: Dictionary = {}
+var _item_textures: Dictionary = {}
+var _font_texture: Texture2D
+var _font_glyphs: Dictionary = {}
 
 
 func _ready() -> void:
-	_build_shell()
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	set_process(true)
 	hide()
 
 
 func configure(content_database: PalContentDatabase, game_session: GameSession) -> void:
 	database = content_database
 	session = game_session
+	_load_classic_resources()
 
 
 func open_main() -> void:
 	if database == null or session == null:
 		return
-	show()
 	current_page = Page.MAIN
-	_show_main_page()
+	show()
+	queue_redraw()
 
 
 func open_inventory() -> void:
 	if database == null or session == null:
 		return
-	show()
-	current_page = Page.INVENTORY
-	_show_inventory_page()
+	_inventory_return_page = Page.MAIN
+	_open_item_selection()
 
 
 func close_menu() -> void:
@@ -50,164 +78,323 @@ func close_menu() -> void:
 
 
 func go_back() -> void:
-	if current_page == Page.INVENTORY:
-		current_page = Page.MAIN
-		_show_main_page()
-	else:
-		close_menu()
+	match current_page:
+		Page.INVENTORY:
+			current_page = _inventory_return_page
+			queue_redraw()
+		Page.INVENTORY_ACTION:
+			current_page = Page.MAIN
+			queue_redraw()
+		_:
+			close_menu()
 
 
-func _unhandled_key_input(event: InputEvent) -> void:
+func _input(event: InputEvent) -> void:
 	if not visible or not event.is_pressed() or event.is_echo() or event is not InputEventKey:
 		return
-	if event.keycode in [KEY_ESCAPE, KEY_M, KEY_TAB]:
-		go_back()
+	var handled := true
+	match event.keycode:
+		KEY_ESCAPE, KEY_M, KEY_TAB:
+			go_back()
+		KEY_UP:
+			_move_selection(Vector2i(0, -1))
+		KEY_DOWN:
+			_move_selection(Vector2i(0, 1))
+		KEY_LEFT:
+			_move_selection(Vector2i(-1, 0))
+		KEY_RIGHT:
+			_move_selection(Vector2i(1, 0))
+		KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
+			_confirm_selection()
+		_:
+			handled = false
+	if handled:
 		get_viewport().set_input_as_handled()
 
 
-func _build_shell() -> void:
-	mouse_filter = Control.MOUSE_FILTER_STOP
-	var dim := ColorRect.new()
-	dim.color = Color(0.0, 0.0, 0.0, 0.58)
-	dim.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(dim)
-
-	_panel = PanelContainer.new()
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color("101827")
-	panel_style.border_color = Color("c4a96a")
-	panel_style.set_border_width_all(2)
-	panel_style.corner_radius_top_left = 2
-	panel_style.corner_radius_top_right = 2
-	panel_style.corner_radius_bottom_left = 2
-	panel_style.corner_radius_bottom_right = 2
-	panel_style.content_margin_left = 8
-	panel_style.content_margin_top = 7
-	panel_style.content_margin_right = 8
-	panel_style.content_margin_bottom = 7
-	_panel.add_theme_stylebox_override("panel", panel_style)
-	add_child(_panel)
-
-	_content = VBoxContainer.new()
-	_content.add_theme_constant_override("separation", 4)
-	_panel.add_child(_content)
-
-
-func _show_main_page() -> void:
-	_prepare_page(Rect2(8, 28, 120, 152))
-	_add_title("菜单")
-	_add_info("金钱　%d 文" % session.cash, Color("fde68a"))
-	_add_placeholder_button("状态")
-	_add_placeholder_button("法术")
-	var inventory_button := _add_button("物品", open_inventory)
-	_add_placeholder_button("系统")
-	_hint = _add_info("方向键选择　空格确认　Esc关闭", Color("94a3b8"), 7)
-	inventory_button.call_deferred("grab_focus")
+func _gui_input(event: InputEvent) -> void:
+	if not visible or event is not InputEventMouseButton or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	var point := Vector2i(event.position)
+	match current_page:
+		Page.MAIN:
+			for index in range(MAIN_ITEM_POSITIONS.size()):
+				if Rect2i(MAIN_ITEM_POSITIONS[index] - Vector2i(3, 2), Vector2i(46, 18)).has_point(point):
+					_main_selection = index
+					_confirm_selection()
+					break
+		Page.INVENTORY_ACTION:
+			for index in range(2):
+				if Rect2i(Vector2i(43, 73 + 18 * index) - Vector2i(3, 2), Vector2i(46, 18)).has_point(point):
+					_action_selection = index
+					_confirm_selection()
+					break
+		Page.INVENTORY:
+			var start := _inventory_page_start()
+			for slot in range(mini(INVENTORY_COLUMNS * INVENTORY_ROWS, _inventory_ids.size() - start)):
+				var cell := Rect2i(Vector2i(12 + slot % INVENTORY_COLUMNS * INVENTORY_ITEM_WIDTH, 8 + slot / INVENTORY_COLUMNS * INVENTORY_ROW_HEIGHT), Vector2i(96, 18))
+				if cell.has_point(point):
+					_inventory_selection = start + slot
+					_confirm_selection()
+					break
+	accept_event()
+	queue_redraw()
 
 
-func _show_inventory_page() -> void:
-	_prepare_page(Rect2(22, 14, 276, 172))
-	_add_title("物品")
-	_hint = _add_info("选择物品使用；Esc 返回", Color("94a3b8"), 8)
+func _process(_delta: float) -> void:
+	if visible:
+		queue_redraw()
 
-	var scroll := ScrollContainer.new()
-	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_content.add_child(scroll)
-	var list := VBoxContainer.new()
-	list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	list.add_theme_constant_override("separation", 2)
-	scroll.add_child(list)
 
-	var item_ids: Array[int] = []
+func _draw() -> void:
+	if not visible or database == null or session == null:
+		return
+	match current_page:
+		Page.MAIN:
+			_draw_main_menu()
+		Page.INVENTORY_ACTION:
+			_draw_main_menu()
+			_draw_inventory_action()
+		Page.INVENTORY:
+			_draw_inventory_page()
+
+
+func _draw_main_menu() -> void:
+	_draw_single_line_box(Vector2i.ZERO, 5, 6)
+	_draw_pal_text(database.get_word(21), Vector2i(10, 10), _palette_color(COLOR_NORMAL))
+	_draw_number(session.cash, 6, Vector2i(49, 14), 19)
+	_draw_classic_box(MAIN_MENU_POSITION, 3, 1, 0, 6)
+	for index in range(4):
+		var enabled := index == 2
+		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
+		if index == _main_selection:
+			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
+		_draw_pal_text(database.get_word(3 + index), MAIN_ITEM_POSITIONS[index], _palette_color(color_index), true)
+
+
+func _draw_inventory_action() -> void:
+	_draw_classic_box(INVENTORY_ACTION_POSITION, 1, 1, 0, 6)
+	for index in range(2):
+		var enabled := index == 1
+		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
+		if index == _action_selection:
+			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
+		_draw_pal_text(database.get_word(22 + index), Vector2i(43, 73 + 18 * index), _palette_color(color_index), true)
+
+
+func _draw_inventory_page() -> void:
+	_draw_classic_box(Vector2i(2, 0), INVENTORY_ROWS - 1, 17, 1, 0)
+	if _inventory_ids.is_empty():
+		return
+	var start := _inventory_page_start()
+	var cursor_position := Vector2i(40, 22)
+	for slot in range(mini(INVENTORY_COLUMNS * INVENTORY_ROWS, _inventory_ids.size() - start)):
+		var inventory_index := start + slot
+		var item_id := _inventory_ids[inventory_index]
+		var column := slot % INVENTORY_COLUMNS
+		var row := slot / INVENTORY_COLUMNS
+		var item := database.item_definition(item_id)
+		var enabled := item != null and item.is_usable() and item.applies_to_all()
+		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
+		if inventory_index == _inventory_selection:
+			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
+			cursor_position = Vector2i(40 + column * INVENTORY_ITEM_WIDTH, 22 + row * INVENTORY_ROW_HEIGHT)
+		var name := database.get_word(item_id)
+		_draw_pal_text(name, Vector2i(15 + column * INVENTORY_ITEM_WIDTH, 12 + row * INVENTORY_ROW_HEIGHT), _palette_color(color_index), true)
+		var amount := session.item_count(item_id)
+		if amount > 1:
+			_draw_number(amount, 2, Vector2i(96 + column * INVENTORY_ITEM_WIDTH, 17 + row * INVENTORY_ROW_HEIGHT), 56)
+	_draw_ui_frame(UI_FRAME_CURSOR, cursor_position)
+	_draw_ui_frame(UI_FRAME_ITEM_BOX, Vector2i(5, 145), Color(0, 0, 0, 0.7))
+	_draw_ui_frame(UI_FRAME_ITEM_BOX, Vector2i(0, 140))
+	var selected_item := database.item_definition(_inventory_ids[_inventory_selection])
+	if selected_item != null:
+		_draw_item_bitmap(selected_item.bitmap, Vector2i(8, 147))
+
+
+func _move_selection(direction: Vector2i) -> void:
+	match current_page:
+		Page.MAIN:
+			_main_selection = posmod(_main_selection + (direction.y if direction.y != 0 else direction.x), 4)
+		Page.INVENTORY_ACTION:
+			_action_selection = posmod(_action_selection + (direction.y if direction.y != 0 else direction.x), 2)
+		Page.INVENTORY:
+			if _inventory_ids.is_empty():
+				return
+			var delta := direction.x if direction.x != 0 else direction.y * INVENTORY_COLUMNS
+			_inventory_selection = clampi(_inventory_selection + delta, 0, _inventory_ids.size() - 1)
+	queue_redraw()
+
+
+func _confirm_selection() -> void:
+	match current_page:
+		Page.MAIN:
+			if _main_selection == 2:
+				current_page = Page.INVENTORY_ACTION
+				_action_selection = 1
+		Page.INVENTORY_ACTION:
+			if _action_selection == 1:
+				_inventory_return_page = Page.INVENTORY_ACTION
+				_open_item_selection()
+		Page.INVENTORY:
+			if not _inventory_ids.is_empty():
+				var item_id := _inventory_ids[_inventory_selection]
+				_request_item_use(item_id, database.item_definition(item_id))
+	queue_redraw()
+
+
+func _open_item_selection() -> void:
+	_refresh_inventory()
+	current_page = Page.INVENTORY
+	show()
+	queue_redraw()
+
+
+func _refresh_inventory() -> void:
+	_inventory_ids.clear()
 	for raw_id in session.inventory:
 		var item_id := int(raw_id)
 		if session.item_count(item_id) > 0:
-			item_ids.append(item_id)
-	item_ids.sort()
-	var first_button: Button
-	for item_id in item_ids:
-		var item := database.item_definition(item_id)
-		var item_name := database.get_word(item_id)
-		if item_name.is_empty():
-			item_name = "物品 %d" % item_id
-		var button := Button.new()
-		button.text = "%s　×%d" % [item_name, session.item_count(item_id)]
-		button.alignment = HORIZONTAL_ALIGNMENT_LEFT
-		button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		button.add_theme_font_size_override("font_size", 10)
-		_apply_compact_button_style(button)
-		button.pressed.connect(_request_item_use.bind(item_id, item))
-		list.add_child(button)
-		if first_button == null:
-			first_button = button
-	if first_button == null:
-		_add_info("背包里还没有物品。", Color("e2e8f0"), 10, list)
-	else:
-		first_button.call_deferred("grab_focus")
-	_add_button("返回", go_back)
+			_inventory_ids.append(item_id)
+	_inventory_ids.sort()
+	_inventory_selection = clampi(_inventory_selection, 0, maxi(0, _inventory_ids.size() - 1))
+
+
+func _inventory_page_start() -> int:
+	var start := int(_inventory_selection / INVENTORY_COLUMNS) * INVENTORY_COLUMNS - INVENTORY_COLUMNS * 4
+	return maxi(0, start)
 
 
 func _request_item_use(item_id: int, item: PalItemDefinition) -> void:
 	if item == null or not item.is_usable():
-		_hint.text = "这个物品目前不能使用。"
+		_last_feedback = "这个物品目前不能使用。"
 		return
 	if not item.applies_to_all():
-		_hint.text = "需要选择角色的物品将在下一阶段开放。"
+		_last_feedback = "这个物品需要先选择角色。"
 		return
 	item_use_requested.emit(item_id)
 
 
-func _add_placeholder_button(label: String) -> Button:
-	return _add_button(label + "（后续）", func() -> void: _hint.text = "%s系统将在后续里程碑补齐。" % label)
+func _load_classic_resources() -> void:
+	_ui_sprite = database.load_ui_sprite()
+	_palette = database.load_palette(session.palette_index, session.night_palette)
+	_ui_textures.clear()
+	_item_textures.clear()
+	_font_glyphs.clear()
+	var metadata_path := database.root_path.path_join("text/font_glyphs.json")
+	var metadata_file := FileAccess.open(metadata_path, FileAccess.READ)
+	if metadata_file != null:
+		var parsed = JSON.parse_string(metadata_file.get_as_text())
+		if parsed is Dictionary:
+			_font_glyphs = parsed.get("glyphs", {})
+	var atlas_path := ProjectSettings.globalize_path(database.root_path.path_join("text/font_atlas.png"))
+	var atlas_image := Image.load_from_file(atlas_path)
+	if not atlas_image.is_empty():
+		_font_texture = ImageTexture.create_from_image(atlas_image)
 
 
-func _add_button(label: String, callback: Callable, parent: Control = null) -> Button:
-	var button := Button.new()
-	button.text = label
-	button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	button.add_theme_font_size_override("font_size", 9)
-	_apply_compact_button_style(button)
-	button.pressed.connect(callback)
-	(parent if parent != null else _content).add_child(button)
-	return button
+func has_classic_resources() -> bool:
+	return _ui_sprite != null and _ui_sprite.is_valid() and _ui_sprite.frame_count() > UI_FRAME_ITEM_BOX and _font_texture != null and not _font_glyphs.is_empty()
 
 
-func _add_title(text: String) -> Label:
-	return _add_info(text, Color("fbbf24"), 13)
+func _draw_classic_box(position: Vector2i, rows: int, columns: int, style: int, shadow_offset: int) -> void:
+	if _ui_sprite == null or not _ui_sprite.is_valid():
+		var size := Vector2i(45 + columns * 16, 40 + rows * 18)
+		draw_rect(Rect2i(position, size), Color(0.04, 0.06, 0.16, 0.96))
+		draw_rect(Rect2i(position, size), Color("b49a58"), false, 1.0)
+		return
+	var y := position.y
+	for row in range(rows + 2):
+		var frame_row := 0 if row == 0 else (2 if row == rows + 1 else 1)
+		var x := position.x
+		var row_height := 0
+		for column in range(columns + 2):
+			var frame_column := 0 if column == 0 else (2 if column == columns + 1 else 1)
+			var texture := _ui_texture(style * 9 + frame_row * 3 + frame_column)
+			if texture == null:
+				continue
+			if shadow_offset > 0:
+				draw_texture(texture, Vector2(x + shadow_offset, y + shadow_offset), Color(0, 0, 0, 0.72))
+			draw_texture(texture, Vector2(x, y))
+			x += texture.get_width()
+			row_height = maxi(row_height, texture.get_height())
+		y += row_height
 
 
-func _add_info(text: String, color: Color, font_size: int = 9, parent: Control = null) -> Label:
-	var label := Label.new()
-	label.text = text
-	label.add_theme_color_override("font_color", color)
-	label.add_theme_font_size_override("font_size", font_size)
-	(parent if parent != null else _content).add_child(label)
-	return label
+func _draw_single_line_box(position: Vector2i, length: int, shadow_offset: int) -> void:
+	var x := position.x
+	for part in range(length + 2):
+		var frame := 44 if part == 0 else (46 if part == length + 1 else 45)
+		var texture := _ui_texture(frame)
+		if texture == null:
+			continue
+		if shadow_offset > 0:
+			draw_texture(texture, Vector2(x + shadow_offset, position.y + shadow_offset), Color(0, 0, 0, 0.72))
+		draw_texture(texture, Vector2(x, position.y))
+		x += texture.get_width()
 
 
-func _apply_compact_button_style(button: Button) -> void:
-	button.custom_minimum_size.y = 18
-	var colors := {
-		"normal": Color("172033"),
-		"hover": Color("26344d"),
-		"pressed": Color("3b4b68"),
-		"focus": Color("26344d"),
-	}
-	for state in colors:
-		var style := StyleBoxFlat.new()
-		style.bg_color = colors[state]
-		style.border_color = Color("6f86a8") if state == "focus" else Color("334155")
-		style.set_border_width_all(1)
-		style.content_margin_left = 5
-		style.content_margin_top = 1
-		style.content_margin_right = 5
-		style.content_margin_bottom = 1
-		button.add_theme_stylebox_override(state, style)
+func _draw_ui_frame(frame_index: int, position: Vector2i, modulate: Color = Color.WHITE) -> void:
+	var texture := _ui_texture(frame_index)
+	if texture != null:
+		draw_texture(texture, Vector2(position), modulate)
 
 
-func _prepare_page(bounds: Rect2) -> void:
-	for child in _content.get_children():
-		_content.remove_child(child)
-		child.queue_free()
-	_panel.position = bounds.position
-	_panel.size = bounds.size
+func _draw_item_bitmap(bitmap_number: int, position: Vector2i) -> void:
+	if not _item_textures.has(bitmap_number):
+		var indexed := database.load_item_bitmap(bitmap_number)
+		_item_textures[bitmap_number] = ImageTexture.create_from_image(indexed.to_rgba_image(_palette)) if indexed.is_valid() and not _palette.is_empty() else null
+	var texture: Texture2D = _item_textures.get(bitmap_number)
+	if texture != null:
+		draw_texture(texture, Vector2(position))
+
+
+func _ui_texture(frame_index: int) -> Texture2D:
+	if _ui_textures.has(frame_index):
+		return _ui_textures[frame_index]
+	if _ui_sprite == null or not _ui_sprite.is_valid() or frame_index < 0 or frame_index >= _ui_sprite.frame_count() or _palette.is_empty():
+		return null
+	var indexed := RleDecoder.decode(_ui_sprite.get_frame(frame_index))
+	var texture: Texture2D = ImageTexture.create_from_image(indexed.to_rgba_image(_palette)) if indexed.is_valid() else null
+	_ui_textures[frame_index] = texture
+	return texture
+
+
+func _draw_pal_text(text: String, position: Vector2i, color: Color, shadow: bool = false) -> void:
+	if shadow:
+		_draw_pal_glyphs(text, position + Vector2i(1, 1), Color(0, 0, 0, 0.9))
+	_draw_pal_glyphs(text, position, color)
+
+
+func _draw_pal_glyphs(text: String, position: Vector2i, color: Color) -> void:
+	if _font_texture == null or _font_glyphs.is_empty():
+		draw_string(ThemeDB.fallback_font, Vector2(position + Vector2i(0, 13)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+		return
+	var x := position.x
+	for character in text:
+		var key := str(character)
+		if _font_glyphs.has(key):
+			var values: Array = _font_glyphs[key]
+			var region := Rect2(float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+			draw_texture_rect_region(_font_texture, Rect2(Vector2(x, position.y), region.size), region, color)
+		x += 16
+
+
+func _draw_number(value: int, length: int, position: Vector2i, frame_start: int) -> void:
+	var digits := str(maxi(0, value))
+	if digits.length() > length:
+		digits = digits.right(length)
+	var x := position.x + 6 * (length - 1)
+	for index in range(digits.length() - 1, -1, -1):
+		_draw_ui_frame(frame_start + int(digits[index]), Vector2i(x, position.y))
+		x -= 6
+
+
+func _selected_color_index() -> int:
+	return COLOR_SELECTED_FIRST + int(Time.get_ticks_msec() / 100) % 6
+
+
+func _palette_color(index: int) -> Color:
+	if index < 0 or _palette.size() < (index + 1) * 3:
+		return Color.WHITE
+	return Color8(_palette[index * 3], _palette[index * 3 + 1], _palette[index * 3 + 2])

@@ -244,7 +244,7 @@ func _create_message_label(centered: bool) -> RichTextLabel:
 	label.scroll_active = false
 	label.bbcode_enabled = false
 	label.clip_contents = true
-	label.add_theme_font_size_override("normal_font_size", 10)
+	label.add_theme_font_size_override("normal_font_size", 8 if centered else 10)
 	label.add_theme_color_override("default_color", Color.WHITE if centered else Color("fff7e8"))
 	return label
 

@@ -21,6 +21,8 @@ var messages: Array = []
 var source_encoding: String = ""
 var _mgo_sprites: Dictionary = {}
 var _rgm_portraits: Dictionary = {}
+var _item_bitmaps: Dictionary = {}
+var _ui_sprite: PalSprite
 var _speaker_portrait_defaults: Dictionary = {}
 
 
@@ -36,6 +38,8 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	messages.clear()
 	_mgo_sprites.clear()
 	_rgm_portraits.clear()
+	_item_bitmaps.clear()
+	_ui_sprite = null
 	_speaker_portrait_defaults.clear()
 	var core := root_path.path_join("core")
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
@@ -98,6 +102,21 @@ func load_rgm_portrait(portrait_number: int) -> PalIndexedImage:
 	var portrait := RleDecoder.decode(file.get_buffer(file.get_length()) if file != null else PackedByteArray())
 	_rgm_portraits[portrait_number] = portrait
 	return portrait
+
+
+func load_ui_sprite() -> PalSprite:
+	if _ui_sprite == null:
+		_ui_sprite = PalSprite.from_bytes(_read_file(root_path.path_join("data/09.bin")))
+	return _ui_sprite
+
+
+func load_item_bitmap(bitmap_number: int) -> PalIndexedImage:
+	if _item_bitmaps.has(bitmap_number):
+		return _item_bitmaps[bitmap_number]
+	var bytes := _read_file(root_path.path_join("items/ball/%03d.rle" % bitmap_number))
+	var image := RleDecoder.decode(bytes)
+	_item_bitmaps[bitmap_number] = image
+	return image
 
 
 func events_for_scene(scene_index: int) -> Array[PalEventObject]:

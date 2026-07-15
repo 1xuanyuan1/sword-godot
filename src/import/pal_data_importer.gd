@@ -65,6 +65,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 
 	_generate_palette_previews(files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_content_database(files_by_lowercase, absolute_output, report)
+	_convert_item_bitmaps(files_by_lowercase["ball.mkf"], absolute_output, report)
 	_convert_mgo_sprites(files_by_lowercase["mgo.mkf"], absolute_output, report)
 	_convert_rgm_portraits(files_by_lowercase["rgm.mkf"], absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)
@@ -210,6 +211,27 @@ static func _convert_mgo_sprites(mgo_path: String, absolute_output: String, repo
 		report.warnings.append("mgo.mkf 中没有成功转换的场景 Sprite")
 	if not decode_failures.is_empty() or not invalid_sprites.is_empty():
 		report.errors.append("MGO 场景 Sprite 校验失败：%d 个解压失败，%d 个帧表无效" % [decode_failures.size(), invalid_sprites.size()])
+
+
+static func _convert_item_bitmaps(ball_path: String, absolute_output: String, report: PalImportReport) -> void:
+	var archive := MkfArchive.load_file(ball_path)
+	if not archive.is_valid():
+		return
+	var output_dir := absolute_output.path_join("content/items/ball")
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	var directory := DirAccess.open(output_dir)
+	if directory != null:
+		for file_name in directory.get_files():
+			if file_name.ends_with(".rle"):
+				directory.remove(file_name)
+	var converted := 0
+	for bitmap_index in range(archive.chunk_count()):
+		var bytes := archive.get_chunk(bitmap_index)
+		if bytes.is_empty() or not RleDecoder.decode(bytes).is_valid():
+			continue
+		if _write_bytes(output_dir.path_join("%03d.rle" % bitmap_index), bytes):
+			converted += 1
+	report.files["item_bitmaps"] = {"converted": converted, "output": output_dir}
 
 
 static func _convert_rgm_portraits(rgm_path: String, absolute_output: String, report: PalImportReport) -> void:
