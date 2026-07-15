@@ -52,6 +52,8 @@ flowchart LR
 
 手动搜索由 `MapExplorer` 按 SDLPal `PAL_GetSearchTriggerRange` 生成面向方向上的 13 个 half 格检查点，再按“检查点顺序 → EventObject 全局顺序”选择目标。搜索模式只决定允许扫描多少个检查点；它不使用普通欧氏或曼哈顿最近距离。命中普通 NPC 后，`MapExplorer` 先让 NPC 转向队伍、恢复双方站立状态并重绘，再把全局对象编号交给 `ScriptVM`。
 
+接触事件按 `abs(dx) + abs(dy) × 2` 的 PAL 加权距离和触发模式阈值扫描。SDLPal 的触发脚本是同步函数，因此一个更新周期可以继续检查后续对象；Godot VM 可能等待对话、帧数或自动行走，`MapExplorer` 会保存下一 EventObject 索引，在 `script_finished` 后续跑。若脚本请求切换场景，旧场景扫描立即丢弃，避免转场前误触后续对象。
+
 场景进入与传送离开是两条不同生命周期：`0059` 只请求加载目标场景并运行其 `script_on_enter`；`0038` 先把当前场景的 `script_on_teleport` 当作可等待的嵌套触发脚本执行，完成后再回到调用脚本。两种脚本都可以通过 `0059` 交给 `MapExplorer` 延迟到安全时机切换地图。
 
 ## 输入、事件与重绘

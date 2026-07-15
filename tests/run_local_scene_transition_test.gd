@@ -50,24 +50,36 @@ func _test_inn_exit(database: PalContentDatabase) -> String:
 func _test_stairs(database: PalContentDatabase) -> String:
 	var session := GameSession.new()
 	session.reset_new_game()
+	var stairs_event: PalEventObject = database.event_objects[2]
+	session.set_party_world_position(stairs_event.position)
 	var vm := ScriptVM.new()
 	vm.configure(database, session)
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	explorer._database = database
+	explorer._session = session
+	explorer._scene_events = database.events_for_scene(0)
+	explorer._script_vm = vm
 	var next_entries: Array[int] = []
 	var steps: Array[int] = []
 	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	vm.script_finished.connect(explorer._on_script_finished)
 	vm.party_step_performed.connect(func() -> void: steps.append(1))
-	vm.run_trigger(42, 3)
+	var touch_triggered: bool = explorer._trigger_touch_event()
 	var guard := 0
 	while vm.running and guard < 100:
 		vm.tick_frame()
 		guard += 1
+	explorer._continue_touch_scan()
 	var failure := ""
-	if session.party_world_position() != Vector2i(96, 48):
+	if not touch_triggered:
+		failure = "客栈楼梯没有由真实接触范围自动触发"
+	elif session.party_world_position() != stairs_event.position + Vector2i(-64, -64):
 		failure = "客栈楼梯自动移动脚本落点错误：%s" % session.party_world_position()
 	elif next_entries != [42]:
 		failure = "客栈楼梯触发入口没有保持可重复"
 	elif steps.size() != 8:
 		failure = "客栈楼梯没有执行完整的 8 步行走动画：%d" % steps.size()
+	explorer.free()
 	vm.free()
 	return failure
 

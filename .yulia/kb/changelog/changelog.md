@@ -253,3 +253,20 @@ keywords:
   - `docs/SCRIPT_VM.md`
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-016] [change] 对齐接触事件扫描与站立行为
+
+- **关联需求**: M2–M3 场景探索
+- **关联 TODO**: TD-002（阶段性）
+- **功能描述**: 按 SDLPal `PAL_GameUpdate` 对齐接触事件的严格加权距离边界、EventObject 顺序和 NPC 朝向；接触有动画对象时恢复 NPC 第 0 帧及队伍站立姿势。新增可续跑扫描状态，使前一个触发脚本等待对话、帧数或自动行走后，仍能从下一个重叠对象继续；场景切换时安全取消旧扫描。
+- **验证情况**: 204 项合成测试通过，覆盖严格 16 像素边界、消失对象、NPC 转向、空入口跳过和重叠脚本顺序；真实客栈楼梯由 EventObject 3 的接触范围启动并完成 8 步动画，开场、黑苗客栈、厨房、传送离开和桂花酒流程继续通过。
+- **涉及文件**:
+  - `src/content/pal_event_object.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_scene_transition_test.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`

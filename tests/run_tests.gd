@@ -27,6 +27,7 @@ func _init() -> void:
 	_test_music_reference_collection()
 	_test_content_structures()
 	_test_explorer_manual_search()
+	_test_explorer_touch_scan()
 	_test_item_definition()
 	_test_player_roles_structure()
 	_test_scene_draw_item_anchors()
@@ -398,6 +399,64 @@ func _synthetic_search_event(position: Vector2i, trigger_mode: int, object_id: i
 	event.state = 1
 	event.trigger_mode = trigger_mode
 	event.trigger_script = 1
+	event.object_id = object_id
+	return event
+
+
+func _test_explorer_touch_scan() -> void:
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	var party := Vector2i(160, 112)
+	explorer._session.set_party_world_position(party)
+	var boundary := _synthetic_touch_event(party + Vector2i(16, 0), PalEventObject.TRIGGER_TOUCH_NEAR, 201, 0)
+	_expect(not explorer._is_touch_event_in_range(boundary, party), "TouchNear uses SDLPal's strict boundary and rejects distance 16")
+	boundary.position.x -= 1
+	_expect(explorer._is_touch_event_in_range(boundary, party), "TouchNear accepts a weighted distance below 16")
+	boundary.vanish_time = 1
+	_expect(not explorer._is_touch_event_in_range(boundary, party), "touch scan skips temporarily vanished events")
+
+	var actor := _synthetic_touch_event(party + Vector2i(-16, -8), PalEventObject.TRIGGER_TOUCH_NORMAL, 202, 0)
+	actor.sprite_frames = 3
+	actor.current_frame = 7
+	explorer._session.set_party_gesture(GameSession.DIR_EAST, 2, 0)
+	explorer._showing_walk_frame = true
+	_expect(explorer._prepare_touch_event(actor), "animated touch event requests a standing redraw")
+	_expect(actor.current_frame == 0 and actor.direction == GameSession.DIR_EAST, "touch event faces an NPC toward the party")
+	_expect(explorer._session.scripted_party_frame(0) == -1 and not explorer._showing_walk_frame, "touch event restores the party standing gesture")
+
+	var database := PalContentDatabase.new()
+	for operation in [0, 0, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	var first := _synthetic_touch_event(party, PalEventObject.TRIGGER_TOUCH_NORMAL, 203, 1)
+	var empty := _synthetic_touch_event(party, PalEventObject.TRIGGER_TOUCH_NORMAL, 204, 0)
+	var second := _synthetic_touch_event(party, PalEventObject.TRIGGER_TOUCH_NORMAL, 205, 2)
+	explorer._database = database
+	var touch_events: Array[PalEventObject] = [first, empty, second]
+	explorer._scene_events = touch_events
+	var vm := ScriptVM.new()
+	vm.configure(database, explorer._session)
+	explorer._script_vm = vm
+	vm.script_finished.connect(explorer._on_script_finished)
+	var invoked: Array[int] = []
+	vm.instruction_started.connect(func(index: int, _operation: int, _operands: PackedInt32Array) -> void: invoked.append(index))
+	_expect(explorer._trigger_touch_event(), "touch scan starts with the first in-range EventObject")
+	_expect(explorer._touch_scan_active and explorer._touch_scan_next_index == 1, "touch scan saves its continuation index across an asynchronous script")
+	_expect(explorer._continue_touch_scan(), "touch scan skips an empty entry and continues to the next EventObject")
+	_expect(invoked == [1, 2], "overlapping touch scripts execute in EventObject order")
+	explorer._continue_touch_scan()
+	_expect(not explorer._touch_scan_active and explorer._touch_scan_next_index == 0, "touch scan resets after reaching the scene event boundary")
+	explorer.free()
+	vm.free()
+
+
+func _synthetic_touch_event(position: Vector2i, trigger_mode: int, object_id: int, trigger_script: int) -> PalEventObject:
+	var event := PalEventObject.new()
+	event.position = position
+	event.state = 1
+	event.trigger_mode = trigger_mode
+	event.trigger_script = trigger_script
 	event.object_id = object_id
 	return event
 

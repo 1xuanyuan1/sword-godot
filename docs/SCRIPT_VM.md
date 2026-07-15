@@ -15,7 +15,8 @@ Godot 版 `ScriptVM` 以固定 SDLPal 基准的 `script.c` 为行为参考。当
 - 触发事件时传入全局 `EventObject` 编号，使方向、帧、位置、状态和层级修改作用于正确对象。
 - 搜索事件使用空格/回车；它不是“寻找像素距离最近的对象”，而是按人物朝向依次扫描 13 个 PAL half 格检查点。`trigger_mode 1/2/3` 分别只允许前 2/8/13 个点，同一检查点按 EventObject 全局顺序选择第一个。
 - 搜索命中后，处于普通四方向动画范围内的 NPC 会恢复站立帧并转向队伍；队伍也会清除上一段剧情留下的强制动作。特殊剧情帧不会被搜索覆盖。
-- 门、楼梯和传送点按照 `trigger_mode 4–8` 在接近时自动触发。
+- 门、楼梯和传送点按照 `trigger_mode 4–8` 在接近时自动触发。加权距离固定为 `abs(dx) + abs(dy) × 2`，并使用严格小于 16/48/80/112/144 的边界。
+- 接触有动画的 NPC 时，NPC 会恢复第 0 帧并按相对位置转向，队伍恢复站立姿势。多个范围重叠的接触事件按 EventObject 顺序执行；因为 Godot VM 可异步等待对话，`MapExplorer` 会保存扫描索引，待当前脚本真正结束后继续下一个对象。
 
 ## EventObject 自动脚本
 
@@ -82,7 +83,7 @@ Godot 版 `ScriptVM` 以固定 SDLPal 基准的 `script.c` 为行为参考。当
   --script res://tests/run_local_manual_search_test.gd
 ```
 
-合成测试另行固定朝东检查点生成、身后排除、SearchNear/SearchNormal 范围、同格事件顺序以及 NPC 转身站定行为。
+合成测试另行固定朝东检查点生成、身后排除、SearchNear/SearchNormal 范围、同格事件顺序以及 NPC 转身站定行为；接触事件覆盖严格距离边界、临时隐藏、NPC 转向和多个重叠脚本的续跑顺序。
 
 全部剧情场景的自动事件回归：
 

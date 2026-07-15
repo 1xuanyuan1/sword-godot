@@ -36,6 +36,8 @@ var _active_trigger_event: PalEventObject
 var _active_scene_enter_index: int = -1
 var _pending_used_item_id: int = 0
 var _use_legacy_renderer: bool = false
+var _touch_scan_active: bool = false
+var _touch_scan_next_index: int = 0
 
 
 func _ready() -> void:
@@ -146,6 +148,9 @@ func _process(delta: float) -> void:
 			_trigger_touch_event()
 	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog):
 		return
+	# 同一轮接触扫描中的同步短脚本会在帧末续跑；期间不能夹入一次玩家移动。
+	if _touch_scan_active:
+		return
 	_move_cooldown = maxf(0.0, _move_cooldown - delta)
 	var movement := Vector2i.ZERO
 	var direction := _session.party_direction
@@ -189,7 +194,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.keycode in MENU_KEYCODES:
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _touch_scan_active:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
 			else:
@@ -204,6 +209,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_script_vm.advance_dialog()
 			return
 		if _script_vm != null and _script_vm.running:
+			return
+		if _touch_scan_active:
 			return
 	if event is InputEventKey and event.keycode == RETURN_TO_LAB_KEYCODE:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -308,25 +315,61 @@ func _prepare_search_event(event: PalEventObject) -> bool:
 
 
 func _trigger_touch_event() -> bool:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+		return false
+	_touch_scan_active = true
+	_touch_scan_next_index = 0
+	return _continue_touch_scan()
+
+
+func _continue_touch_scan() -> bool:
+	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+		return false
+	if _pending_scene_index >= 0:
+		_reset_touch_scan()
 		return false
 	var party := _session.party_world_position()
-	for event in _scene_events:
-		if not event.is_visible() or not event.is_touch_trigger() or event.trigger_script <= 0:
+	while _touch_scan_next_index < _scene_events.size():
+		var event := _scene_events[_touch_scan_next_index]
+		_touch_scan_next_index += 1
+		if not _is_touch_event_in_range(event, party):
 			continue
-		var distance := absi(event.position.x - party.x) + absi(event.position.y - party.y) * 2
-		if distance >= event.touch_trigger_distance():
+		if _prepare_touch_event(event):
+			_refresh_world()
+		# 官方即使遇到空触发入口也会继续扫描后续对象；不要让它阻断同格传送点。
+		if event.trigger_script <= 0:
 			continue
-		if event.sprite_frames > 0:
-			event.current_frame = 0
-			var offset := party - event.position
-			if offset.x > 0:
-				event.direction = GameSession.DIR_EAST if offset.y > 0 else GameSession.DIR_NORTH
-			else:
-				event.direction = GameSession.DIR_SOUTH if offset.y > 0 else GameSession.DIR_WEST
 		_run_event_trigger(event)
 		return true
+	_reset_touch_scan()
 	return false
+
+
+func _is_touch_event_in_range(event: PalEventObject, party_position: Vector2i) -> bool:
+	if event == null or not event.is_visible() or not event.is_touch_trigger():
+		return false
+	var distance := absi(event.position.x - party_position.x) + absi(event.position.y - party_position.y) * 2
+	return distance < event.touch_trigger_distance()
+
+
+func _prepare_touch_event(event: PalEventObject) -> bool:
+	if event == null or event.sprite_frames <= 0:
+		return false
+	event.current_frame = 0
+	var offset := _session.party_world_position() - event.position
+	if offset.x > 0:
+		event.direction = GameSession.DIR_EAST if offset.y > 0 else GameSession.DIR_NORTH
+	else:
+		event.direction = GameSession.DIR_SOUTH if offset.y > 0 else GameSession.DIR_WEST
+	# 对应 PAL_UpdatePartyGestures(FALSE)：触碰 NPC 后队伍恢复普通站立帧。
+	_session.clear_party_gestures()
+	_showing_walk_frame = false
+	return true
+
+
+func _reset_touch_scan() -> void:
+	_touch_scan_active = false
+	_touch_scan_next_index = 0
 
 
 func _run_event_trigger(event: PalEventObject) -> void:
@@ -341,6 +384,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 		_set_error("场景索引越界：%d" % scene_index)
 		return
 	_session.scene_index = scene_index
+	_reset_touch_scan()
 	_script_frame_accumulator = 0.0
 	var scene := _database.scenes[scene_index]
 	_map_data = _database.load_map(scene.map_number)
@@ -595,6 +639,13 @@ func _on_script_finished(next_entry: int) -> void:
 	if _active_trigger_event != null:
 		_active_trigger_event.trigger_script = next_entry
 		_active_trigger_event = null
+	if _touch_scan_active:
+		if _pending_scene_index >= 0:
+			_reset_touch_scan()
+		else:
+			# PAL_GameUpdate 会在前一个接触脚本同步结束后继续扫描后续对象。
+			# VM 可能等待对话，因此在脚本真正结束后从保存的数组索引异步续跑。
+			call_deferred("_continue_touch_scan")
 	if _pending_used_item_id > 0:
 		var item := _database.item_definition(_pending_used_item_id)
 		if item != null:

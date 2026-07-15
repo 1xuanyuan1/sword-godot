@@ -9,6 +9,9 @@ extends RefCounted
 const BYTE_SIZE := 32
 const TRIGGER_SEARCH_NEAR := 1
 const TRIGGER_TOUCH_NEAR := 4
+const TRIGGER_TOUCH_NORMAL := 5
+const TRIGGER_TOUCH_FAR := 6
+const TRIGGER_TOUCH_FARTHER := 7
 const TRIGGER_TOUCH_FARTHEST := 8
 
 ## 从 1 开始的全局事件对象编号，供脚本操作数引用。
