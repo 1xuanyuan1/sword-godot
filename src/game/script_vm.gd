@@ -23,12 +23,15 @@ var database: PalContentDatabase
 var session: GameSession
 var running: bool = false
 var waiting_for_dialog: bool = false
+var waiting_for_frames: bool = false
 
 var _cursor: int = 0
 var _event_object_id: int = 0
 var _last_event_object_id: int = 0
 var _call_stack: Array[Dictionary] = []
 var _dialog_has_body: bool = false
+var _frames_remaining: int = 0
+var _auto_frame_number: int = 0
 
 
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
@@ -45,6 +48,8 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 		_last_event_object_id = event_object_id
 	_call_stack.clear()
 	_dialog_has_body = false
+	waiting_for_frames = false
+	_frames_remaining = 0
 	_cursor = entry_index
 	_event_object_id = event_object_id
 	running = true
@@ -63,9 +68,25 @@ func advance_dialog() -> void:
 func stop() -> void:
 	running = false
 	waiting_for_dialog = false
+	waiting_for_frames = false
 	_dialog_has_body = false
+	_frames_remaining = 0
 	_call_stack.clear()
 	dialog_ended.emit()
+
+
+func tick_frame() -> bool:
+	_auto_frame_number += 1
+	# SDLPal pauses scene updates while waiting for a dialog key.
+	var world_changed := false if waiting_for_dialog else _tick_auto_scripts()
+	if not waiting_for_frames:
+		return world_changed
+	_frames_remaining -= 1
+	world_changed = true
+	if _frames_remaining <= 0:
+		waiting_for_frames = false
+		_continue_execution()
+	return world_changed
 
 
 func _continue_execution() -> int:
@@ -107,7 +128,13 @@ func _continue_execution() -> int:
 				dialog_ended.emit()
 				redraw_requested.emit(entry.operands[1])
 			0x0009:
-				redraw_requested.emit(entry.operands[0] if entry.operands[0] > 0 else 1)
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
+				dialog_ended.emit()
+				_cursor = next_cursor
+				_frames_remaining = entry.operands[0] if entry.operands[0] > 0 else 1
+				waiting_for_frames = true
+				return _cursor
 			0x000f:
 				var event := _event_by_id(_event_object_id)
 				if event != null:
@@ -261,7 +288,9 @@ func _return_from_call() -> bool:
 func _finish(next_entry: int) -> int:
 	running = false
 	waiting_for_dialog = false
+	waiting_for_frames = false
 	_dialog_has_body = false
+	_frames_remaining = 0
 	dialog_ended.emit()
 	script_finished.emit(next_entry)
 	return next_entry
@@ -281,6 +310,117 @@ func _event_by_id(event_object_id: int) -> PalEventObject:
 
 func _resolve_event(operand: int) -> PalEventObject:
 	return _event_by_id(_event_object_id if operand == 0 or operand == 0xffff else operand)
+
+
+func _tick_auto_scripts() -> bool:
+	if database == null or session == null or session.scene_index < 0 or session.scene_index >= database.scenes.size():
+		return false
+	var changed := false
+	for event in database.events_for_scene(session.scene_index):
+		if event.is_visible() and event.auto_script > 0:
+			changed = _run_auto_script_step(event) or changed
+	return changed
+
+
+func _run_auto_script_step(event: PalEventObject) -> bool:
+	if event.auto_script <= 0 or event.auto_script >= database.scripts.size():
+		return false
+	var entry := database.scripts[event.auto_script]
+	match entry.operation:
+		0x0000:
+			return false
+		0x0001:
+			event.auto_script += 1
+			return false
+		0x0002, 0x0003:
+			if entry.operands[1] == 0 or event.auto_script_idle_count + 1 < entry.operands[1]:
+				event.auto_script_idle_count += 1
+				event.auto_script = entry.operands[0]
+			else:
+				event.auto_script_idle_count = 0
+				event.auto_script += 1
+			return false
+		0x0009:
+			event.auto_script_idle_count += 1
+			if event.auto_script_idle_count >= maxi(1, entry.operands[0]):
+				event.auto_script_idle_count = 0
+				event.auto_script += 1
+			return false
+		0x000b, 0x000c, 0x000d, 0x000e:
+			event.direction = entry.operation - 0x000b
+			_npc_walk_one_step(event, 2)
+			event.auto_script += 1
+			return true
+		0x000f:
+			if entry.operands[0] != 0xffff:
+				event.direction = entry.operands[0]
+			if entry.operands[1] != 0xffff:
+				event.current_frame = entry.operands[1]
+			event.auto_script += 1
+			return true
+		0x0010:
+			var reached := _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 3)
+			if reached:
+				event.auto_script += 1
+			return true
+		0x0011:
+			if ((event.object_id & 1) ^ (_auto_frame_number & 1)) != 0:
+				var reached := _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 2)
+				if reached:
+					event.auto_script += 1
+				return true
+			return false
+		0x0049:
+			if entry.operands[0] != 0:
+				var target := _resolve_auto_event(entry.operands[0], event)
+				if target != null:
+					target.state = _signed_word(entry.operands[1])
+			event.auto_script += 1
+			return true
+		0x006c:
+			var target := _resolve_auto_event(entry.operands[0], event)
+			if target != null:
+				target.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
+				_advance_npc_frame(target)
+			event.auto_script += 1
+			return target != null
+	return false
+
+
+func _resolve_auto_event(operand: int, invoking_event: PalEventObject) -> PalEventObject:
+	return invoking_event if operand == 0 or operand == 0xffff else _event_by_id(operand)
+
+
+func _npc_walk_to(event: PalEventObject, tile_x: int, tile_y: int, half: int, speed: int) -> bool:
+	var target := Vector2i(tile_x * 32 + half * 16, tile_y * 16 + half * 8)
+	var offset := target - event.position
+	if offset.y < 0:
+		event.direction = GameSession.DIR_WEST if offset.x < 0 else GameSession.DIR_NORTH
+	else:
+		event.direction = GameSession.DIR_SOUTH if offset.x < 0 else GameSession.DIR_EAST
+	if absi(offset.x) < speed * 2 or absi(offset.y) < speed * 2:
+		event.position = target
+	else:
+		_npc_walk_one_step(event, speed)
+	if event.position == target:
+		event.current_frame = 0
+		return true
+	return false
+
+
+func _npc_walk_one_step(event: PalEventObject, speed: int) -> void:
+	var x_sign := -1 if event.direction in [GameSession.DIR_WEST, GameSession.DIR_SOUTH] else 1
+	var y_sign := -1 if event.direction in [GameSession.DIR_WEST, GameSession.DIR_NORTH] else 1
+	event.position += Vector2i(x_sign * 2 * speed, y_sign * speed)
+	_advance_npc_frame(event)
+
+
+func _advance_npc_frame(event: PalEventObject) -> void:
+	var frame_count := 4 if event.sprite_frames == 3 else event.sprite_frames
+	if frame_count <= 0:
+		frame_count = event.sprite_frames_auto
+	if frame_count > 0:
+		event.current_frame = (event.current_frame + 1) % frame_count
 
 
 static func _signed_word(value: int) -> int:

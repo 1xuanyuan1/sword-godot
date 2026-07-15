@@ -30,6 +30,7 @@ func _init() -> void:
 	_test_script_vm_dialog_pause()
 	_test_script_vm_title_and_body()
 	_test_script_vm_dialog_page_break()
+	_test_script_vm_frame_delay_and_auto_walk()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -375,6 +376,46 @@ func _test_script_vm_dialog_page_break() -> void:
 	vm.advance_dialog()
 	_expect(vm.waiting_for_dialog and page_breaks[0] == 1 and messages == [12, 13, 14], "script VM continues dialog after a page break")
 	vm.advance_dialog()
+	vm.free()
+
+
+func _test_script_vm_frame_delay_and_auto_walk() -> void:
+	var database := PalContentDatabase.new()
+	database.scripts.append(PalScriptEntry.new())
+	for operation in [0x0009, 0x0049, 0x0000, 0x0010, 0x0049, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands[0] = 3
+	database.scripts[2].operands = PackedInt32Array([0xffff, 0, 0])
+	database.scripts[4].operands = PackedInt32Array([1, 1, 0])
+	database.scripts[5].operands = PackedInt32Array([0xffff, 0, 0])
+	var scene := PalSceneDefinition.new()
+	scene.event_object_index = 0
+	database.scenes.append(scene)
+	var event := PalEventObject.new()
+	event.object_id = 1
+	event.position = Vector2i.ZERO
+	event.state = 2
+	event.sprite_frames = 3
+	event.auto_script = 4
+	database.event_objects.append(event)
+	var session := GameSession.new()
+	session.scene_index = 0
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.run_trigger(1, 1)
+	_expect(vm.running and vm.waiting_for_frames, "script VM preserves trigger execution during frame delay")
+	vm.tick_frame()
+	vm.tick_frame()
+	_expect(event.state == 2, "script VM does not execute post-delay action early")
+	vm.tick_frame()
+	_expect(not vm.running and event.state == 0, "script VM resumes post-delay action on the requested frame")
+	event.state = 2
+	for frame in range(10):
+		vm.tick_frame()
+	_expect(event.position == Vector2i(32, 16) and event.state == 0, "event auto script walks to its target and exits")
 	vm.free()
 
 

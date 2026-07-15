@@ -20,16 +20,22 @@ func _init() -> void:
 	var entry := database.scenes[0].script_on_enter
 	vm.run_trigger(entry)
 	var advance_guard := 0
-	while vm.waiting_for_dialog and advance_guard < 1000:
-		vm.advance_dialog()
+	while (vm.running or vm.waiting_for_dialog) and advance_guard < 10000:
+		if vm.waiting_for_dialog:
+			vm.advance_dialog()
+		else:
+			vm.tick_frame()
 		advance_guard += 1
 	if not unsupported.is_empty():
 		printerr("FAIL: 首场景进入脚本遇到未支持指令：%s" % ", ".join(unsupported))
 		quit(1)
-	elif vm.running or vm.waiting_for_dialog:
+	elif vm.running or vm.waiting_for_dialog or vm.waiting_for_frames:
 		printerr("FAIL: 首场景进入脚本没有结束")
 		quit(1)
+	elif database.event_objects.size() < 11 or database.event_objects[10].state != 0 or database.event_objects[10].position != Vector2i(1152, 384):
+		printerr("FAIL: 李大娘自动离场脚本没有完成")
+		quit(1)
 	else:
-		print("PASS: 首场景进入脚本完成，逐句消息 %d 条" % messages.size())
+		print("PASS: 首场景进入脚本完成，逐句消息 %d 条，李大娘已自动离场" % messages.size())
 		quit(0)
 	vm.free()

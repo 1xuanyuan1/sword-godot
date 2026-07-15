@@ -4,6 +4,7 @@
 extends Control
 
 const MOVE_REPEAT_SECONDS := 0.10
+const SCRIPT_FRAME_SECONDS := 0.10
 
 var _database := PalContentDatabase.new()
 var _session := GameSession.new()
@@ -20,6 +21,7 @@ var _event_sprites: Dictionary = {}
 var _walk_phase: int = 0
 var _showing_walk_frame: bool = false
 var _pending_scene_index: int = -1
+var _script_frame_accumulator: float = 0.0
 
 
 func _ready() -> void:
@@ -75,6 +77,14 @@ func _build_interface() -> void:
 func _process(delta: float) -> void:
 	if _map_data == null or not _map_data.is_valid():
 		return
+	_script_frame_accumulator += minf(delta, 0.5)
+	var auto_world_changed := false
+	while _script_frame_accumulator >= SCRIPT_FRAME_SECONDS:
+		_script_frame_accumulator -= SCRIPT_FRAME_SECONDS
+		if _script_vm != null:
+			auto_world_changed = _script_vm.tick_frame() or auto_world_changed
+	if auto_world_changed:
+		_refresh_world()
 	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog):
 		return
 	_move_cooldown = maxf(0.0, _move_cooldown - delta)
@@ -118,6 +128,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			return
 		if _script_vm != null and _script_vm.waiting_for_dialog:
 			_script_vm.advance_dialog()
+			return
+		if _script_vm != null and _script_vm.running:
 			return
 	if event is InputEventKey and event.keycode == KEY_ESCAPE:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -174,6 +186,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 		_set_error("场景索引越界：%d" % scene_index)
 		return
 	_session.scene_index = scene_index
+	_script_frame_accumulator = 0.0
 	var scene := _database.scenes[scene_index]
 	_map_data = _database.load_map(scene.map_number)
 	_tile_sprite = _database.load_map_tiles(scene.map_number)
