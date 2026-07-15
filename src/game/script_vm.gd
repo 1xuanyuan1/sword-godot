@@ -17,6 +17,7 @@ signal sound_requested(sound_number: int)
 signal scene_change_requested(scene_index: int)
 signal player_sprites_changed
 signal party_step_performed
+signal party_walk_finished
 
 const MAX_INSTRUCTIONS_PER_RUN := 10000
 
@@ -25,6 +26,8 @@ var session: GameSession
 var running: bool = false
 var waiting_for_dialog: bool = false
 var waiting_for_frames: bool = false
+var waiting_for_party_walk: bool = false
+var script_success: bool = true
 
 var _cursor: int = 0
 var _event_object_id: int = 0
@@ -36,6 +39,8 @@ var _frames_remaining: int = 0
 var _auto_frame_number: int = 0
 var _close_dialog_after_frame_wait: bool = false
 var _next_trigger_entry: int = 0
+var _party_walk_target: Vector2i = Vector2i.ZERO
+var _party_walk_speed: int = 0
 
 
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
@@ -54,11 +59,13 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	waiting_for_frames = false
+	waiting_for_party_walk = false
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
 	_cursor = entry_index
 	_next_trigger_entry = entry_index
 	_event_object_id = event_object_id
+	script_success = true
 	running = true
 	return _continue_execution()
 
@@ -76,6 +83,7 @@ func stop() -> void:
 	running = false
 	waiting_for_dialog = false
 	waiting_for_frames = false
+	waiting_for_party_walk = false
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0
@@ -88,6 +96,8 @@ func tick_frame() -> bool:
 	_auto_frame_number += 1
 	# SDLPal pauses scene updates while waiting for a dialog key.
 	var world_changed := false if waiting_for_dialog or _close_dialog_after_frame_wait else _tick_auto_scripts()
+	if waiting_for_party_walk:
+		return _tick_party_walk() or world_changed
 	if not waiting_for_frames:
 		return world_changed
 	_frames_remaining -= 1
@@ -141,6 +151,9 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				redraw_requested.emit(entry.operands[1])
+			0x0008:
+				# Keep running, but make the next instruction the event's future trigger entry.
+				_next_trigger_entry = next_cursor
 			0x0009:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
@@ -181,6 +194,17 @@ func _continue_execution() -> int:
 						_cursor = entry.operands[1]
 						continue
 					session.cash += cash_delta
+			0x001f:
+				if session != null:
+					var amount := _signed_word(entry.operands[1])
+					session.change_item_count(entry.operands[0], 1 if amount == 0 else amount)
+			0x0020:
+				if session != null:
+					var amount := entry.operands[1] if entry.operands[1] > 0 else 1
+					if session.item_count(entry.operands[0]) < amount and entry.operands[2] > 0:
+						_cursor = entry.operands[2]
+						continue
+					session.change_item_count(entry.operands[0], -amount)
 			0x0024:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
@@ -266,11 +290,26 @@ func _continue_execution() -> int:
 					session.record_party_step(session.party_direction, movement)
 					session.world_layer = entry.operands[2] * 8
 					party_step_performed.emit()
-			0x0070:
+			0x006f:
+				var invoking_event := _event_by_id(_event_object_id)
+				var compared_event := _resolve_event(entry.operands[0])
+				var target_state := _signed_word(entry.operands[1])
+				if invoking_event != null and compared_event != null and compared_event.state == target_state:
+					invoking_event.state = target_state
+			0x0070, 0x007a, 0x007b:
 				if session != null:
 					var world_x := entry.operands[0] * 32 + entry.operands[2] * 16
 					var world_y := entry.operands[1] * 16 + entry.operands[2] * 8
-					session.set_party_world_position(Vector2i(world_x, world_y))
+					var target := Vector2i(world_x, world_y)
+					if session.party_world_position() != target:
+						_party_walk_target = target
+						_party_walk_speed = 2 if entry.operation == 0x0070 else (4 if entry.operation == 0x007a else 8)
+						_cursor = next_cursor
+						waiting_for_party_walk = true
+						return _cursor
+			0x0073:
+				# The visual fade is still pending; redraw the current scene and preserve script timing.
+				redraw_requested.emit(0)
 			0x0075:
 				if session != null:
 					session.party_roles = PackedInt32Array()
@@ -289,6 +328,11 @@ func _continue_execution() -> int:
 				var event := _resolve_event(entry.operands[0])
 				if event != null:
 					event.layer = _signed_word(entry.operands[1])
+			0x0081:
+				if not _is_party_facing_event(entry.operands[0], entry.operands[1]):
+					script_success = false
+					_cursor = entry.operands[2]
+					continue
 			0x008e:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
@@ -330,6 +374,7 @@ func _finish(next_entry: int) -> int:
 	running = false
 	waiting_for_dialog = false
 	waiting_for_frames = false
+	waiting_for_party_walk = false
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0
@@ -343,6 +388,33 @@ func _pause_at_dialog_boundary() -> int:
 	running = false
 	waiting_for_dialog = true
 	return _cursor
+
+
+func _tick_party_walk() -> bool:
+	if not waiting_for_party_walk or session == null:
+		return false
+	var offset := _party_walk_target - session.party_world_position()
+	if offset == Vector2i.ZERO:
+		waiting_for_party_walk = false
+		party_walk_finished.emit()
+		_continue_execution()
+		return false
+	var direction: int
+	if offset.y < 0:
+		direction = GameSession.DIR_WEST if offset.x < 0 else GameSession.DIR_NORTH
+	else:
+		direction = GameSession.DIR_SOUTH if offset.x < 0 else GameSession.DIR_EAST
+	var movement := Vector2i(
+		offset.x if absi(offset.x) <= _party_walk_speed * 2 else _party_walk_speed * (-2 if offset.x < 0 else 2),
+		offset.y if absi(offset.y) <= _party_walk_speed else _party_walk_speed * (-1 if offset.y < 0 else 1)
+	)
+	session.record_party_step(direction, movement)
+	party_step_performed.emit()
+	if session.party_world_position() == _party_walk_target:
+		waiting_for_party_walk = false
+		party_walk_finished.emit()
+		_continue_execution()
+	return true
 
 
 func _wait_for_frames(next_cursor: int, frame_count: int, close_dialog_after_wait: bool = false) -> int:
@@ -361,6 +433,30 @@ func _event_by_id(event_object_id: int) -> PalEventObject:
 
 func _resolve_event(operand: int) -> PalEventObject:
 	return _event_by_id(_event_object_id if operand == 0 or operand == 0xffff else operand)
+
+
+func _is_party_facing_event(event_object_id: int, range: int) -> bool:
+	if session == null or database == null or range < 0:
+		return false
+	var event := _event_by_id(event_object_id)
+	if event == null or event.state <= 0:
+		return false
+	var is_in_current_scene := false
+	for scene_event in database.events_for_scene(session.scene_index):
+		if scene_event.object_id == event_object_id:
+			is_in_current_scene = true
+			break
+	if not is_in_current_scene:
+		return false
+	var facing_position := event.position
+	facing_position.x += 16 if session.party_direction in [GameSession.DIR_WEST, GameSession.DIR_SOUTH] else -16
+	facing_position.y += 8 if session.party_direction in [GameSession.DIR_WEST, GameSession.DIR_NORTH] else -8
+	var offset := facing_position - session.party_world_position()
+	if absi(offset.x) + absi(offset.y) * 2 >= range * 32 + 16:
+		return false
+	if range > 0:
+		event.trigger_mode = PalEventObject.TRIGGER_TOUCH_NEAR + range
+	return true
 
 
 func _tick_auto_scripts() -> bool:
@@ -442,6 +538,13 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				var target := _resolve_auto_event(entry.operands[0], event)
 				if target != null:
 					target.state = _signed_word(entry.operands[1])
+			event.auto_script += 1
+			return true
+		0x006f:
+			var compared_event := _resolve_auto_event(entry.operands[0], event)
+			var target_state := _signed_word(entry.operands[1])
+			if compared_event != null and compared_event.state == target_state:
+				event.state = target_state
 			event.auto_script += 1
 			return true
 		0x006c:

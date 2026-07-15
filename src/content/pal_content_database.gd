@@ -14,6 +14,7 @@ var error_message: String = ""
 var scenes: Array[PalSceneDefinition] = []
 var event_objects: Array[PalEventObject] = []
 var scripts: Array[PalScriptEntry] = []
+var items: Array[PalItemDefinition] = []
 var player_roles: PalPlayerRoles
 var words: Array = []
 var messages: Array = []
@@ -29,6 +30,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	scenes.clear()
 	event_objects.clear()
 	scripts.clear()
+	items.clear()
 	player_roles = null
 	words.clear()
 	messages.clear()
@@ -39,9 +41,10 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
 	var script_bytes := _read_file(core.path_join("scripts.bin"))
+	var object_bytes := _read_file(core.path_join("objects_dos.bin"))
 	if not error_message.is_empty():
 		return false
-	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0:
+	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0:
 		error_message = "生成数据库的结构长度不匹配"
 		return false
 	for offset in range(0, event_bytes.size(), PalEventObject.BYTE_SIZE):
@@ -52,6 +55,8 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		scenes.append(PalSceneDefinition.from_bytes(scene_bytes, offset))
 	for offset in range(0, script_bytes.size(), PalScriptEntry.BYTE_SIZE):
 		scripts.append(PalScriptEntry.from_bytes(script_bytes, offset))
+	for offset in range(0, object_bytes.size(), PalItemDefinition.BYTE_SIZE):
+		items.append(PalItemDefinition.from_bytes(object_bytes, offset, items.size()))
 	player_roles = PalPlayerRoles.from_bytes(_read_file(root_path.path_join("data/03.bin")))
 	if player_roles == null or not player_roles.is_valid():
 		error_message = player_roles.error_message if player_roles != null else "PLAYERROLES 数据缺失"
@@ -114,6 +119,10 @@ func get_word(index: int) -> String:
 
 func get_message(index: int) -> String:
 	return str(messages[index]) if index >= 0 and index < messages.size() else ""
+
+
+func item_definition(object_id: int) -> PalItemDefinition:
+	return items[object_id] if object_id >= 0 and object_id < items.size() else null
 
 
 static func speaker_role_for_message(index: int) -> int:

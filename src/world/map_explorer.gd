@@ -15,6 +15,7 @@ var _scene_events: Array[PalEventObject] = []
 var _map_view: TextureRect
 var _status: Label
 var _dialog_box: PalDialogBox
+var _game_menu: PalGameMenu
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
 var _player_sprites: Dictionary = {}
@@ -24,6 +25,7 @@ var _showing_walk_frame: bool = false
 var _pending_scene_index: int = -1
 var _script_frame_accumulator: float = 0.0
 var _active_trigger_event: PalEventObject
+var _pending_used_item_id: int = 0
 
 
 func _ready() -> void:
@@ -32,6 +34,7 @@ func _ready() -> void:
 		_set_error(_database.error_message + "。请返回资源实验室重新导入。")
 		return
 	_session.reset_new_game()
+	_game_menu.configure(_database, _session)
 	_script_vm = ScriptVM.new()
 	_script_vm.configure(_database, _session)
 	_script_vm.unsupported_instruction.connect(_on_unsupported_instruction)
@@ -44,6 +47,7 @@ func _ready() -> void:
 	_script_vm.scene_change_requested.connect(_on_scene_change_requested)
 	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
 	_script_vm.party_step_performed.connect(_on_script_party_step)
+	_script_vm.party_walk_finished.connect(_on_script_party_walk_finished)
 	add_child(_script_vm)
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
 	if checkpoint.is_empty():
@@ -81,9 +85,16 @@ func _build_interface() -> void:
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(_dialog_box)
 
+	_game_menu = PalGameMenu.new()
+	_game_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_game_menu.item_use_requested.connect(_on_item_use_requested)
+	add_child(_game_menu)
+
 
 func _process(delta: float) -> void:
 	if _map_data == null or not _map_data.is_valid():
+		return
+	if _game_menu != null and _game_menu.visible:
 		return
 	_script_frame_accumulator += minf(delta, 0.5)
 	var auto_world_changed := false
@@ -130,6 +141,19 @@ func _process(delta: float) -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
+		return
+	if _game_menu != null and _game_menu.visible:
+		if event is InputEventKey and event.keycode in [KEY_ESCAPE, KEY_M, KEY_TAB]:
+			_game_menu.go_back()
+			get_viewport().set_input_as_handled()
+		return
+	if event is InputEventKey and event.keycode in [KEY_M, KEY_TAB, KEY_I]:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog:
+			if event.keycode == KEY_I:
+				_game_menu.open_inventory()
+			else:
+				_game_menu.open_main()
+			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
 		if _dialog_box != null and _dialog_box.is_typing():
@@ -235,7 +259,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 	if not _load_scene_sprites():
 		return
 	_refresh_world()
-	_status.text = "方向键移动｜空格/回车交互｜Esc 返回｜场景 %d / 地图 %d / 事件 %d" % [scene_index + 1, scene.map_number, _scene_events.size()]
+	_status.text = "方向键｜空格交互｜M 菜单｜Esc 返回｜场景%d/地图%d" % [scene_index + 1, scene.map_number]
 	if run_enter_script and scene.script_on_enter > 0:
 		_script_vm.run_trigger(scene.script_on_enter)
 
@@ -243,12 +267,19 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
 	var scene_index := int(checkpoint.get("scene", 0))
 	_session.scene_index = scene_index
+	if checkpoint.has("direction"):
+		_session.party_direction = int(checkpoint["direction"])
 	if checkpoint.has("position"):
 		_session.set_party_world_position(checkpoint["position"])
+	var checkpoint_inventory: Dictionary = checkpoint.get("inventory", {})
+	for item_id in checkpoint_inventory:
+		_session.set_item_count(int(item_id), int(checkpoint_inventory[item_id]))
+	if checkpoint.has("player_sprite") and _database.player_roles != null:
+		_database.player_roles.scene_sprite_numbers[0] = int(checkpoint["player_sprite"])
 	_load_scene(scene_index, false)
 	var script_entry := int(checkpoint.get("script", 0))
 	var event_object_id := int(checkpoint.get("event", 0))
-	_status.text = "剧情测试：%s｜场景 %d｜脚本 0x%04X" % [checkpoint.get("id", ""), scene_index + 1, script_entry]
+	_status.text = "剧情测试：%s｜%s" % [checkpoint.get("id", ""), checkpoint.get("hint", "场景 %d｜脚本 0x%04X" % [scene_index + 1, script_entry])]
 	if script_entry > 0:
 		_script_vm.run_trigger(script_entry, event_object_id)
 
@@ -417,6 +448,16 @@ func _on_script_finished(next_entry: int) -> void:
 	if _active_trigger_event != null:
 		_active_trigger_event.trigger_script = next_entry
 		_active_trigger_event = null
+	if _pending_used_item_id > 0:
+		var item := _database.item_definition(_pending_used_item_id)
+		if item != null:
+			item.script_on_use = next_entry
+			if _script_vm.script_success and item.is_consuming():
+				_session.change_item_count(_pending_used_item_id, -1)
+		var should_trigger_touch := _script_vm.script_success
+		_pending_used_item_id = 0
+		if should_trigger_touch:
+			call_deferred("_trigger_touch_event")
 
 
 func _apply_pending_scene() -> void:
@@ -435,6 +476,23 @@ func _on_script_party_step() -> void:
 	_showing_walk_frame = true
 	_walk_phase = (_walk_phase + 1) % 4
 	_move_cooldown = SCRIPT_FRAME_SECONDS
+
+
+func _on_script_party_walk_finished() -> void:
+	_showing_walk_frame = false
+	_move_cooldown = 0.0
+
+
+func _on_item_use_requested(item_id: int) -> void:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _session.item_count(item_id) <= 0:
+		return
+	var item := _database.item_definition(item_id)
+	if item == null or not item.is_usable():
+		return
+	_game_menu.close_menu()
+	_pending_used_item_id = item_id
+	_status.text = "使用：%s" % _database.get_word(item_id)
+	_script_vm.run_trigger(item.script_on_use, 0xffff)
 
 
 func _set_error(message: String) -> void:

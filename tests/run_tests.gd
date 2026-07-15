@@ -23,6 +23,7 @@ func _init() -> void:
 	_test_map_helpers()
 	_test_voc_decoder()
 	_test_content_structures()
+	_test_item_definition()
 	_test_player_roles_structure()
 	_test_scene_draw_item_anchors()
 	_test_scene_y_sorting()
@@ -34,8 +35,10 @@ func _init() -> void:
 	_test_script_vm_dialog_page_break()
 	_test_script_vm_frame_delay_and_auto_walk()
 	_test_script_vm_inn_conversation_operations()
+	_test_script_vm_inventory_and_party_walk()
 	_test_script_vm_center_toast()
 	_test_debug_checkpoints()
+	_test_game_menu_inventory()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -234,6 +237,16 @@ func _test_content_structures() -> void:
 	dialog_database.scripts[0].operands[0] = 55
 	dialog_database._build_speaker_portrait_defaults()
 	_expect(dialog_database.portrait_for_speaker("李大娘") == 55 and dialog_database.portrait_for_speaker("旁白") == 0, "speaker portrait metadata fills only known character portraits")
+
+
+func _test_item_definition() -> void:
+	var bytes := PackedByteArray()
+	for value in [110, 0, 39660, 0, 0, 17]:
+		PalBinary.append_u16_le(bytes, value)
+	var item := PalItemDefinition.from_bytes(bytes, 0, 272)
+	_expect(item != null and item.object_id == 272 and item.bitmap == 110, "DOS item object identity and bitmap parsing")
+	_expect(item.script_on_use == 39660 and item.flags == 17, "DOS item use script and flags parsing")
+	_expect(item.is_usable() and item.applies_to_all() and not item.is_consuming(), "story item usability flags")
 
 
 func _test_player_roles_structure() -> void:
@@ -539,6 +552,45 @@ func _test_script_vm_inn_conversation_operations() -> void:
 	vm.free()
 
 
+func _test_script_vm_inventory_and_party_walk() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x001f, 0x006f, 0x0070, 0x0020, 0x0073, 0x0008, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([272, 0, 0])
+	database.scripts[2].operands = PackedInt32Array([2, 0, 0])
+	database.scripts[3].operands = PackedInt32Array([6, 8, 0])
+	database.scripts[4].operands = PackedInt32Array([272, 0, 0])
+	for object_id in range(1, 3):
+		var event := PalEventObject.new()
+		event.object_id = object_id
+		event.state = 2 if object_id == 1 else 0
+		database.event_objects.append(event)
+	var session := GameSession.new()
+	session.reset_new_game()
+	var steps: Array[int] = []
+	var walk_finishes: Array[int] = []
+	var next_entries: Array[int] = []
+	var redraws: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.party_step_performed.connect(func() -> void: steps.append(1))
+	vm.party_walk_finished.connect(func() -> void: walk_finishes.append(1))
+	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	vm.redraw_requested.connect(func(delay: int) -> void: redraws.append(delay))
+	vm.run_trigger(1, 1)
+	_expect(vm.running and vm.waiting_for_party_walk and session.item_count(272) == 1, "inventory add runs before scripted party walk")
+	for frame in range(8):
+		vm.tick_frame()
+	_expect(session.party_world_position() == Vector2i(192, 128) and steps.size() == 8 and walk_finishes.size() == 1, "opcode 0070 walks the party over visible script frames and finishes its gait")
+	_expect(not vm.running and session.item_count(272) == 0, "inventory remove completes after scripted party walk")
+	_expect(database.event_objects[0].state == 0, "opcode 006F synchronizes the invoking event state")
+	_expect(redraws == [0] and next_entries == [7], "fade placeholder and opcode 0008 preserve the future trigger entry")
+	vm.free()
+
+
 func _test_script_vm_center_toast() -> void:
 	var database := PalContentDatabase.new()
 	database.messages.append("获得500文钱")
@@ -565,7 +617,37 @@ func _test_debug_checkpoints() -> void:
 	_expect(DebugCheckpoint.request("miao_inn"), "known debug story checkpoint is accepted")
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
 	_expect(checkpoint.get("scene") == 2 and checkpoint.get("script") == 4701 and checkpoint.get("event") == 57, "debug story checkpoint contains scene and script context")
+	_expect(DebugCheckpoint.request("meal_delivery"), "meal delivery checkpoint is accepted")
+	checkpoint = DebugCheckpoint.consume()
+	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4885 and checkpoint.get("player_sprite") == 208, "meal delivery checkpoint restores carrying state")
+	_expect(DebugCheckpoint.request("drunken_swordsman"), "drunken swordsman checkpoint is accepted")
+	checkpoint = DebugCheckpoint.consume()
+	_expect(checkpoint.get("script") == 5079 and checkpoint.get("inventory", {}).get(272) == 1, "drunken swordsman checkpoint restores osmanthus wine")
 	_expect(DebugCheckpoint.consume().is_empty() and not DebugCheckpoint.request("missing"), "debug story checkpoint is consumed once and rejects unknown ids")
+
+
+func _test_game_menu_inventory() -> void:
+	var database := PalContentDatabase.new()
+	database.words.resize(273)
+	database.words[272] = "桂花酒"
+	database.items.resize(273)
+	var wine := PalItemDefinition.new()
+	wine.object_id = 272
+	wine.script_on_use = 39660
+	wine.flags = PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_APPLY_TO_ALL
+	database.items[272] = wine
+	var session := GameSession.new()
+	session.set_item_count(272, 1)
+	var menu := PalGameMenu.new()
+	menu._ready()
+	menu.configure(database, session)
+	var requested: Array[int] = []
+	menu.item_use_requested.connect(func(item_id: int) -> void: requested.append(item_id))
+	menu.open_inventory()
+	_expect(menu.visible and menu.current_page == PalGameMenu.Page.INVENTORY, "game menu opens the inventory page")
+	menu._request_item_use(272, wine)
+	_expect(requested == [272], "usable story item can be selected from the inventory menu")
+	menu.free()
 
 
 func _test_dialog_box_typewriter() -> void:

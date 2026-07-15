@@ -21,6 +21,7 @@ var battle_music_number: int = 0
 var world_layer: int = 0
 var party_roles: PackedInt32Array = PackedInt32Array([0])
 var party_script_frames: PackedInt32Array = PackedInt32Array([-1, -1, -1])
+var inventory: Dictionary = {}
 var trail_positions: Array[Vector2i] = []
 var trail_directions: PackedInt32Array = PackedInt32Array()
 
@@ -98,6 +99,27 @@ func clear_party_gestures() -> void:
 	party_script_frames.fill(-1)
 
 
+func item_count(item_id: int) -> int:
+	return int(inventory.get(item_id, 0))
+
+
+func set_item_count(item_id: int, amount: int) -> void:
+	if item_id <= 0:
+		return
+	if amount <= 0:
+		inventory.erase(item_id)
+	else:
+		inventory[item_id] = amount
+
+
+func change_item_count(item_id: int, amount: int) -> int:
+	if item_id <= 0:
+		return 0
+	var previous := item_count(item_id)
+	set_item_count(item_id, maxi(0, previous + amount))
+	return item_count(item_id) - previous
+
+
 func reset_new_game() -> void:
 	scene_index = 0
 	viewport_position = Vector2i.ZERO
@@ -109,6 +131,7 @@ func reset_new_game() -> void:
 	battle_music_number = 0
 	world_layer = 0
 	party_roles = PackedInt32Array([0])
+	inventory.clear()
 	clear_party_gestures()
 	_initialize_trail(party_world_position())
 

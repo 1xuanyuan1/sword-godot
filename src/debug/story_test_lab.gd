@@ -57,6 +57,9 @@ func _build_interface() -> void:
 	_add_checkpoint_button(grid, "嘿嘿／李大娘回应", "secret_passage")
 	_add_checkpoint_button(grid, "黑苗人客栈对话", "miao_inn")
 	_add_checkpoint_button(grid, "楼梯八步动画", "stairs")
+	_add_checkpoint_button(grid, "端酒菜给黑苗人", "meal_delivery")
+	_add_checkpoint_button(grid, "醉道士喝桂花酒", "drunken_swordsman")
+	_add_checkpoint_button(grid, "桂花酒物品菜单", "wine_menu")
 	_add_checkpoint_button(grid, "500 文 Toast", "toast")
 
 	var back_button := Button.new()

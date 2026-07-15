@@ -76,3 +76,39 @@ keywords:
   - `.gitignore`
   - `docs/UPSTREAM.md`
   - `docs/DOCUMENTATION.md`
+
+---
+
+### [FT-006] [feat] 贯通端酒菜与醉道士剧情
+
+- **关联需求**: M2–M3 主线场景流程
+- **关联 TODO**: TD-001、TD-002、TD-007、TD-008
+- **功能描述**: 增加剧情物品数量状态并实现脚本物品增减、事件状态同步、未来触发入口和场景转场占位操作码；将原本瞬移的脚本强制走位改为逐帧步行动画。新增“端酒菜给黑苗人”和“醉道士喝桂花酒”检查点，可直接验证桂花酒的获得与消耗、角色造型恢复和相关人物状态收尾。
+- **验证情况**: 110 项合成测试通过；本地资源回归覆盖端酒菜消息 674–692、16 步强制走位和醉道士消息 757–789；开场、黑苗客栈、出口及楼梯旧回归继续通过。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/game/script_vm.gd`
+  - `src/world/map_explorer.gd`
+  - `src/debug/pal_debug_checkpoint.gd`
+  - `src/debug/story_test_lab.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_meal_and_wine_test.gd`
+
+---
+
+### [FT-007] [feat] 增加基础菜单与剧情物品使用
+
+- **关联需求**: M3 菜单与物品系统
+- **关联 TODO**: TD-001、TD-002、TD-003、TD-007、TD-008
+- **功能描述**: 解析 DOS `OBJECT_ITEM` 数据并接入物品名称、使用脚本和标志；探索时可通过 M/Tab 打开基础菜单、通过 I 直接打开背包，查看持有数量并选择可用物品。实现原版“面向指定事件对象”的操作码，使桂花酒只有在玩家正面对着醉道士时才生效，成功后自动进入接酒剧情，失败则显示“无任何效果”。状态、法术、装备和系统菜单保留后续入口。
+- **验证情况**: 115 项合成测试通过；本地资源回归已从物品对象 272 的使用脚本 39660 正常进入醉道士消息 751–789，并验证桂花酒消耗与事件状态收尾；开场、黑苗客栈、出口、楼梯和实际场景启动检查继续通过。
+- **涉及文件**:
+  - `src/content/pal_item_definition.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/game/script_vm.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `src/debug/pal_debug_checkpoint.gd`
+  - `src/debug/story_test_lab.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_meal_and_wine_test.gd`
