@@ -14,11 +14,13 @@ func _init() -> void:
 		failure = _test_stairs(database)
 	if failure.is_empty():
 		failure = _test_kitchen_entry(database)
+	if failure.is_empty():
+		failure = _test_scene_teleport(database)
 	if not failure.is_empty():
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 客栈出口、楼梯动画及厨房入口转场完成，落点正确且没有重播开场")
+	print("PASS: 客栈出口、楼梯动画、厨房入口及场景传送离开脚本完成，落点正确且没有重播开场")
 	quit(0)
 
 
@@ -106,4 +108,30 @@ func _test_kitchen_entry(database: PalContentDatabase) -> String:
 	elif next_entries != [8145]:
 		failure = "厨房所属场景没有保持稳定进入入口：%s" % next_entries
 	enter_vm.free()
+	return failure
+
+
+func _test_scene_teleport(database: PalContentDatabase) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = 5 # 场景 6 的离开脚本入口为 6051。
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var unsupported: Array[String] = []
+	var requested_scenes: Array[int] = []
+	var sounds: Array[int] = []
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.scene_change_requested.connect(func(index: int) -> void: requested_scenes.append(index))
+	vm.sound_requested.connect(func(number: int) -> void: sounds.append(number))
+	vm.run_trigger(39677)
+	var failure := ""
+	if not unsupported.is_empty():
+		failure = "场景传送脚本遇到未支持指令：%s" % ", ".join(unsupported)
+	elif requested_scenes != [3] or session.scene_index != 3:
+		failure = "场景 6 传送脚本没有请求进入场景 4：%s" % requested_scenes
+	elif session.party_world_position() != Vector2i(224, 1376):
+		failure = "场景传送落点错误：%s" % session.party_world_position()
+	elif sounds != [45] or not session.party_formation_collapsed:
+		failure = "传送后的音效或队伍收拢状态错误：sound=%s collapsed=%s" % [sounds, session.party_formation_collapsed]
+	vm.free()
 	return failure

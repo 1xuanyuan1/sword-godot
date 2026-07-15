@@ -218,3 +218,20 @@ keywords:
   - `tests/run_local_event_auto_script_test.gd`
   - `docs/SCRIPT_VM.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-014] [feat] 接通场景传送离开脚本生命周期
+
+- **关联需求**: M2–M3 场景路由与 ScriptVM
+- **关联 TODO**: TD-001、TD-002
+- **功能描述**: 实现操作码 `0038`，在脚本明确传送离开时执行当前 `SCENE.script_on_teleport`，支持子脚本等待、落点、`0059` 切场景和返回调用者；场景没有传送脚本时按 `op0` 走失败入口。实现 `00A1` 队伍收拢状态，传送后队员临时叠到队长位置，下一次正常移动恢复队伍轨迹。
+- **验证情况**: 180 项合成测试通过；真实场景 6 从离开入口执行脚本 `6051` 后进入场景 4，落点、音效和队伍收拢正确；客栈出口、楼梯、厨房入口与开场稳定入口继续通过。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/game/script_vm.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_scene_transition_test.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`

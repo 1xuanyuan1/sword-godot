@@ -36,6 +36,7 @@ func _init() -> void:
 	_test_audio_player_foundation()
 	_test_script_vm_foundation()
 	_test_script_vm_audio_requests()
+	_test_script_vm_scene_teleport()
 	_test_script_vm_dialog_pause()
 	_test_script_vm_title_and_body()
 	_test_script_vm_dialog_page_break()
@@ -415,6 +416,11 @@ func _test_party_trail() -> void:
 	_expect(session.scripted_party_frame(0) == 11, "party script gesture stores the absolute PAL sprite frame")
 	session.record_party_step(GameSession.DIR_EAST, Vector2i(16, 8))
 	_expect(session.scripted_party_frame(0) == -1, "party movement clears scripted gestures")
+	session.party_roles = PackedInt32Array([0, 1])
+	session.collapse_party_formation()
+	_expect(session.party_formation_collapsed and session.party_member_world_position(1) == session.party_world_position() + Vector2i(0, -1), "opcode 00A1 formation collapse stacks followers behind the leader")
+	session.record_party_step(GameSession.DIR_EAST, Vector2i(16, 8))
+	_expect(not session.party_formation_collapsed, "normal movement restores the trail formation after collapse")
 
 
 func _test_audio_settings() -> void:
@@ -488,6 +494,44 @@ func _test_script_vm_audio_requests() -> void:
 	_expect(session.music_number == 31 and music_requests == [[31, true, 3.0]], "opcode 0043 forwards music number, loop and fade semantics")
 	_expect(sound_requests == [98], "opcode 0047 forwards the original VOC sound number")
 	vm.free()
+
+
+func _test_script_vm_scene_teleport() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x0038, 0x0047, 0x00a1, 0, 0x0046, 0x0059, 0, 0x0047, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands[0] = 8
+	database.scripts[2].operands[0] = 45
+	database.scripts[5].operands = PackedInt32Array([7, 86, 0])
+	database.scripts[6].operands[0] = 2
+	database.scripts[8].operands[0] = 99
+	var source_scene := PalSceneDefinition.new()
+	source_scene.script_on_teleport = 5
+	database.scenes.append(source_scene)
+	database.scenes.append(PalSceneDefinition.new())
+	var session := GameSession.new()
+	var requested_scenes: Array[int] = []
+	var sounds: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.scene_change_requested.connect(func(index: int) -> void: requested_scenes.append(index))
+	vm.sound_requested.connect(func(number: int) -> void: sounds.append(number))
+	vm.run_trigger(1)
+	_expect(requested_scenes == [1] and session.scene_index == 1 and session.party_world_position() == Vector2i(224, 1376), "opcode 0038 executes the current scene teleport script before resuming")
+	_expect(sounds == [45] and session.party_formation_collapsed and vm.script_success, "teleport caller resumes after the scene script and executes sound/formation cleanup")
+	vm.free()
+	source_scene.script_on_teleport = 0
+	session.reset_new_game()
+	sounds.clear()
+	var failure_vm := ScriptVM.new()
+	failure_vm.configure(database, session)
+	failure_vm.sound_requested.connect(func(number: int) -> void: sounds.append(number))
+	failure_vm.run_trigger(1)
+	_expect(not failure_vm.script_success and session.scene_index == 0 and sounds == [99], "opcode 0038 jumps to its failure entry when the scene has no teleport script")
+	failure_vm.free()
 
 
 func _test_script_vm_dialog_pause() -> void:

@@ -48,6 +48,13 @@
   --script res://tests/run_local_event_auto_script_test.gd
 ```
 
+场景进入、出口、楼梯和传送离开生命周期回归：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_scene_transition_test.gd
+```
+
 ### 人工剧情检查点
 
 资源实验室的“剧情测试”只用于尚未验收、必须人工观察的问题。验证完成后删除按钮和检查点，保留对应的自动回归，避免测试界面持续膨胀。

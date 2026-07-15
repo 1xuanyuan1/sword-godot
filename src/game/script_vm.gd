@@ -303,6 +303,19 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				_dialog_is_toast = true
 				dialog_started.emit(3, entry.operands[0], 0)
+			# 执行当前场景的传送离开脚本；不存在时跳到 operand[0] 失败入口。
+			0x0038:
+				var teleport_entry := 0
+				if session != null and session.scene_index >= 0 and session.scene_index < database.scenes.size():
+					teleport_entry = database.scenes[session.scene_index].script_on_teleport
+				if teleport_entry <= 0 or teleport_entry >= database.scripts.size():
+					script_success = false
+					_cursor = entry.operands[0]
+					continue
+				_call_stack.append({"cursor": next_cursor, "event_object_id": _event_object_id})
+				_cursor = teleport_entry
+				_event_object_id = _last_event_object_id
+				continue
 			# 设置 operand[0] 事件的触发模式为 operand[1]。
 			0x0040:
 				var event := _resolve_event(entry.operands[0])
@@ -431,6 +444,10 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_page_break.emit()
 				redraw_requested.emit(0)
+			# 把所有队员收拢到队长位置，下一次正常移动后恢复跟随编队。
+			0x00a1:
+				if session != null:
+					session.collapse_party_formation()
 			# 延迟 operand[0]×80ms；10 FPS VM 换算为相应脚本帧数。
 			0x0085:
 				# SDLPal delays operand × 80 ms; scene scripts advance at 10 FPS here.

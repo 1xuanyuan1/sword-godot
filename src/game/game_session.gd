@@ -45,6 +45,8 @@ var inventory: Dictionary = {}
 var trail_positions: Array[Vector2i] = []
 ## 与队伍轨迹位置对应的方向。
 var trail_directions: PackedInt32Array = PackedInt32Array()
+## `00A1` 是否把所有队员临时收拢到队长位置；下一次正常移动后恢复编队。
+var party_formation_collapsed: bool = false
 
 
 #region Position and party trail
@@ -77,6 +79,7 @@ func set_party_world_position(world_position: Vector2i) -> void:
 ## 记录队长一步移动，把旧位置和方向依次推入五格轨迹。
 func record_party_step(direction: int, movement: Vector2i) -> void:
 	clear_party_gestures()
+	party_formation_collapsed = false
 	if trail_positions.size() != TRAIL_SIZE or trail_directions.size() != TRAIL_SIZE:
 		_initialize_trail(party_world_position())
 	for index in range(TRAIL_SIZE - 1, 0, -1):
@@ -92,6 +95,8 @@ func record_party_step(direction: int, movement: Vector2i) -> void:
 func party_member_world_position(member_index: int) -> Vector2i:
 	if member_index <= 0 or trail_positions.size() < 2:
 		return party_world_position()
+	if party_formation_collapsed:
+		return party_world_position() + Vector2i(0, -1)
 	var base := trail_positions[1]
 	var direction := trail_directions[1]
 	if member_index == 2:
@@ -107,7 +112,22 @@ func party_member_world_position(member_index: int) -> Vector2i:
 func party_member_direction(member_index: int) -> int:
 	if member_index <= 0 or trail_directions.size() < 3:
 		return party_direction
+	if party_formation_collapsed:
+		return party_direction
 	return trail_directions[2]
+
+
+## 将所有队员和轨迹临时收拢到队长位置，对应 SDLPal 操作码 `00A1`。
+## 下一次 `record_party_step()` 会自动恢复普通跟随编队。
+func collapse_party_formation() -> void:
+	var leader := party_world_position()
+	trail_positions.resize(TRAIL_SIZE)
+	trail_directions.resize(TRAIL_SIZE)
+	for index in range(TRAIL_SIZE):
+		trail_positions[index] = leader
+		trail_directions[index] = party_direction
+	party_formation_collapsed = true
+	clear_party_gestures()
 
 
 ## 设置脚本动作帧；后续正常移动会清除该动作。
@@ -207,6 +227,7 @@ func change_sound_volume(delta: int) -> int:
 
 
 func _initialize_trail(world_position: Vector2i) -> void:
+	party_formation_collapsed = false
 	trail_positions.resize(TRAIL_SIZE)
 	trail_directions.resize(TRAIL_SIZE)
 	var backward := Vector2i(

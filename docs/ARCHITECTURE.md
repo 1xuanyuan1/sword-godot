@@ -50,6 +50,8 @@ flowchart LR
 
 每个 10 FPS 脚本帧中，`ScriptVM` 还会遍历当前场景的 EventObject：先更新临时消失/重现生命周期，再执行一条自动脚本。追逐事件通过 `set_scene_map()` 读取当前 PAL 地图阻挡；自动移动进入玩家接触范围后，`MapExplorer` 在同一更新周期运行触发脚本。
 
+场景进入与传送离开是两条不同生命周期：`0059` 只请求加载目标场景并运行其 `script_on_enter`；`0038` 先把当前场景的 `script_on_teleport` 当作可等待的嵌套触发脚本执行，完成后再回到调用脚本。两种脚本都可以通过 `0059` 交给 `MapExplorer` 延迟到安全时机切换地图。
+
 ## 输入、事件与重绘
 
 ```mermaid
