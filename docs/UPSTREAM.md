@@ -24,6 +24,7 @@
 | MKF、Sprite、RLE 格式 | `palcommon.c` |
 | YJ1/YJ2 压缩 | `yj1.c` |
 | 调色板和渐变 | `palette.c` |
+| RNG 增量动画 | `rngplay.c` |
 | 等距地图 | `map.c`、`scene.c`、`res.c` |
 | 结构化游戏数据和存档状态 | `global.c`、`global.h` |
 | 脚本虚拟机 | `script.c` |

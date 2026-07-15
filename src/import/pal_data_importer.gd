@@ -67,6 +67,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_generate_content_database(files_by_lowercase, absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)
 	_generate_fbp_preview(files_by_lowercase["fbp.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
+	_generate_rng_preview(files_by_lowercase["rng.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_sprite_preview(files_by_lowercase["ball.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_map_preview(files_by_lowercase["map.mkf"], files_by_lowercase["gop.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_convert_voc_audio(files_by_lowercase["voc.mkf"], absolute_output, report)
@@ -226,6 +227,57 @@ static func _generate_fbp_preview(fbp_path: String, palette_path: String, absolu
 			report.files["fbp_preview"] = {"chunk": index, "path": preview_path}
 			return
 	report.warnings.append("未能生成 FBP 预览；YJ1 数据将由格式测试继续核对")
+
+
+static func _generate_rng_preview(rng_path: String, palette_path: String, absolute_output: String, report: PalImportReport) -> void:
+	var rng_archive := MkfArchive.load_file(rng_path)
+	var palette_archive := MkfArchive.load_file(palette_path)
+	if not rng_archive.is_valid() or not palette_archive.is_valid():
+		return
+	var palette_rgb := PaletteDecoder.decode_rgb(palette_archive.get_chunk(0), false)
+	if palette_rgb.is_empty():
+		return
+	for animation_index in range(rng_archive.chunk_count()):
+		var animation_chunk := rng_archive.get_chunk(animation_index)
+		if animation_chunk.is_empty():
+			continue
+		var animation := RngAnimation.from_mkf_chunk(animation_chunk)
+		if not animation.is_valid():
+			continue
+		var output_dir := absolute_output.path_join("rng/%03d" % animation_index)
+		DirAccess.make_dir_recursive_absolute(output_dir)
+		var frame_decoder := RngFrameDecoder.new()
+		var rendered_frames := 0
+		var last_preview_path := ""
+		for frame_index in range(animation.frame_count()):
+			# SDLPal 数据通常在帧表末尾保留一个零长度分块。
+			if animation.frame_size(frame_index) <= 0:
+				break
+			var delta := animation.decompress_frame(frame_index)
+			if delta.is_empty():
+				report.warnings.append("RNG 动画 %d 帧 %d 解压失败：%s" % [animation_index, frame_index, animation.error_message])
+				break
+			if not frame_decoder.apply_delta(delta):
+				report.warnings.append("RNG 动画 %d 帧 %d 增量解码失败：%s" % [animation_index, frame_index, frame_decoder.error_message])
+				break
+			var output_path := output_dir.path_join("%03d.png" % frame_index)
+			if frame_decoder.to_indexed_image().to_rgba_image(palette_rgb).save_png(output_path) != OK:
+				report.warnings.append("无法写入 RNG 动画预览：%s" % output_path)
+				break
+			rendered_frames += 1
+			last_preview_path = output_path
+		if rendered_frames > 0:
+			report.files["rng_preview"] = {
+				"animation": animation_index,
+				"frames": rendered_frames,
+				"frame_rate": 16,
+				"palette": 0,
+				"output": output_dir,
+				"path": last_preview_path,
+			}
+			report.preview_path = last_preview_path
+			return
+	report.warnings.append("未能从 rng.mkf 生成动画预览")
 
 
 static func _generate_sprite_preview(sprite_path: String, palette_path: String, absolute_output: String, report: PalImportReport) -> void:

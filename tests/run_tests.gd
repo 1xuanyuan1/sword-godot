@@ -14,6 +14,9 @@ func _init() -> void:
 	_test_sprite_offsets()
 	_test_yj1_raw_block()
 	_test_palette_decoder()
+	_test_rng_animation_table()
+	_test_rng_frame_decoder()
+	_test_rng_rejects_malformed_delta()
 	_test_map_helpers()
 	_test_voc_decoder()
 	_test_content_structures()
@@ -108,6 +111,47 @@ func _test_palette_decoder() -> void:
 	var rgb := PaletteDecoder.decode_rgb(chunk)
 	_expect(rgb.size() == PaletteDecoder.PALETTE_BYTES, "palette length")
 	_expect(rgb[0] == 252 and rgb[1] == 128 and rgb[2] == 4, "palette 6-bit scaling")
+
+
+func _test_rng_animation_table() -> void:
+	var data := PackedByteArray()
+	for value in [12, 16, 16]:
+		PalBinary.append_u32_le(data, value)
+	data.append_array("YJ_1".to_ascii_buffer())
+	var animation := RngAnimation.from_mkf_chunk(data)
+	_expect(animation.is_valid(), "RNG nested MKF table")
+	_expect(animation.frame_count() == 2, "RNG nested frame count")
+	_expect(animation.get_compressed_frame(0) == "YJ_1".to_ascii_buffer(), "RNG compressed frame access")
+	_expect(animation.frame_size(1) == 0, "RNG trailing empty frame")
+
+
+func _test_rng_frame_decoder() -> void:
+	var delta := PackedByteArray([
+		0x06, 1, 2,
+		0x02,
+		0x07, 3, 4, 5, 6,
+		0x03, 0,
+		0x0b, 0, 7, 8,
+		0x0d, 9, 10,
+		0x11, 0, 11, 12,
+		0x12, 0, 0, 13, 14,
+		0x13,
+	])
+	var decoder := RngFrameDecoder.new()
+	_expect(decoder.apply_delta(delta), "RNG synthetic delta decode")
+	_expect(decoder.indices.slice(0, 20) == PackedByteArray([
+		1, 2, 0, 0, 3, 4, 5, 6, 0, 0, 7, 8, 9, 10, 9, 10, 11, 12, 13, 14,
+	]), "RNG skip/literal/repeat semantics")
+	var second_delta := PackedByteArray([0x03, 0, 0x06, 21, 22, 0x00])
+	_expect(decoder.apply_delta(second_delta), "RNG second incremental frame")
+	_expect(decoder.indices.slice(0, 6) == PackedByteArray([1, 2, 21, 22, 3, 4]), "RNG preserves previous frame")
+
+
+func _test_rng_rejects_malformed_delta() -> void:
+	var decoder := RngFrameDecoder.new()
+	_expect(not decoder.apply_delta(PackedByteArray([0x0c, 1, 0, 7, 8])), "RNG truncated literal rejection")
+	_expect(not decoder.error_message.is_empty(), "RNG malformed error state")
+	_expect(not decoder.apply_delta(PackedByteArray([0x05])), "RNG unknown opcode rejection")
 
 
 func _test_map_helpers() -> void:

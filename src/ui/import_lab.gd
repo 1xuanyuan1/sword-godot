@@ -8,6 +8,7 @@ var _details: Tree
 var _preview: TextureRect
 var _import_button: Button
 var _explore_button: Button
+var _rng_button: Button
 var _dialog: FileDialog
 
 
@@ -71,6 +72,12 @@ func _build_interface() -> void:
 	_explore_button.pressed.connect(_open_explorer)
 	picker.add_child(_explore_button)
 
+	_rng_button = Button.new()
+	_rng_button.text = "RNG 动画"
+	_rng_button.disabled = true
+	_rng_button.pressed.connect(_open_rng_preview)
+	picker.add_child(_rng_button)
+
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	split.split_offset = 205
@@ -117,7 +124,8 @@ func _build_interface() -> void:
 func _show_idle_state() -> void:
 	var has_generated_content := FileAccess.file_exists("res://generated/pal/content/core/scenes.bin")
 	_explore_button.disabled = not has_generated_content
-	_status.text = "[color=#93c5fd]%s[/color] 本仓库不会复制或上传原版数据。" % ("已发现本地生成内容，可以打开探索样板。" if has_generated_content else "等待资源目录。")
+	_rng_button.disabled = not FileAccess.file_exists("res://generated/pal/rng/000/000.png")
+	_status.text = "[color=#93c5fd]%s[/color] 本仓库不会复制或上传原版数据。" % ("已发现本地生成内容，可以打开预览。" if has_generated_content else "等待资源目录。")
 	var root := _details.create_item()
 	var item := _details.create_item(root)
 	item.set_text(0, "尚未校验")
@@ -148,7 +156,7 @@ func _show_report(report: PalImportReport) -> void:
 	_details.clear()
 	var root := _details.create_item()
 	for file_name: String in report.files.keys():
-		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "voc_conversion", "rix_conversion", "content_database", "text_conversion"]:
+		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "rng_preview", "voc_conversion", "rix_conversion", "content_database", "text_conversion"]:
 			continue
 		var metadata: Dictionary = report.files[file_name]
 		var item := _details.create_item(root)
@@ -165,6 +173,7 @@ func _show_report(report: PalImportReport) -> void:
 	if report.success:
 		lines.append("本地清单：%s" % report.manifest_path)
 		_explore_button.disabled = false
+		_rng_button.disabled = not report.files.has("rng_preview")
 	_status.text = "\n".join(lines)
 
 	_preview.texture = null
@@ -176,6 +185,10 @@ func _show_report(report: PalImportReport) -> void:
 
 func _open_explorer() -> void:
 	get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
+
+
+func _open_rng_preview() -> void:
+	get_tree().change_scene_to_file("res://scenes/rng_preview.tscn")
 
 
 func _format_size(bytes: int) -> String:
