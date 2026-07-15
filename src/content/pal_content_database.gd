@@ -20,6 +20,7 @@ var messages: Array = []
 var source_encoding: String = ""
 var _mgo_sprites: Dictionary = {}
 var _rgm_portraits: Dictionary = {}
+var _speaker_portrait_defaults: Dictionary = {}
 
 
 func load_generated(path: String = "res://generated/pal/content") -> bool:
@@ -33,6 +34,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	messages.clear()
 	_mgo_sprites.clear()
 	_rgm_portraits.clear()
+	_speaker_portrait_defaults.clear()
 	var core := root_path.path_join("core")
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
@@ -55,6 +57,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		error_message = player_roles.error_message if player_roles != null else "PLAYERROLES 数据缺失"
 		return false
 	_load_text_database()
+	_build_speaker_portrait_defaults()
 	return not scenes.is_empty() and not scripts.is_empty()
 
 
@@ -117,6 +120,10 @@ static func speaker_role_for_message(index: int) -> int:
 	return int(MESSAGE_SPEAKER_ROLE_OVERRIDES.get(index, -1))
 
 
+func portrait_for_speaker(speaker: String) -> int:
+	return int(_speaker_portrait_defaults.get(speaker, 0))
+
+
 func _load_text_database() -> void:
 	var path := root_path.path_join("text/text.json")
 	var file := FileAccess.open(path, FileAccess.READ)
@@ -128,6 +135,47 @@ func _load_text_database() -> void:
 	source_encoding = str(parsed.get("encoding", ""))
 	words = parsed.get("words", [])
 	messages = parsed.get("messages", [])
+
+
+func _build_speaker_portrait_defaults() -> void:
+	_speaker_portrait_defaults.clear()
+	var portrait_counts: Dictionary = {}
+	var current_portrait := 0
+	for entry in scripts:
+		match entry.operation:
+			0x003c, 0x003d:
+				current_portrait = entry.operands[0]
+			0x003b, 0x003e, 0x0000, 0x0001, 0x0002, 0x0005, 0x0009, 0x008e:
+				current_portrait = 0
+			0xffff:
+				if current_portrait <= 0:
+					continue
+				var text := get_message(entry.operands[0]).strip_edges()
+				if not _is_speaker_title(text):
+					continue
+				var speaker := _speaker_name_from_title(text)
+				if not portrait_counts.has(speaker):
+					portrait_counts[speaker] = {}
+				var counts: Dictionary = portrait_counts[speaker]
+				counts[current_portrait] = int(counts.get(current_portrait, 0)) + 1
+	for speaker in portrait_counts:
+		var best_portrait := 0
+		var best_count := -1
+		var counts: Dictionary = portrait_counts[speaker]
+		for portrait in counts:
+			var count := int(counts[portrait])
+			if count > best_count:
+				best_portrait = int(portrait)
+				best_count = count
+		_speaker_portrait_defaults[speaker] = best_portrait
+
+
+static func _is_speaker_title(text: String) -> bool:
+	return text.ends_with(":") or text.ends_with("：") or text.ends_with("∶")
+
+
+static func _speaker_name_from_title(text: String) -> String:
+	return text.trim_suffix(":").trim_suffix("：").trim_suffix("∶")
 
 
 func _read_file(path: String) -> PackedByteArray:

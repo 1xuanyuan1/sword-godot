@@ -2,6 +2,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 extends SceneTree
 
+const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
+
 var _failures: Array[String] = []
 var _checks: int = 0
 
@@ -33,6 +35,7 @@ func _init() -> void:
 	_test_script_vm_frame_delay_and_auto_walk()
 	_test_script_vm_inn_conversation_operations()
 	_test_script_vm_center_toast()
+	_test_debug_checkpoints()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
@@ -221,6 +224,16 @@ func _test_content_structures() -> void:
 	event_bytes[14] = PalEventObject.TRIGGER_TOUCH_NEAR + 1
 	var event := PalEventObject.from_bytes(event_bytes, 0)
 	_expect(event.is_touch_trigger() and event.touch_trigger_distance() == 48, "touch event trigger distance follows SDLPal mode")
+	var dialog_database := PalContentDatabase.new()
+	dialog_database.messages.append("李大娘：")
+	for operation in [0x003c, 0xffff, 0x0000]:
+		var dialog_entry := PalScriptEntry.new()
+		dialog_entry.operation = operation
+		dialog_entry.operands = PackedInt32Array([0, 0, 0])
+		dialog_database.scripts.append(dialog_entry)
+	dialog_database.scripts[0].operands[0] = 55
+	dialog_database._build_speaker_portrait_defaults()
+	_expect(dialog_database.portrait_for_speaker("李大娘") == 55 and dialog_database.portrait_for_speaker("旁白") == 0, "speaker portrait metadata fills only known character portraits")
 
 
 func _test_player_roles_structure() -> void:
@@ -520,6 +533,13 @@ func _test_script_vm_center_toast() -> void:
 		vm.tick_frame()
 	_expect(not vm.running and ended.size() >= 1, "center toast closes automatically after 1.4 seconds")
 	vm.free()
+
+
+func _test_debug_checkpoints() -> void:
+	_expect(DebugCheckpoint.request("miao_inn"), "known debug story checkpoint is accepted")
+	var checkpoint: Dictionary = DebugCheckpoint.consume()
+	_expect(checkpoint.get("scene") == 2 and checkpoint.get("script") == 4701 and checkpoint.get("event") == 57, "debug story checkpoint contains scene and script context")
+	_expect(DebugCheckpoint.consume().is_empty() and not DebugCheckpoint.request("missing"), "debug story checkpoint is consumed once and rejects unknown ids")
 
 
 func _test_dialog_box_typewriter() -> void:

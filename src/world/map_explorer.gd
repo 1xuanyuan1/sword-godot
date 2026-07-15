@@ -5,6 +5,7 @@ extends Control
 
 const MOVE_REPEAT_SECONDS := 0.10
 const SCRIPT_FRAME_SECONDS := 0.10
+const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 
 var _database := PalContentDatabase.new()
 var _session := GameSession.new()
@@ -44,7 +45,11 @@ func _ready() -> void:
 	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
 	_script_vm.party_step_performed.connect(_on_script_party_step)
 	add_child(_script_vm)
-	_load_scene(_session.scene_index, true)
+	var checkpoint: Dictionary = DebugCheckpoint.consume()
+	if checkpoint.is_empty():
+		_load_scene(_session.scene_index, true)
+	else:
+		_load_debug_checkpoint(checkpoint)
 
 
 func _build_interface() -> void:
@@ -235,6 +240,19 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 		_script_vm.run_trigger(scene.script_on_enter)
 
 
+func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
+	var scene_index := int(checkpoint.get("scene", 0))
+	_session.scene_index = scene_index
+	if checkpoint.has("position"):
+		_session.set_party_world_position(checkpoint["position"])
+	_load_scene(scene_index, false)
+	var script_entry := int(checkpoint.get("script", 0))
+	var event_object_id := int(checkpoint.get("event", 0))
+	_status.text = "剧情测试：%s｜场景 %d｜脚本 0x%04X" % [checkpoint.get("id", ""), scene_index + 1, script_entry]
+	if script_entry > 0:
+		_script_vm.run_trigger(script_entry, event_object_id)
+
+
 func _refresh_world() -> void:
 	var palette := _database.load_palette(_session.palette_index, _session.night_palette)
 	var scene_items := _build_scene_draw_items()
@@ -352,6 +370,8 @@ func _on_dialog_message(message_index: int) -> void:
 	if PalDialogBox._is_speaker_title(displayed_message) and not _dialog_box.has_portrait():
 		var speaker := PalDialogBox.speaker_name_from_title(displayed_message)
 		var fallback_portrait := _portrait_number_for_player(speaker)
+		if fallback_portrait <= 0:
+			fallback_portrait = _database.portrait_for_speaker(speaker)
 		if fallback_portrait > 0:
 			_dialog_box.set_portrait(_load_portrait_texture(fallback_portrait))
 	_dialog_box.show_message(displayed_message)

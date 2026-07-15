@@ -41,6 +41,9 @@ func _init() -> void:
 	elif session.cash != 500:
 		printerr("FAIL: 客栈黑苗人事件没有获得 500 文钱")
 		quit(1)
+	elif database.portrait_for_speaker("李大娘") != 55:
+		printerr("FAIL: 李大娘的默认肖像没有解析为 55")
+		quit(1)
 	else:
 		print("PASS: 客栈黑苗人事件完成，消息 604–633，获得 500 文钱")
 		quit(0)
