@@ -17,6 +17,7 @@ var _map_data: PalMapData
 var _tile_sprite: PalSprite
 var _scene_events: Array[PalEventObject] = []
 var _map_view: TextureRect
+var _tile_world: PalTileMapWorld
 var _status: Label
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
@@ -31,9 +32,11 @@ var _script_frame_accumulator: float = 0.0
 var _active_trigger_event: PalEventObject
 var _active_scene_enter_index: int = -1
 var _pending_used_item_id: int = 0
+var _use_legacy_renderer: bool = false
 
 
 func _ready() -> void:
+	_use_legacy_renderer = "--pal-map-backend=legacy" in OS.get_cmdline_user_args()
 	_build_interface()
 	if not _database.load_generated():
 		_set_error(_database.error_message + "。请返回资源实验室重新导入。")
@@ -67,11 +70,17 @@ func _build_interface() -> void:
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
 
+	_tile_world = PalTileMapWorld.new()
+	_tile_world.name = "PalTileMapWorld"
+	_tile_world.visible = not _use_legacy_renderer
+	add_child(_tile_world)
+
 	_map_view = TextureRect.new()
 	_map_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_map_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_map_view.stretch_mode = TextureRect.STRETCH_SCALE
 	_map_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_map_view.visible = _use_legacy_renderer
 	add_child(_map_view)
 
 	var status_background := ColorRect.new()
@@ -190,7 +199,10 @@ func _is_blocked(world_position: Vector2i) -> bool:
 	var tile_y := floori(world_position.y / 16.0)
 	if tile_x < 0 or tile_x >= PalMapData.WIDTH or tile_y < 0 or tile_y >= PalMapData.HEIGHT:
 		return true
-	if PalMapData.is_blocked(_map_data.tile_value(tile_x, tile_y, half)):
+	var map_blocked := PalMapData.is_blocked(_map_data.tile_value(tile_x, tile_y, half))
+	if not _use_legacy_renderer and _tile_world != null and _tile_world.loaded_map_number >= 0:
+		map_blocked = _tile_world.is_map_blocked(world_position)
+	if map_blocked:
 		return true
 	for event in _scene_events:
 		if not event.is_visible() or not event.blocks_movement():
@@ -261,10 +273,13 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 	if not _map_data.is_valid() or not _tile_sprite.is_valid():
 		_set_error("场景 %d 地图加载失败：%s %s" % [scene_index + 1, _map_data.error_message, _tile_sprite.error_message])
 		return
+	if not _use_legacy_renderer and not _tile_world.load_map(_database, scene.map_number):
+		_set_error("地图 %d Godot TileMapLayer 加载失败：%s" % [scene.map_number, _tile_world.error_message])
+		return
 	if not _load_scene_sprites():
 		return
 	_refresh_world()
-	_status.text = "方向键｜空格交互｜Esc 菜单｜F10 返回｜场景%d/地图%d" % [scene_index + 1, scene.map_number]
+	_status.text = "方向键｜空格交互｜Esc 菜单｜F10 返回｜场景%d/地图%d｜%s" % [scene_index + 1, scene.map_number, "CPU 基准" if _use_legacy_renderer else "TileMapLayer"]
 	if run_enter_script:
 		_run_scene_enter_script(scene_index)
 
@@ -308,6 +323,11 @@ func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
 
 
 func _refresh_world() -> void:
+	if not _use_legacy_renderer:
+		_tile_world.set_walk_animation(_walk_phase, _showing_walk_frame)
+		if not _tile_world.sync_world(_session, _scene_events):
+			_set_error("Godot 原生地图渲染失败：%s" % _tile_world.error_message)
+		return
 	var palette := _database.load_palette(_session.palette_index, _session.night_palette)
 	var scene_items := _build_scene_draw_items()
 	var rendered := PalSceneRenderer.render(
@@ -496,6 +516,8 @@ func _apply_pending_scene() -> void:
 
 func _on_player_sprites_changed() -> void:
 	_player_sprites.clear()
+	if _tile_world != null:
+		_tile_world.reset_sprite_cache()
 
 
 func _on_script_party_step() -> void:

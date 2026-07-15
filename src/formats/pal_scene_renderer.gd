@@ -32,16 +32,23 @@ static func event_item(frame: PalIndexedImage, screen_position: Vector2i, event_
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + event_layer * 8 + 9, event_layer * 8 + 2)
 
 
+## 按 SDLPal 顺序展开人物及其候选覆盖块，但不排序也不绘制。
+## Godot 原生世界使用该列表创建 Y 排序 Sprite2D，从而和 CPU 基准共享遮挡规则。
+static func expanded_draw_items(map_data: PalMapData, tile_sprite: PalSprite, viewport_position: Vector2i, scene_items: Array) -> Array:
+	var draw_items: Array = []
+	for item in scene_items:
+		if item is DrawItem and item.frame != null and item.frame.is_valid():
+			draw_items.append(item)
+			_append_cover_tiles(draw_items, item, map_data, tile_sprite, viewport_position)
+	return draw_items
+
+
 ## 先绘制完整地图，再加入角色及可能盖住角色的地图块并按基准 Y 排序。
 static func render(map_data: PalMapData, tile_sprite: PalSprite, viewport: Rect2i, scene_items: Array) -> PalIndexedImage:
 	var canvas := PalMapRenderer.render(map_data, tile_sprite, viewport, true)
 	if not canvas.is_valid():
 		return canvas
-	var draw_items: Array = []
-	for item in scene_items:
-		if item is DrawItem and item.frame != null and item.frame.is_valid():
-			draw_items.append(item)
-			_append_cover_tiles(draw_items, item, map_data, tile_sprite, viewport.position)
+	var draw_items := expanded_draw_items(map_data, tile_sprite, viewport.position, scene_items)
 	for index in range(draw_items.size()):
 		draw_items[index].insertion_order = index
 	draw_items.sort_custom(func(left: DrawItem, right: DrawItem) -> bool:

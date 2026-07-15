@@ -42,6 +42,20 @@
 
 若 Godot Y 排序无法逐像素表达 SDLPal 覆盖块规则，地图主体仍保持 TileMapLayer，只让特殊覆盖块进入兼容 Sprite2D 层。
 
+像素测试必须使用真实渲染器，不能加 `--headless`（headless 使用 dummy renderer，无法读回 GPU 纹理）：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . \
+  --script res://tests/run_local_tilemap_visual_test.gd
+```
+
+临时查看旧 CPU 路径可在运行探索场景时追加用户参数：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . \
+  res://scenes/map_explorer.tscn -- --pal-map-backend=legacy
+```
+
 ## Git 与提交
 
 - 修改前先检查 `git status`，用户已有修改不得覆盖或顺带提交。

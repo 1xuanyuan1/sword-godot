@@ -40,6 +40,8 @@ flowchart LR
 6. `PalTileMapWorld` 实例化该 `map_number` 对应的 TileMap 场景；多个剧情场景可以复用同一地图资源。
 7. `ScriptVM` 执行场景进入脚本，并通过信号请求重绘、对话、人物动作或场景切换。
 
+`PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 默认走该路径，命令行用户参数 `--pal-map-backend=legacy` 可临时启用 CPU 基准。
+
 ## 输入、事件与重绘
 
 ```mermaid
@@ -65,4 +67,4 @@ sequenceDiagram
 
 地图和人物纹理保存“颜色索引 + 透明度”，`indexed_palette.gdshader` 在 GPU 上映射到当前 PAL 调色板。这样日夜切换和后续淡入淡出只更新材质，不需要每次移动都重新生成 320×200 RGBA 图片。
 
-CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 在迁移期继续作为像素参考。TileMapLayer 全量验收后成为默认路径，CPU 路径保留一个里程碑用于排错。
+CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileMapLayer 已成为默认路径；CPU 路径保留一个里程碑用于排错和本地截图对照。

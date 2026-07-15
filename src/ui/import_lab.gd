@@ -147,11 +147,13 @@ func _build_interface() -> void:
 
 
 func _show_idle_state() -> void:
-	var has_generated_content := FileAccess.file_exists("res://generated/pal/content/core/scenes.bin")
+	var has_core_content := FileAccess.file_exists("res://generated/pal/content/core/scenes.bin")
+	var has_generated_content := has_core_content and FileAccess.file_exists("res://generated/pal/content/world/tilemaps/012.tscn")
 	_explore_button.disabled = not has_generated_content
 	_story_test_button.disabled = not has_generated_content
 	_rng_button.disabled = not FileAccess.file_exists("res://generated/pal/rng/000/000.png")
-	_status.text = "[color=#93c5fd]%s[/color] 本仓库不会复制或上传原版数据。" % ("已发现本地生成内容，可以打开预览。" if has_generated_content else "等待资源目录。")
+	var state_text := "已发现本地生成内容，可以打开预览。" if has_generated_content else ("生成内容版本较旧，请重新导入 Data。" if has_core_content else "等待资源目录。")
+	_status.text = "[color=#93c5fd]%s[/color] 本仓库不会复制或上传原版数据。" % state_text
 	var root := _details.create_item()
 	var item := _details.create_item(root)
 	item.set_text(0, "尚未校验")
