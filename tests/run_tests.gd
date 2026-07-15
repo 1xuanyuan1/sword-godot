@@ -477,6 +477,32 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	step_vm.run_trigger(1)
 	_expect(step_signals.size() == 1 and step_session.party_world_position() == Vector2i(170, 117), "scripted party step emits an animation signal")
 	step_vm.free()
+	var call_database := PalContentDatabase.new()
+	for operation in [0, 0x0004, 0x0000, 0x0000, 0x0000, 0x0049, 0x0014, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		call_database.scripts.append(entry)
+	call_database.scripts[1].operands = PackedInt32Array([5, 2, 0])
+	call_database.scripts[5].operands = PackedInt32Array([0xffff, 1, 0])
+	call_database.scripts[6].operands[0] = 2
+	var call_scene := PalSceneDefinition.new()
+	call_scene.event_object_index = 0
+	call_database.scenes.append(call_scene)
+	for object_id in range(1, 3):
+		var called_object := PalEventObject.new()
+		called_object.object_id = object_id
+		called_object.state = 0
+		call_database.event_objects.append(called_object)
+	call_database.event_objects[0].state = 2
+	call_database.event_objects[0].auto_script = 1
+	var call_session := GameSession.new()
+	var call_vm := ScriptVM.new()
+	call_vm.configure(call_database, call_session)
+	call_vm.tick_frame()
+	var called_event := call_database.event_objects[1]
+	_expect(called_event.state == 1 and called_event.current_frame == 2, "event auto script executes an instant nested trigger call")
+	call_vm.free()
 
 
 func _test_script_vm_inn_conversation_operations() -> void:

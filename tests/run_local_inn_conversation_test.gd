@@ -26,6 +26,9 @@ func _init() -> void:
 		else:
 			vm.tick_frame()
 		guard += 1
+	# 对话结束后继续驱动 NPC 自动脚本，验证黑苗人都进入客房而非卡在门口。
+	for frame in range(200):
+		vm.tick_frame()
 	var expected_messages: Array[int] = []
 	for index in range(604, 634):
 		expected_messages.append(index)
@@ -44,7 +47,10 @@ func _init() -> void:
 	elif database.portrait_for_speaker("李大娘") != 55:
 		printerr("FAIL: 李大娘的默认肖像没有解析为 55")
 		quit(1)
+	elif database.event_objects[59].state != 0 or database.event_objects[60].state != 0 or database.event_objects[61].state != 0:
+		printerr("FAIL: 黑苗 NPC 自动路线没有完成：%s" % [database.event_objects[59].state, database.event_objects[60].state, database.event_objects[61].state])
+		quit(1)
 	else:
-		print("PASS: 客栈黑苗人事件完成，消息 604–633，获得 500 文钱")
+		print("PASS: 客栈黑苗人事件完成，消息 604–633，获得 500 文钱，NPC 均已进入客房")
 		quit(0)
 	vm.free()

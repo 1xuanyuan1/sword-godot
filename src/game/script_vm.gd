@@ -391,6 +391,10 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 				event.auto_script_idle_count = 0
 				event.auto_script += 1
 			return false
+		0x0004:
+			_run_instant_trigger_script(entry.operands[0], entry.operands[1] if entry.operands[1] > 0 else event.object_id)
+			event.auto_script += 1
+			return true
 		0x0009:
 			event.auto_script_idle_count += 1
 			if event.auto_script_idle_count >= maxi(1, entry.operands[0]):
@@ -448,6 +452,71 @@ func _run_auto_script_step(event: PalEventObject) -> bool:
 			event.auto_script += 1
 			return target != null
 	return false
+
+
+func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool:
+	var cursor := entry_index
+	var current_event_object_id := event_object_id
+	var stack: Array[Dictionary] = []
+	var executed := 0
+	while cursor > 0 and cursor < database.scripts.size() and executed < 256:
+		var entry := database.scripts[cursor]
+		var next_cursor := cursor + 1
+		match entry.operation:
+			0x0000, 0x0001:
+				if stack.is_empty():
+					return true
+				var frame: Dictionary = stack.pop_back()
+				cursor = int(frame["cursor"])
+				current_event_object_id = int(frame["event_object_id"])
+				continue
+			0x0003:
+				cursor = entry.operands[0]
+				continue
+			0x0004:
+				stack.append({"cursor": next_cursor, "event_object_id": current_event_object_id})
+				cursor = entry.operands[0]
+				if entry.operands[1] > 0:
+					current_event_object_id = entry.operands[1]
+				continue
+			0x000f:
+				var target := _event_by_id(current_event_object_id)
+				if target != null:
+					if entry.operands[0] != 0xffff:
+						target.direction = entry.operands[0]
+					if entry.operands[1] != 0xffff:
+						target.current_frame = entry.operands[1]
+			0x0013:
+				var target := _instant_target_event(entry.operands[0], current_event_object_id)
+				if target != null:
+					target.position = Vector2i(entry.operands[1], entry.operands[2])
+			0x0014:
+				var target := _event_by_id(current_event_object_id)
+				if target != null:
+					target.current_frame = entry.operands[0]
+					target.direction = GameSession.DIR_SOUTH
+			0x0016:
+				var target := _instant_target_event(entry.operands[0], current_event_object_id)
+				if target != null and entry.operands[0] != 0:
+					target.direction = entry.operands[1]
+					target.current_frame = entry.operands[2]
+			0x0040:
+				var target := _instant_target_event(entry.operands[0], current_event_object_id)
+				if target != null and entry.operands[0] != 0:
+					target.trigger_mode = entry.operands[1]
+			0x0049:
+				var target := _instant_target_event(entry.operands[0], current_event_object_id)
+				if target != null and entry.operands[0] != 0:
+					target.state = _signed_word(entry.operands[1])
+			_:
+				return false
+		cursor = next_cursor
+		executed += 1
+	return false
+
+
+func _instant_target_event(operand: int, current_event_object_id: int) -> PalEventObject:
+	return _event_by_id(current_event_object_id if operand == 0 or operand == 0xffff else operand)
 
 
 func _resolve_auto_event(operand: int, invoking_event: PalEventObject) -> PalEventObject:
