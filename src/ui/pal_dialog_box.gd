@@ -172,8 +172,8 @@ func _build_interface() -> void:
 	_message.scroll_active = false
 	_message.bbcode_enabled = false
 	_message.clip_contents = true
-	_message.add_theme_font_size_override("font_size", 10)
-	_message.add_theme_color_override("font_color", Color("fff7e8"))
+	_message.add_theme_font_size_override("normal_font_size", 10)
+	_message.add_theme_color_override("default_color", Color("fff7e8"))
 	content_column.add_child(_message)
 
 	_hint = Label.new()

@@ -356,6 +356,7 @@ func _test_dialog_box_typewriter() -> void:
 	_expect(dialog._full_text == "行侠仗义丢下我不管！", "dialog body fragments concatenate without forced line breaks")
 	_expect(dialog._message.vertical_alignment == VERTICAL_ALIGNMENT_TOP, "dialog body aligns to the top")
 	_expect(dialog._message.autowrap_mode == TextServer.AUTOWRAP_ARBITRARY and dialog._message.clip_contents, "dialog body wraps within its content width")
+	_expect(dialog._message.get_theme_font_size("normal_font_size") == 10, "dialog body uses the intended RichTextLabel font size")
 	dialog._process(0.2)
 	_expect(dialog.is_typing() and dialog._message.visible_characters > 0, "dialog body reveals characters progressively")
 	dialog.reveal_all()
