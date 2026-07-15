@@ -311,6 +311,12 @@ func _on_script_redraw(_delay_units: int) -> void:
 func _on_dialog_message(message_index: int) -> void:
 	var message := _database.get_message(message_index)
 	var displayed_message := message if not message.is_empty() else "（文本未导入）"
+	var overridden_role := PalContentDatabase.speaker_role_for_message(message_index)
+	if overridden_role >= 0 and not _dialog_box.visible:
+		var speaker := _database.get_word(_database.player_roles.name_word_for(overridden_role))
+		var portrait := _database.player_roles.avatar_for(overridden_role)
+		_dialog_box.begin(1, 0, _load_portrait_texture(portrait))
+		_dialog_box.show_message(speaker + "：")
 	if PalDialogBox._is_speaker_title(displayed_message) and not _dialog_box.has_portrait():
 		var speaker := PalDialogBox.speaker_name_from_title(displayed_message)
 		var fallback_portrait := _portrait_number_for_player(speaker)

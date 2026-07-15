@@ -3,6 +3,12 @@
 class_name PalContentDatabase
 extends RefCounted
 
+# 原版脚本没有附带标题或肖像、但可由剧情明确确认的角色台词。
+# 键为当前 DOS 数据集的 M.MSG 索引，值为 PLAYERROLES 角色索引。
+const MESSAGE_SPEAKER_ROLE_OVERRIDES: Dictionary = {
+	585: 0, # 李逍遥在客栈密道旁的“嘿嘿．．”
+}
+
 var root_path: String = "res://generated/pal/content"
 var error_message: String = ""
 var scenes: Array[PalSceneDefinition] = []
@@ -105,6 +111,10 @@ func get_word(index: int) -> String:
 
 func get_message(index: int) -> String:
 	return str(messages[index]) if index >= 0 and index < messages.size() else ""
+
+
+static func speaker_role_for_message(index: int) -> int:
+	return int(MESSAGE_SPEAKER_ROLE_OVERRIDES.get(index, -1))
 
 
 func _load_text_database() -> void:

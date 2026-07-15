@@ -213,6 +213,7 @@ func _test_content_structures() -> void:
 	var script := PalScriptEntry.from_bytes(script_bytes, 0)
 	_expect(script != null and script.operation == 0x46, "script operation parsing")
 	_expect(script.operands == PackedInt32Array([41, 18, 0]), "script operand parsing")
+	_expect(PalContentDatabase.speaker_role_for_message(585) == 0 and PalContentDatabase.speaker_role_for_message(584) == -1, "explicit speaker metadata only applies to confirmed untitled dialog")
 
 
 func _test_player_roles_structure() -> void:
