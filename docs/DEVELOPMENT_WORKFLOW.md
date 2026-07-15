@@ -17,6 +17,8 @@
 
 当导入格式版本、TileSet 生成规则或本机原版资源发生变化时，应重新导入，不能手工修改 `generated/` 中的结果来掩盖转换问题。
 
+导入器会构建本机 `tools/rix_renderer/build/rix_renderer`，扫描脚本引用并生成 RIX/OPL WAV。首次完整导入约生成 72 首曲目、占用约 289 MB；该目录已被 Git 忽略。新增 WAV 后若 Godot 编辑器尚未识别，可重启编辑器或执行一次资源扫描。
+
 ## 测试层级
 
 ### 合成测试
@@ -31,6 +33,13 @@
 ### 本地资源测试
 
 `tests/run_local_*.gd` 读取 `generated/pal/`，用于验证完整导入数据、剧情流程、菜单和像素截图。它们可以提交测试代码，但不得提交输出截图、原版文字转储或资源文件。
+
+音频资源和独立音量回归：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_audio_test.gd
+```
 
 ### 人工剧情检查点
 

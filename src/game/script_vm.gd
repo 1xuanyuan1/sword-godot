@@ -22,8 +22,8 @@ signal dialog_message(message_index: int)
 signal dialog_page_break
 ## 当前对话上下文结束或 VM 被停止。
 signal dialog_ended
-## 请求音频层切换场景音乐。
-signal music_requested(music_number: int)
+## 请求音频层切换场景音乐，并携带循环与淡入淡出语义。
+signal music_requested(music_number: int, loop: bool, fade_seconds: float)
 ## 请求播放一次音效。
 signal sound_requested(sound_number: int)
 ## 请求探索控制器切换到从 0 开始的场景索引。
@@ -303,7 +303,9 @@ func _continue_execution() -> int:
 			0x0043:
 				if session != null:
 					session.music_number = entry.operands[0]
-				music_requested.emit(entry.operands[0])
+				var loop_music := entry.operands[1] != 1
+				var fade_seconds := 3.0 if entry.operands[1] == 3 and entry.operands[0] != 9 else 0.0
+				music_requested.emit(entry.operands[0], loop_music, fade_seconds)
 			# 设置下一场战斗的音乐编号为 operand[0]。
 			0x0045:
 				if session != null:

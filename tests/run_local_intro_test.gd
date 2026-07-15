@@ -20,8 +20,12 @@ func _init() -> void:
 	vm.script_finished.connect(explorer._on_script_finished)
 	var messages: Array[int] = []
 	var unsupported: Array[String] = []
+	var music_requests: Array = []
+	var sound_requests: Array[int] = []
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
 	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: music_requests.append([number, loop, fade]))
+	vm.sound_requested.connect(func(number: int) -> void: sound_requests.append(number))
 	var entry := database.scenes[0].script_on_enter
 	explorer._run_scene_enter_script(0)
 	var advance_guard := 0
@@ -50,6 +54,9 @@ func _init() -> void:
 		quit(1)
 	elif not intro_pose_frames.has(2) or not intro_pose_frames.has(3):
 		printerr("FAIL: 李逍遥的大侠姿势帧没有执行")
+		quit(1)
+	elif music_requests != [[31, true, 0.0]] or sound_requests != [98]:
+		printerr("FAIL: 开场音频请求不匹配：music=%s sound=%s" % [music_requests, sound_requests])
 		quit(1)
 	elif entry != 7952 or persisted_entry != 8145:
 		printerr("FAIL: 首场景进入脚本返回入口没有持久化：%d -> %d" % [entry, persisted_entry])

@@ -17,6 +17,8 @@ flowchart LR
     G --> I[HUD CanvasLayer]
     I --> K[状态栏 / 对话框 / 经典菜单]
     H --> J[TileMapLayer / Sprite2D / Camera2D]
+    G --> L[PalAudioPlayer]
+    L --> N[AudioStreamPlayer BGM / SFX]
 ```
 
 ## 状态所有权
@@ -29,6 +31,7 @@ flowchart LR
 | `ScriptVM` | 当前指令入口、等待原因、自动脚本调度 | 持久化内容、直接绘制画面 |
 | `MapExplorer` | 输入与各模块的编排、当前场景事件引用 | 重新解释资源格式 |
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
+| `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
 | UI | 对话、Toast、菜单和资源实验室的显示状态 | 绕过 ScriptVM 修改剧情 |
 
 ## 启动与场景加载
@@ -54,6 +57,7 @@ sequenceDiagram
     participant S as GameSession
     participant V as ScriptVM
     participant W as PalTileMapWorld
+    participant A as PalAudioPlayer
     participant UI as 对话框/菜单
     U->>M: 方向键、空格、Esc
     M->>S: 校验阻挡并记录队伍步进
@@ -61,6 +65,8 @@ sequenceDiagram
     V->>S: 修改位置、物品、金钱或调色板
     V-->>UI: 对话和 Toast 信号
     V-->>M: 重绘或场景切换请求
+    V-->>A: BGM/剧情音效请求
+    UI-->>A: 菜单音量与反馈音请求
     M->>W: 同步地图、人物、事件和调色板
 ```
 

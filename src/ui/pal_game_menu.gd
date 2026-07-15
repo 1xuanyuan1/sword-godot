@@ -6,18 +6,29 @@
 class_name PalGameMenu
 extends Control
 
+const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
+
 ## 玩家确认使用物品时发出；接收方负责运行脚本并决定是否消耗。
 signal item_use_requested(item_id: int)
+## 玩家在系统页调整音乐或音效音量时发出；播放层应立即应用两个百分比。
+signal audio_settings_changed(music_volume: int, sound_volume: int)
+## 菜单打开、移动或确认时请求播放集中配置的 UI 音效编号。
+signal ui_sound_requested(sound_number: int)
 
 enum Page {
 	MAIN,
 	INVENTORY_ACTION,
 	INVENTORY,
+	SYSTEM,
 }
 
 const MAIN_MENU_POSITION := Vector2i(3, 37)
 const MAIN_ITEM_POSITIONS := [Vector2i(16, 50), Vector2i(16, 68), Vector2i(16, 86), Vector2i(16, 104)]
 const INVENTORY_ACTION_POSITION := Vector2i(30, 60)
+const SYSTEM_MENU_POSITION := Vector2i(40, 60)
+const SYSTEM_ITEM_POSITIONS := [Vector2i(53, 72), Vector2i(53, 90), Vector2i(53, 108), Vector2i(53, 126), Vector2i(53, 144)]
+const VOLUME_VALUE_X := 170
+const VOLUME_STEP := 10
 const INVENTORY_COLUMNS := 3
 const INVENTORY_ROWS := 7
 const INVENTORY_ITEM_WIDTH := 100
@@ -40,6 +51,7 @@ var current_page: Page = Page.MAIN
 
 var _main_selection: int = 2
 var _action_selection: int = 1
+var _system_selection: int = 2
 var _inventory_selection: int = 0
 var _inventory_return_page: Page = Page.MAIN
 var _inventory_ids: Array[int] = []
@@ -71,6 +83,7 @@ func open_main() -> void:
 		return
 	current_page = Page.MAIN
 	show()
+	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_OPEN)
 	queue_redraw()
 
 
@@ -80,6 +93,7 @@ func open_inventory() -> void:
 		return
 	_inventory_return_page = Page.MAIN
 	_open_item_selection()
+	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_OPEN)
 
 
 ## 关闭整个菜单，返回地图输入。
@@ -94,6 +108,9 @@ func go_back() -> void:
 			current_page = _inventory_return_page
 			queue_redraw()
 		Page.INVENTORY_ACTION:
+			current_page = Page.MAIN
+			queue_redraw()
+		Page.SYSTEM:
 			current_page = Page.MAIN
 			queue_redraw()
 		_:
@@ -148,6 +165,12 @@ func _gui_input(event: InputEvent) -> void:
 					_inventory_selection = start + slot
 					_confirm_selection()
 					break
+		Page.SYSTEM:
+			for index in range(SYSTEM_ITEM_POSITIONS.size()):
+				if Rect2i(SYSTEM_ITEM_POSITIONS[index] - Vector2i(3, 2), Vector2i(140, 18)).has_point(point):
+					_system_selection = index
+					_confirm_selection()
+					break
 	accept_event()
 	queue_redraw()
 
@@ -168,6 +191,9 @@ func _draw() -> void:
 			_draw_inventory_action()
 		Page.INVENTORY:
 			_draw_inventory_page()
+		Page.SYSTEM:
+			_draw_main_menu()
+			_draw_system_menu()
 
 
 func _draw_main_menu() -> void:
@@ -176,7 +202,7 @@ func _draw_main_menu() -> void:
 	_draw_number(session.cash, 6, Vector2i(49, 14), 19)
 	_draw_classic_box(MAIN_MENU_POSITION, 3, 1, 0, 6)
 	for index in range(4):
-		var enabled := index == 2
+		var enabled := index in [2, 3]
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _main_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
@@ -228,6 +254,20 @@ func _draw_inventory_page() -> void:
 			description_y += 16
 
 
+func _draw_system_menu() -> void:
+	# 官方系统菜单位于 (40,60)。本项目在原五行布局右侧追加百分比数字，
+	# 保留经典窗口与点阵字，而不引入不协调的现代滑块控件。
+	_draw_classic_box(SYSTEM_MENU_POSITION, 4, 8, 0, 6)
+	for index in range(SYSTEM_ITEM_POSITIONS.size()):
+		var enabled := index in [2, 3]
+		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
+		if index == _system_selection:
+			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
+		_draw_pal_text(database.get_word(11 + index), SYSTEM_ITEM_POSITIONS[index], _palette_color(color_index), true)
+	_draw_number(session.music_volume, 3, Vector2i(VOLUME_VALUE_X, SYSTEM_ITEM_POSITIONS[2].y + 4), 19)
+	_draw_number(session.sound_volume, 3, Vector2i(VOLUME_VALUE_X, SYSTEM_ITEM_POSITIONS[3].y + 4), 19)
+
+
 func _move_selection(direction: Vector2i) -> void:
 	match current_page:
 		Page.MAIN:
@@ -239,15 +279,25 @@ func _move_selection(direction: Vector2i) -> void:
 				return
 			var delta := direction.x if direction.x != 0 else direction.y * INVENTORY_COLUMNS
 			_inventory_selection = clampi(_inventory_selection + delta, 0, _inventory_ids.size() - 1)
+		Page.SYSTEM:
+			if direction.x != 0 and _system_selection in [2, 3]:
+				_change_selected_volume(direction.x * VOLUME_STEP)
+			elif direction.y != 0:
+				_system_selection = posmod(_system_selection + direction.y, SYSTEM_ITEM_POSITIONS.size())
+	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_MOVE)
 	queue_redraw()
 
 
 func _confirm_selection() -> void:
+	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_CONFIRM)
 	match current_page:
 		Page.MAIN:
 			if _main_selection == 2:
 				current_page = Page.INVENTORY_ACTION
 				_action_selection = 1
+			elif _main_selection == 3:
+				current_page = Page.SYSTEM
+				_system_selection = 2
 		Page.INVENTORY_ACTION:
 			if _action_selection == 1:
 				_inventory_return_page = Page.INVENTORY_ACTION
@@ -256,7 +306,24 @@ func _confirm_selection() -> void:
 			if not _inventory_ids.is_empty():
 				var item_id := _inventory_ids[_inventory_selection]
 				_request_item_use(item_id, database.item_definition(item_id))
+		Page.SYSTEM:
+			if _system_selection == 2:
+				session.set_music_volume(GameSession.AUDIO_VOLUME_MAX if session.music_volume == 0 else 0)
+				audio_settings_changed.emit(session.music_volume, session.sound_volume)
+			elif _system_selection == 3:
+				session.set_sound_volume(GameSession.AUDIO_VOLUME_MAX if session.sound_volume == 0 else 0)
+				audio_settings_changed.emit(session.music_volume, session.sound_volume)
 	queue_redraw()
+
+
+func _change_selected_volume(delta: int) -> void:
+	if _system_selection == 2:
+		session.change_music_volume(delta)
+	elif _system_selection == 3:
+		session.change_sound_volume(delta)
+	else:
+		return
+	audio_settings_changed.emit(session.music_volume, session.sound_volume)
 
 
 func _open_item_selection() -> void:

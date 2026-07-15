@@ -8,6 +8,7 @@ extends Control
 const MOVE_REPEAT_SECONDS := 0.10
 const SCRIPT_FRAME_SECONDS := 0.10
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
+const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
 const RETURN_TO_LAB_KEYCODE := KEY_F10
 
@@ -22,6 +23,7 @@ var _ui_layer: CanvasLayer
 var _status: Label
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
+var _audio_player: Node
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
 var _player_sprites: Dictionary = {}
@@ -44,6 +46,13 @@ func _ready() -> void:
 		return
 	_session.reset_new_game()
 	_game_menu.configure(_database, _session)
+	_game_menu.audio_settings_changed.connect(_on_audio_settings_changed)
+	_game_menu.ui_sound_requested.connect(_on_ui_sound_requested)
+	_audio_player = AudioPlayer.new()
+	_audio_player.name = "PalAudioPlayer"
+	add_child(_audio_player)
+	_audio_player.configure(_database, _session)
+	_audio_player.audio_missing.connect(_on_audio_missing)
 	_script_vm = ScriptVM.new()
 	_script_vm.configure(_database, _session)
 	_script_vm.unsupported_instruction.connect(_on_unsupported_instruction)
@@ -57,6 +66,8 @@ func _ready() -> void:
 	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
 	_script_vm.party_step_performed.connect(_on_script_party_step)
 	_script_vm.party_walk_finished.connect(_on_script_party_walk_finished)
+	_script_vm.music_requested.connect(_on_music_requested)
+	_script_vm.sound_requested.connect(_on_sound_requested)
 	add_child(_script_vm)
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
 	if checkpoint.is_empty():
@@ -156,7 +167,8 @@ func _process(delta: float) -> void:
 		_session.party_direction = direction
 		_showing_walk_frame = true
 		_walk_phase = (_walk_phase + 1) % 4
-		_try_move(movement)
+		if _try_move(movement):
+			_play_footstep_if_due()
 		_refresh_world()
 		_trigger_touch_event()
 		_move_cooldown = MOVE_REPEAT_SECONDS
@@ -197,12 +209,13 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		_inspect_nearby_event()
 
 
-func _try_move(delta: Vector2i) -> void:
+func _try_move(delta: Vector2i) -> bool:
 	var target := _session.party_world_position() + delta
 	if _is_blocked(target):
 		_status.text = "前方被阻挡｜世界坐标 %s" % target
-		return
+		return false
 	_session.record_party_step(_session.party_direction, delta)
+	return true
 
 
 func _is_blocked(world_position: Vector2i) -> bool:
@@ -444,6 +457,29 @@ func _on_script_redraw(_delay_units: int) -> void:
 	_refresh_world()
 
 
+func _on_music_requested(music_number: int, loop: bool, fade_seconds: float) -> void:
+	if _audio_player != null:
+		_audio_player.play_music(music_number, loop, fade_seconds)
+
+
+func _on_sound_requested(sound_number: int) -> void:
+	if _audio_player != null:
+		_audio_player.play_sound(sound_number)
+
+
+func _on_ui_sound_requested(sound_number: int) -> void:
+	_on_sound_requested(sound_number)
+
+
+func _on_audio_settings_changed(_music_volume: int, _sound_volume: int) -> void:
+	if _audio_player != null:
+		_audio_player.apply_session_volumes()
+
+
+func _on_audio_missing(kind: String, number: int, _path: String) -> void:
+	_status.text = "%s %d 尚未生成｜请返回资源实验室重新导入 Data" % [kind, number]
+
+
 func _on_dialog_message(message_index: int) -> void:
 	var message := _database.get_message(message_index)
 	var displayed_message := message if not message.is_empty() else "（文本未导入）"
@@ -535,12 +571,19 @@ func _on_player_sprites_changed() -> void:
 func _on_script_party_step() -> void:
 	_showing_walk_frame = true
 	_walk_phase = (_walk_phase + 1) % 4
+	_play_footstep_if_due()
 	_move_cooldown = SCRIPT_FRAME_SECONDS
 
 
 func _on_script_party_walk_finished() -> void:
 	_showing_walk_frame = false
 	_move_cooldown = 0.0
+
+
+func _play_footstep_if_due() -> void:
+	# 10 Hz 移动逻辑每两步播放一次短音效，避免连续重启同一个 VOC 形成爆音。
+	if _audio_player != null and (_walk_phase & 1) == 0:
+		_audio_player.play_sound(AudioPlayer.SOUND_FOOTSTEP)
 
 
 func _on_item_use_requested(item_id: int) -> void:

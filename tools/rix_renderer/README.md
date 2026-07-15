@@ -1,6 +1,6 @@
 # RIX 离线转换器
 
-这个辅助工具针对独立的 SDLPal 固定版本进行构建，把指定的 `MUS.MKF` RIX 曲目渲染为 44.1 kHz 单声道 PCM WAV。它不会把原版音乐复制到 Git，输出必须放在已忽略的 `generated/` 下。
+这个辅助工具针对独立的 SDLPal 固定版本进行构建，把指定的 `MUS.MKF` RIX 曲目渲染为 44.1 kHz 单声道 PCM WAV。`PalDataImporter` 会扫描剧情脚本的场景/战斗音乐编号并逐首调用它。工具不会把原版音乐复制到 Git，输出必须放在已忽略的 `generated/` 下。
 
 ```bash
 python3 tools/rix_renderer/build.py \
@@ -8,6 +8,13 @@ python3 tools/rix_renderer/build.py \
   --output tools/rix_renderer/build/rix_renderer
 
 tools/rix_renderer/build/rix_renderer /path/to/MUS.MKF 5 generated/pal/audio/rix/005.wav
+```
+
+正常项目开发优先运行完整导入命令，不需要手工列曲目：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tools/import_cli.gd -- --source /path/to/Data
 ```
 
 包装代码采用 GPL-3.0-or-later。链接使用的 SDLPal、AdPlug 和 MAME 源码保留各自上游声明与许可证，详情参见固定检出和 `THIRD_PARTY.md`。

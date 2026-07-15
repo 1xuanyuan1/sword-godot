@@ -162,3 +162,26 @@ keywords:
   - `tests/run_local_tileset_content_test.gd`
   - `tests/run_local_tilemap_visual_test.gd`
   - `docs/SCENE_RENDERING.md`
+
+---
+
+### [FT-011] [feat] 接通探索 BGM、音效与系统音量菜单
+
+- **关联需求**: M1、M3、M5 音画与经典菜单
+- **关联 TODO**: TD-012
+- **功能描述**: 扫描剧情脚本中的场景/战斗音乐引用，用固定 SDLPal 的 RIX/OPL 实现离线生成 72 首 Godot WAV；新增 `PalAudioPlayer` 的单 BGM 声道、八声道短音效池、循环和淡入淡出，将 `0x0043/0x0047` 接入实际播放。第一个场景按脚本播放曲目 31 和剧情音效 98；探索移动和经典菜单增加集中配置的反馈音。系统页沿用原版五行窗口，可分别以 0–100 调节音乐与音效并立即生效。
+- **验证情况**: 164 项合成测试、首场景 67 条对话/音频请求、本地 BGM 31 与 VOC 98 加载、菜单/脚步音效、独立音量、出口/楼梯/厨房转场、223 张 TileMapLayer 全量加载及中文文档门禁均通过；真实探索场景连续运行无音频错误。
+- **涉及文件**:
+  - `src/audio/pal_audio_player.gd`
+  - `src/game/game_session.gd`
+  - `src/game/script_vm.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_audio_test.gd`
+  - `tests/run_local_intro_test.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `docs/AUDIO.md`
+  - `docs/CLASSIC_UI.md`
+  - `tools/rix_renderer/README.md`

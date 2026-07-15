@@ -7,6 +7,7 @@ sword/
 ├── project.godot          # Godot 工程配置，主场景为 scenes/main.tscn
 ├── scenes/                # 可直接切换的 Godot 场景
 ├── src/
+│   ├── audio/             # Godot 原生 BGM/音效播放与音量应用
 │   ├── content/           # PAL 结构化数据模型和内容数据库
 │   ├── debug/             # 剧情检查点与开发验证入口
 │   ├── formats/           # MKF、YJ1、RLE、Sprite、地图等底层格式
@@ -34,6 +35,10 @@ sword/
 ### `src/formats`
 
 纯格式层，不持有游戏进度。输入通常是 `PackedByteArray`，输出是解析后的数据对象或索引图像。这里实现 MKF 分块、YJ1 解压、RLE、PAL Sprite、地图位字段、调色板、RNG 和 VOC。
+
+### `src/audio`
+
+`PalAudioPlayer` 加载本地转换的 RIX/VOC WAV，维护 BGM 声道、短音效声道池、循环、淡入淡出和即时音量；它不决定剧情应该播放哪个编号。
 
 ### `src/import`
 
@@ -64,6 +69,7 @@ sword/
 - `tests/run_tests.gd`：CI 使用合成字节运行，不依赖原版游戏。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。
+- `generated/pal/audio/`：本机 RIX/OPL 与 VOC 转换结果。
 - `generated/pal/visual_tests/`：本地截图和像素对照结果。
 
 只有源码、测试、文档和完全合成的数据可以提交。`Data/`、`generated/`、存档、音频转换结果和原版截图均不可提交。

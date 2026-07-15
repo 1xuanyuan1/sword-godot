@@ -7,6 +7,7 @@ extends RefCounted
 
 const PARTY_OFFSET := Vector2i(160, 112)
 const TRAIL_SIZE := 5
+const AUDIO_VOLUME_MAX := 100
 const DIR_SOUTH := 0
 const DIR_WEST := 1
 const DIR_NORTH := 2
@@ -28,6 +29,10 @@ var night_palette: bool = false
 var music_number: int = 0
 ## 下一场战斗使用的音乐编号。
 var battle_music_number: int = 0
+## 背景音乐音量百分比，范围 0–100；新游戏默认 100。
+var music_volume: int = AUDIO_VOLUME_MAX
+## 音效音量百分比，范围 0–100；新游戏默认 100。
+var sound_volume: int = AUDIO_VOLUME_MAX
 ## 脚本设置的队伍逻辑高度，以像素为单位。
 var world_layer: int = 0
 ## 当前队伍中的 PLAYERROLES 索引。
@@ -169,6 +174,34 @@ func reset_new_game() -> void:
 	inventory.clear()
 	clear_party_gestures()
 	_initialize_trail(party_world_position())
+
+#endregion
+
+#region Audio settings
+
+## 将背景音乐音量限制在 0–100，并返回实际保存的值。
+## 只修改会话设置；调用方负责通知运行时播放器立即应用。
+func set_music_volume(value: int) -> int:
+	music_volume = clampi(value, 0, AUDIO_VOLUME_MAX)
+	return music_volume
+
+
+## 将音效音量限制在 0–100，并返回实际保存的值。
+## 只修改会话设置；调用方负责通知运行时播放器立即应用。
+func set_sound_volume(value: int) -> int:
+	sound_volume = clampi(value, 0, AUDIO_VOLUME_MAX)
+	return sound_volume
+
+
+## 按 `delta` 调整背景音乐音量，并返回限制后的新值。
+func change_music_volume(delta: int) -> int:
+	return set_music_volume(music_volume + delta)
+
+
+## 按 `delta` 调整音效音量，并返回限制后的新值。
+func change_sound_volume(delta: int) -> int:
+	return set_sound_volume(sound_volume + delta)
+
 
 #endregion
 

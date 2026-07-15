@@ -79,7 +79,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_generate_sprite_preview(files_by_lowercase["ball.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_map_preview(files_by_lowercase["map.mkf"], files_by_lowercase["gop.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_convert_voc_audio(files_by_lowercase["voc.mkf"], absolute_output, report)
-	_convert_rix_previews(files_by_lowercase["mus.mkf"], absolute_output, report)
+	_convert_rix_audio(files_by_lowercase["mus.mkf"], absolute_output, report)
 	_write_manifest(absolute_output, report)
 	report.success = report.errors.is_empty()
 	return report
@@ -526,9 +526,13 @@ static func _convert_voc_audio(voc_path: String, absolute_output: String, report
 		report.warnings.append("voc.mkf 中没有成功转换的 8-bit type 01 音效")
 
 
-static func _convert_rix_previews(mus_path: String, absolute_output: String, report: PalImportReport) -> void:
+static func _convert_rix_audio(mus_path: String, absolute_output: String, report: PalImportReport) -> void:
 	if OS.get_name() not in ["macOS", "Linux"]:
 		report.warnings.append("当前平台暂不自动构建 RIX 离线转换器")
+		return
+	var archive := MkfArchive.load_file(mus_path)
+	if not archive.is_valid():
+		report.warnings.append("MUS.MKF 无法读取，跳过 RIX 离线转换")
 		return
 	var project_root := ProjectSettings.globalize_path("res://").trim_suffix("/")
 	var upstream := project_root.get_base_dir().path_join("sdlpal-official")
@@ -543,18 +547,48 @@ static func _convert_rix_previews(mus_path: String, absolute_output: String, rep
 	var output_dir := absolute_output.path_join("audio/rix")
 	DirAccess.make_dir_recursive_absolute(output_dir)
 	var rendered: Array[int] = []
-	for song_index in [4, 5]:
+	var cached: Array[int] = []
+	var failed: Array[int] = []
+	var script_bytes := _read_bytes(absolute_output.path_join("content/core/scripts.bin"))
+	var requested := _music_track_numbers(script_bytes)
+	for song_index in requested:
+		if song_index >= archive.chunk_count() or archive.get_chunk(song_index).is_empty():
+			failed.append(song_index)
+			report.warnings.append("RIX 曲目 %d 在 MUS.MKF 中不存在或为空" % song_index)
+			continue
 		var output_path := output_dir.path_join("%03d.wav" % song_index)
 		if FileAccess.file_exists(output_path):
-			rendered.append(song_index)
+			cached.append(song_index)
 			continue
 		var render_output: Array = []
 		var render_exit := OS.execute(executable, [mus_path, str(song_index), output_path, "300"], render_output, true)
 		if render_exit == 0:
 			rendered.append(song_index)
 		else:
+			failed.append(song_index)
 			report.warnings.append("RIX 曲目 %d 转换失败：%s" % [song_index, "\n".join(render_output)])
-	report.files["rix_conversion"] = {"rendered_preview_songs": rendered, "output": output_dir, "sample_rate": 44100}
+	report.files["rix_conversion"] = {
+		"requested_songs": requested,
+		"rendered_songs": rendered,
+		"cached_songs": cached,
+		"failed_songs": failed,
+		"output": output_dir,
+		"sample_rate": 44100,
+	}
+
+
+static func _music_track_numbers(script_bytes: PackedByteArray) -> Array[int]:
+	# 曲目 4/5 供启动与资源预览；其余只导出 ScriptVM 真正引用的场景/战斗音乐。
+	var numbers: Dictionary = {4: true, 5: true}
+	for offset in range(0, script_bytes.size() - PalScriptEntry.BYTE_SIZE + 1, PalScriptEntry.BYTE_SIZE):
+		var entry := PalScriptEntry.from_bytes(script_bytes, offset)
+		if entry != null and entry.operation in [0x0043, 0x0045] and entry.operands[0] > 0:
+			numbers[entry.operands[0]] = true
+	var result: Array[int] = []
+	for raw_number in numbers:
+		result.append(int(raw_number))
+	result.sort()
+	return result
 
 
 static func _write_manifest(absolute_output: String, report: PalImportReport) -> void:

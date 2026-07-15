@@ -47,5 +47,11 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_inventory.png"))
-	print("PASS: 原版主菜单与物品页视觉快照已生成")
+	menu.open_main()
+	menu._main_selection = 3
+	menu._confirm_selection()
+	await process_frame
+	await process_frame
+	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_system_audio.png"))
+	print("PASS: 原版主菜单、物品页与系统音量页视觉快照已生成")
 	quit(0)

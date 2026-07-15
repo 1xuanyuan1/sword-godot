@@ -3,6 +3,7 @@
 extends SceneTree
 
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
+const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -23,6 +24,7 @@ func _init() -> void:
 	_test_map_helpers()
 	_test_tileset_builder()
 	_test_voc_decoder()
+	_test_music_reference_collection()
 	_test_content_structures()
 	_test_item_definition()
 	_test_player_roles_structure()
@@ -30,7 +32,10 @@ func _init() -> void:
 	_test_scene_y_sorting()
 	_test_pal_direction_mapping()
 	_test_party_trail()
+	_test_audio_settings()
+	_test_audio_player_foundation()
 	_test_script_vm_foundation()
+	_test_script_vm_audio_requests()
 	_test_script_vm_dialog_pause()
 	_test_script_vm_title_and_body()
 	_test_script_vm_dialog_page_break()
@@ -294,6 +299,14 @@ func _test_voc_decoder() -> void:
 	_expect(wav.size() == 48, "VOC WAV padded length")
 
 
+func _test_music_reference_collection() -> void:
+	var bytes := PackedByteArray()
+	for values in [[0x0043, 31, 0, 0], [0x0045, 37, 0, 0], [0x0043, 31, 1, 0], [0x0000, 0, 0, 0]]:
+		for value in values:
+			PalBinary.append_u16_le(bytes, value)
+	_expect(PalDataImporter._music_track_numbers(bytes) == [4, 5, 31, 37], "RIX import collects unique scene/battle tracks plus preview music")
+
+
 func _test_content_structures() -> void:
 	var scene_bytes := PackedByteArray([12, 0, 0x10, 0, 0x20, 0, 3, 0])
 	var scene := PalSceneDefinition.from_bytes(scene_bytes, 0)
@@ -403,6 +416,28 @@ func _test_party_trail() -> void:
 	_expect(session.scripted_party_frame(0) == -1, "party movement clears scripted gestures")
 
 
+func _test_audio_settings() -> void:
+	var session := GameSession.new()
+	_expect(session.music_volume == 100 and session.sound_volume == 100, "new session audio volumes default to 100 percent")
+	_expect(session.set_music_volume(-5) == 0 and session.set_sound_volume(125) == 100, "session audio settings clamp to 0-100")
+	_expect(session.change_music_volume(30) == 30 and session.change_sound_volume(-20) == 80, "session audio settings support independent relative changes")
+	session.reset_new_game()
+	_expect(session.music_volume == 30 and session.sound_volume == 80, "new-game state reset preserves global-style audio settings")
+
+
+func _test_audio_player_foundation() -> void:
+	var session := GameSession.new()
+	session.set_music_volume(50)
+	session.set_sound_volume(25)
+	var audio = AudioPlayer.new()
+	audio.configure(PalContentDatabase.new(), session)
+	_expect(audio._music_player != null and audio._sound_players.size() == AudioPlayer.SOUND_VOICE_COUNT, "audio player creates one music channel and a polyphonic sound pool")
+	_expect(is_equal_approx(audio._music_player.volume_db, AudioPlayer.volume_percent_to_db(50)), "music channel applies session volume")
+	_expect(is_equal_approx(audio._sound_players[0].volume_db, AudioPlayer.volume_percent_to_db(25)), "sound channels apply independent session volume")
+	_expect(AudioPlayer.volume_percent_to_db(0) == AudioPlayer.SILENCE_DB and is_zero_approx(AudioPlayer.volume_percent_to_db(100)), "audio percent conversion handles mute and full volume")
+	audio.free()
+
+
 func _test_pal_direction_mapping() -> void:
 	_expect(GameSession.DIR_SOUTH == 0 and GameSession.DIR_WEST == 1, "PAL south/west direction enum")
 	_expect(GameSession.DIR_NORTH == 2 and GameSession.DIR_EAST == 3, "PAL north/east direction enum")
@@ -429,6 +464,28 @@ func _test_script_vm_foundation() -> void:
 	var next_entry := vm.run_trigger(1)
 	_expect(session.viewport_position == Vector2i(1152, 176), "script VM party position opcode")
 	_expect(next_entry == 1, "opcode 0000 preserves a repeatable trigger entry")
+	vm.free()
+
+
+func _test_script_vm_audio_requests() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x0043, 0x0047, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([31, 3, 0])
+	database.scripts[2].operands[0] = 98
+	var session := GameSession.new()
+	var music_requests: Array = []
+	var sound_requests: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: music_requests.append([number, loop, fade]))
+	vm.sound_requested.connect(func(number: int) -> void: sound_requests.append(number))
+	vm.run_trigger(1)
+	_expect(session.music_number == 31 and music_requests == [[31, true, 3.0]], "opcode 0043 forwards music number, loop and fade semantics")
+	_expect(sound_requests == [98], "opcode 0047 forwards the original VOC sound number")
 	vm.free()
 
 
@@ -795,8 +852,11 @@ func _test_game_menu_inventory() -> void:
 	var menu := PalGameMenu.new()
 	menu._ready()
 	menu.configure(database, session)
+	var ui_sounds: Array[int] = []
+	menu.ui_sound_requested.connect(func(number: int) -> void: ui_sounds.append(number))
 	menu.open_main()
 	_expect(menu.current_page == PalGameMenu.Page.MAIN and menu._main_selection == 2, "classic main menu opens with inventory selected")
+	_expect(ui_sounds == [AudioPlayer.SOUND_MENU_OPEN], "opening the classic menu requests UI feedback sound")
 	menu._confirm_selection()
 	_expect(menu.current_page == PalGameMenu.Page.INVENTORY_ACTION, "classic inventory command submenu opens from the main menu")
 	menu._confirm_selection()
@@ -806,6 +866,20 @@ func _test_game_menu_inventory() -> void:
 	_expect(menu.visible and menu.current_page == PalGameMenu.Page.INVENTORY, "game menu opens the inventory page")
 	menu._request_item_use(272, wine)
 	_expect(requested == [272], "usable story item can be selected from the inventory menu")
+	menu.open_main()
+	menu._main_selection = 3
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.SYSTEM and menu._system_selection == 2, "classic system submenu opens from the fourth main item")
+	var settings: Array = []
+	menu.audio_settings_changed.connect(func(music: int, sound: int) -> void: settings.append([music, sound]))
+	menu._move_selection(Vector2i(-1, 0))
+	_expect(session.music_volume == 90 and session.sound_volume == 100 and settings.back() == [90, 100], "system menu adjusts music volume independently with left/right")
+	menu._move_selection(Vector2i(0, 1))
+	menu._move_selection(Vector2i(-1, 0))
+	_expect(session.music_volume == 90 and session.sound_volume == 90 and settings.back() == [90, 90], "system menu adjusts sound volume independently with left/right")
+	menu._confirm_selection()
+	_expect(session.sound_volume == 0 and settings.back() == [90, 0], "confirm on an audio row retains classic quick on/off behavior")
+	_expect(AudioPlayer.SOUND_MENU_MOVE in ui_sounds and AudioPlayer.SOUND_MENU_CONFIRM in ui_sounds, "menu navigation and confirmation request feedback sounds")
 	menu.free()
 
 
