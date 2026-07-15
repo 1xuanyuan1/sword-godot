@@ -18,6 +18,7 @@ var _tile_sprite: PalSprite
 var _scene_events: Array[PalEventObject] = []
 var _map_view: TextureRect
 var _tile_world: PalTileMapWorld
+var _ui_layer: CanvasLayer
 var _status: Label
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
@@ -83,26 +84,37 @@ func _build_interface() -> void:
 	_map_view.visible = _use_legacy_renderer
 	add_child(_map_view)
 
+	# Camera2D 会变换默认世界画布。HUD 必须放在独立 CanvasLayer 中，
+	# 否则相机跟随队伍时，状态栏、对话框和菜单也会一起移出 320×200 视口。
+	_ui_layer = CanvasLayer.new()
+	_ui_layer.name = "HudLayer"
+	_ui_layer.layer = 10
+	add_child(_ui_layer)
+
 	var status_background := ColorRect.new()
+	status_background.name = "StatusBackground"
 	status_background.color = Color(0.02, 0.03, 0.06, 0.82)
 	status_background.position = Vector2(3, 3)
 	status_background.size = Vector2(314, 20)
-	add_child(status_background)
+	_ui_layer.add_child(status_background)
 	_status = Label.new()
+	_status.name = "StatusLabel"
 	_status.position = Vector2(6, 5)
 	_status.size = Vector2(308, 17)
 	_status.add_theme_font_size_override("font_size", 8)
 	_status.add_theme_color_override("font_color", Color("f8fafc"))
-	add_child(_status)
+	_ui_layer.add_child(_status)
 
 	_dialog_box = PalDialogBox.new()
+	_dialog_box.name = "DialogBox"
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(_dialog_box)
+	_ui_layer.add_child(_dialog_box)
 
 	_game_menu = PalGameMenu.new()
+	_game_menu.name = "GameMenu"
 	_game_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_game_menu.item_use_requested.connect(_on_item_use_requested)
-	add_child(_game_menu)
+	_ui_layer.add_child(_game_menu)
 
 
 func _process(delta: float) -> void:

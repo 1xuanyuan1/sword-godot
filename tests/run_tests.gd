@@ -40,6 +40,7 @@ func _init() -> void:
 	_test_script_vm_center_toast()
 	_test_script_vm_quoted_narration_toast()
 	_test_explorer_scene_enter_persistence()
+	_test_explorer_hud_canvas_layer()
 	_test_debug_checkpoints()
 	_test_game_menu_inventory()
 	_test_explorer_input_keys()
@@ -751,6 +752,18 @@ func _test_explorer_scene_enter_persistence() -> void:
 	_expect(executed_entries == [1, 2], "re-entering a scene resumes from the persisted entry instead of replaying the intro")
 	explorer.free()
 	vm.free()
+
+
+func _test_explorer_hud_canvas_layer() -> void:
+	var explorer_script: Script = load("res://src/world/map_explorer.gd")
+	var explorer: Control = explorer_script.new()
+	explorer._build_interface()
+	_expect(explorer._ui_layer is CanvasLayer and explorer._ui_layer.layer > 0, "explorer HUD uses an independent foreground CanvasLayer")
+	_expect(explorer._status.get_parent() == explorer._ui_layer, "status label stays outside the Camera2D world canvas")
+	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
+	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
+	_expect(explorer._tile_world.get_parent() == explorer, "TileMap world remains on the Camera2D world canvas")
+	explorer.free()
 
 
 func _test_debug_checkpoints() -> void:

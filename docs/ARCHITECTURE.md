@@ -14,7 +14,8 @@ flowchart LR
     E --> G
     F --> G
     G --> H[PalTileMapWorld]
-    G --> I[对话框与经典菜单]
+    G --> I[HUD CanvasLayer]
+    I --> K[状态栏 / 对话框 / 经典菜单]
     H --> J[TileMapLayer / Sprite2D / Camera2D]
 ```
 
@@ -41,6 +42,8 @@ flowchart LR
 7. `ScriptVM` 执行场景进入脚本，并通过信号请求重绘、对话、人物动作或场景切换。
 
 `PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 默认走该路径，命令行用户参数 `--pal-map-backend=legacy` 可临时启用 CPU 基准。
+
+`Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast 和经典菜单统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。
 
 ## 输入、事件与重绘
 
