@@ -39,6 +39,8 @@ var _item_bitmaps: Dictionary = {}
 var _ui_sprite: PalSprite
 var _speaker_portrait_defaults: Dictionary = {}
 var _tilemap_scenes: Dictionary = {}
+var _tilemap_manifest: Dictionary = {}
+var _verified_tilemaps: Dictionary = {}
 
 
 ## 从生成目录加载核心结构和文字数据库，并清空旧缓存。
@@ -60,6 +62,8 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	_ui_sprite = null
 	_speaker_portrait_defaults.clear()
 	_tilemap_scenes.clear()
+	_tilemap_manifest.clear()
+	_verified_tilemaps.clear()
 	var core := root_path.path_join("core")
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
@@ -106,6 +110,8 @@ func load_map_tiles(map_number: int) -> PalSprite:
 func load_tilemap_scene(map_number: int) -> PackedScene:
 	if _tilemap_scenes.has(map_number):
 		return _tilemap_scenes[map_number]
+	if not _verify_tilemap_content(map_number):
+		return null
 	var path := root_path.path_join("world/tilemaps/%03d.tscn" % map_number)
 	if not FileAccess.file_exists(path):
 		error_message = "地图 %d 缺少 TileMapLayer 资源，请在资源实验室重新导入 Data" % map_number
@@ -273,3 +279,39 @@ func _read_file(path: String) -> PackedByteArray:
 		error_message = "无法读取生成资源：%s" % path
 		return PackedByteArray()
 	return file.get_buffer(file.get_length())
+
+
+func _verify_tilemap_content(map_number: int) -> bool:
+	if _verified_tilemaps.has(map_number):
+		return bool(_verified_tilemaps[map_number])
+	if _tilemap_manifest.is_empty():
+		var manifest_path := root_path.get_base_dir().path_join("manifest.json")
+		var manifest_file := FileAccess.open(manifest_path, FileAccess.READ)
+		var parsed = JSON.parse_string(manifest_file.get_as_text()) if manifest_file != null else null
+		if parsed is not Dictionary or int(parsed.get("format_version", 0)) < PalImportReport.FORMAT_VERSION:
+			error_message = "本地生成清单版本过旧或损坏，请在资源实验室重新导入 Data"
+			return false
+		_tilemap_manifest = parsed
+	var tileset_report = _tilemap_manifest.get("files", {}).get("tileset_maps", {})
+	var map_report = tileset_report.get("maps", {}).get(str(map_number), {})
+	if not map_report is Dictionary or map_report.is_empty():
+		error_message = "生成清单缺少地图 %d 的 TileSet 记录，请重新导入 Data" % map_number
+		return false
+	var map_hash := _file_sha256(root_path.path_join("world/maps/%03d.map" % map_number))
+	var tile_hash := _file_sha256(root_path.path_join("world/tiles/%03d.gop" % map_number))
+	if map_hash != str(map_report.get("map_sha256", "")) or tile_hash != str(map_report.get("gop_sha256", "")):
+		error_message = "地图 %d 的 MAP/GOP 与 TileSet 内容指纹不一致，请重新导入 Data" % map_number
+		_verified_tilemaps[map_number] = false
+		return false
+	_verified_tilemaps[map_number] = true
+	return true
+
+
+func _file_sha256(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var context := HashingContext.new()
+	if context.start(HashingContext.HASH_SHA256) != OK or context.update(file.get_buffer(file.get_length())) != OK:
+		return ""
+	return context.finish().hex_encode()

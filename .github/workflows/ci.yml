@@ -15,6 +15,7 @@ jobs:
           use-dotnet: false
       - name: Parse project
         run: godot --headless --editor --path . --quit
+      - name: Check Chinese documentation and GDScript API comments
+        run: python3 tools/check_documentation.py
       - name: Run synthetic format tests
         run: godot --headless --path . --script res://tests/run_tests.gd
-

@@ -4,7 +4,13 @@
 ## 差异截图只写入被 Git 忽略的 `generated/pal/visual_tests/`。
 extends SceneTree
 
-const TEST_POSITION := Vector2i(1248, 1040)
+const TEST_CASES: Array[Dictionary] = [
+	{"name": "inn_room", "scene": 0, "position": Vector2i(1248, 1040), "night": false},
+	{"name": "kitchen_entry", "scene": 0, "position": Vector2i(1248, 1104), "night": false},
+	{"name": "stairs", "scene": 0, "position": Vector2i(96, 48), "night": false},
+	{"name": "wine_outdoor", "scene": 2, "position": Vector2i(1088, 1648), "night": false},
+	{"name": "roof_night", "scene": 3, "position": Vector2i(1440, 1536), "night": true},
+]
 
 
 func _init() -> void:
@@ -16,13 +22,6 @@ func _run() -> void:
 	if not database.load_generated():
 		_fail("本地生成内容不可用：%s" % database.error_message)
 		return
-	var session := GameSession.new()
-	session.reset_new_game()
-	session.scene_index = 0
-	session.set_party_world_position(TEST_POSITION)
-	var scene := database.scenes[session.scene_index]
-	var events := database.events_for_scene(session.scene_index)
-
 	var viewport := SubViewport.new()
 	viewport.size = Vector2i(320, 200)
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
@@ -30,20 +29,34 @@ func _run() -> void:
 	root.add_child(viewport)
 	var world := PalTileMapWorld.new()
 	viewport.add_child(world)
+	for test_case in TEST_CASES:
+		var failure := await _compare_case(database, viewport, world, test_case)
+		if not failure.is_empty():
+			_fail(failure)
+			return
+	print("PASS: %d 个 TileMapLayer 固定视口与 CPU 基准均为 320×200 零像素差异" % TEST_CASES.size())
+	quit(0)
+
+
+func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: PalTileMapWorld, test_case: Dictionary) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = int(test_case["scene"])
+	session.night_palette = bool(test_case["night"])
+	session.set_party_world_position(test_case["position"])
+	var scene := database.scenes[session.scene_index]
+	var events := database.events_for_scene(session.scene_index)
 	if not world.load_map(database, scene.map_number):
-		_fail(world.error_message)
-		return
+		return "%s：%s" % [test_case["name"], world.error_message]
 	world.set_walk_animation(0, false)
 	if not world.sync_world(session, events):
-		_fail(world.error_message)
-		return
+		return "%s：%s" % [test_case["name"], world.error_message]
 
 	await process_frame
 	await process_frame
 	var native_image := viewport.get_texture().get_image()
 	if native_image == null:
-		_fail("当前为 dummy renderer；请去掉 --headless，使用真实 GL Compatibility 渲染器运行")
-		return
+		return "当前为 dummy renderer；请去掉 --headless，使用真实 GL Compatibility 渲染器运行"
 	var scene_items: Array = world._build_scene_items(session, events)
 	var map_data := database.load_map(scene.map_number)
 	var tile_sprite := database.load_map_tiles(scene.map_number)
@@ -51,8 +64,7 @@ func _run() -> void:
 	var palette := database.load_palette(session.palette_index, session.night_palette)
 	var cpu_image := cpu_indexed.to_rgba_image(palette)
 	if native_image.get_size() != cpu_image.get_size():
-		_fail("截图尺寸不一致：TileMap %s / CPU %s" % [native_image.get_size(), cpu_image.get_size()])
-		return
+		return "%s 截图尺寸不一致：TileMap %s / CPU %s" % [test_case["name"], native_image.get_size(), cpu_image.get_size()]
 
 	var different := 0
 	var maximum_channel_difference := 0
@@ -73,13 +85,12 @@ func _run() -> void:
 
 	var output_directory := ProjectSettings.globalize_path("res://generated/pal/visual_tests")
 	DirAccess.make_dir_recursive_absolute(output_directory)
-	native_image.save_png(output_directory.path_join("tilemap_native.png"))
-	cpu_image.save_png(output_directory.path_join("tilemap_cpu.png"))
+	var output_name := str(test_case["name"])
+	native_image.save_png(output_directory.path_join("tilemap_%s_native.png" % output_name))
+	cpu_image.save_png(output_directory.path_join("tilemap_%s_cpu.png" % output_name))
 	if different > 0:
-		_fail("TileMap 与 CPU 有 %d 个差异像素，最大通道差 %d；截图已写入 visual_tests" % [different, maximum_channel_difference])
-		return
-	print("PASS: map %d TileMapLayer 与 CPU 基准 320×200 零像素差异" % scene.map_number)
-	quit(0)
+		return "%s（map %d）有 %d 个差异像素，最大通道差 %d；截图已写入 visual_tests" % [output_name, scene.map_number, different, maximum_channel_difference]
+	return ""
 
 
 func _fail(message: String) -> void:

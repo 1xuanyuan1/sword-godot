@@ -12,6 +12,9 @@ const ATLAS_COLUMNS := 32
 const ATLAS_SOURCE_ID := 0
 const LAYER_BOTTOM := 0
 const LAYER_TOP := 1
+# SDLPal 在地图外复用 (0,0,0) 底层图块；该范围足以覆盖越界的 320×200 视口。
+const VIEWPORT_PADDING_X := 12
+const VIEWPORT_PADDING_Y := 15
 
 
 ## 将 PAL 的 `(map_x, map_y, half)` 转成 Godot 等距单元坐标。
@@ -225,6 +228,17 @@ static func _build_map_scene(map_number: int, map_data: PalMapData, tile_set: Ti
 				if top_index >= 0 and top_index < frame_count:
 					var top_key := _alternative_key(LAYER_TOP, top_index, false, PalMapData.tile_height(value, true))
 					static_top.set_cell(cell, ATLAS_SOURCE_ID, _atlas_coords(top_index), int(alternatives[top_key]))
+
+	# 原版在视口超出 64×128 边界时仍绘制左上角底层图块，楼梯等合法落点会依赖它。
+	var fallback_value := map_data.tile_value(0, 0, 0)
+	var fallback_key := _alternative_key(LAYER_BOTTOM, fallback_bottom_index, PalMapData.is_blocked(fallback_value), PalMapData.tile_height(fallback_value, false))
+	for map_y in range(-VIEWPORT_PADDING_Y, PalMapData.HEIGHT + VIEWPORT_PADDING_Y):
+		for map_x in range(-VIEWPORT_PADDING_X, PalMapData.WIDTH + VIEWPORT_PADDING_X):
+			if map_x >= 0 and map_x < PalMapData.WIDTH and map_y >= 0 and map_y < PalMapData.HEIGHT:
+				continue
+			for half in range(PalMapData.HALVES):
+				var cell := pal_half_to_map_cell(map_x, map_y, half)
+				static_bottom.set_cell(cell, ATLAS_SOURCE_ID, _atlas_coords(fallback_bottom_index), int(alternatives[fallback_key]))
 
 	var packed_scene := PackedScene.new()
 	var pack_error := packed_scene.pack(root)

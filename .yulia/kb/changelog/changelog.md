@@ -128,3 +128,37 @@ keywords:
   - `tests/run_local_menu_visual_test.gd`
   - `README.md`
   - `docs/CLASSIC_UI.md`
+
+---
+
+### [FT-009] [feat] 建立中文项目文档与源码注释基线
+
+- **关联需求**: 项目可维护性与开发可读性
+- **关联 TODO**: TD-010
+- **功能描述**: 新增中文文档总入口、项目目录结构、整体架构和开发工作流，说明资源导入、状态所有权、场景执行和 Git 资源边界。为全部核心 GDScript 增加模块职责及公开 API 的 Godot `##` 注释，并逐项解释 ScriptVM 已实现操作码；CI 持续检查源码注释、核心模块索引和文档内部链接。
+- **验证情况**: Godot 全工程解析、142 项合成测试和 `tools/check_documentation.py` 均通过；README 可按推荐顺序进入全部中文专题文档。
+- **涉及文件**:
+  - `README.md`
+  - `docs/`
+  - `src/`
+  - `tools/check_documentation.py`
+  - `.github/workflows/ci.yml`
+
+---
+
+### [FT-010] [refactor] 将 PAL 地图迁移到 TileSet 与 TileMapLayer
+
+- **关联需求**: M2 等距地图原生化
+- **关联 TODO**: TD-011
+- **功能描述**: 按唯一 `map_number` 将 32×15 GOP 索引图块转换为无损 RG8 TileSet，并用 StaticBottom/StaticTop TileMapLayer、Camera2D、原生人物 Sprite2D 和兼容覆盖层替换默认整屏 CPU 合成。alternative tile 保存阻挡与逻辑高度；清单保存 MAP/GOP SHA-256 指纹，缺失帧和越界视口按 SDLPal 官方规则兼容。CPU 渲染器保留为命令行诊断基准。
+- **验证情况**: 223 张导入地图、293 个可玩场景和 221 个唯一场景地图均可加载；客栈、厨房、楼梯边界、室外和夜间屋檐五个固定视口与 CPU 基准均为 320×200 零像素差异；现有剧情、桂花酒和菜单回归继续通过。
+- **涉及文件**:
+  - `src/import/pal_tileset_builder.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `src/world/map_explorer.gd`
+  - `src/content/pal_content_database.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_tileset_content_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `docs/SCENE_RENDERING.md`
