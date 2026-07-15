@@ -16,6 +16,7 @@ signal music_requested(music_number: int)
 signal sound_requested(sound_number: int)
 signal scene_change_requested(scene_index: int)
 signal player_sprites_changed
+signal party_step_performed
 
 const MAX_INSTRUCTIONS_PER_RUN := 10000
 
@@ -264,6 +265,7 @@ func _continue_execution() -> int:
 					var movement := Vector2i(_signed_word(entry.operands[0]), _signed_word(entry.operands[1]))
 					session.record_party_step(session.party_direction, movement)
 					session.world_layer = entry.operands[2] * 8
+					party_step_performed.emit()
 			0x0070:
 				if session != null:
 					var world_x := entry.operands[0] * 32 + entry.operands[2] * 16

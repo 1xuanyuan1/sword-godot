@@ -36,7 +36,9 @@ func _init() -> void:
 		var stair_vm := ScriptVM.new()
 		stair_vm.configure(database, stair_session)
 		var stair_next_entries: Array[int] = []
+		var stair_steps: Array[int] = []
 		stair_vm.script_finished.connect(func(next_entry: int) -> void: stair_next_entries.append(next_entry))
+		stair_vm.party_step_performed.connect(func() -> void: stair_steps.append(1))
 		stair_vm.run_trigger(42, 3)
 		var guard := 0
 		while stair_vm.running and guard < 100:
@@ -47,6 +49,9 @@ func _init() -> void:
 			quit(1)
 		elif stair_next_entries != [42]:
 			printerr("FAIL: 客栈楼梯触发入口没有保持可重复")
+			quit(1)
+		elif stair_steps.size() != 8:
+			printerr("FAIL: 客栈楼梯没有执行完整的 8 步行走动画：%d" % stair_steps.size())
 			quit(1)
 		else:
 			print("PASS: 客栈出口及楼梯自动触发脚本完成，落点正确")

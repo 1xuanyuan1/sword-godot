@@ -448,6 +448,22 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	gesture_vm.tick_frame()
 	_expect(gesture_session.scripted_party_frame(0) == 0 and not gesture_vm.running, "script VM advances to the next party gesture after its delay")
 	gesture_vm.free()
+	var step_database := PalContentDatabase.new()
+	step_database.scripts.append(PalScriptEntry.new())
+	for operation in [0x006e, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		step_database.scripts.append(entry)
+	step_database.scripts[1].operands = PackedInt32Array([10, 5, 1])
+	var step_session := GameSession.new()
+	var step_signals: Array[int] = []
+	var step_vm := ScriptVM.new()
+	step_vm.configure(step_database, step_session)
+	step_vm.party_step_performed.connect(func() -> void: step_signals.append(1))
+	step_vm.run_trigger(1)
+	_expect(step_signals.size() == 1 and step_session.party_world_position() == Vector2i(170, 117), "scripted party step emits an animation signal")
+	step_vm.free()
 
 
 func _test_script_vm_inn_conversation_operations() -> void:

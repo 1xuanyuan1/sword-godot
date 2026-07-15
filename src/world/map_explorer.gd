@@ -42,6 +42,7 @@ func _ready() -> void:
 	_script_vm.script_finished.connect(_on_script_finished)
 	_script_vm.scene_change_requested.connect(_on_scene_change_requested)
 	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
+	_script_vm.party_step_performed.connect(_on_script_party_step)
 	add_child(_script_vm)
 	_load_scene(_session.scene_index, true)
 
@@ -408,6 +409,12 @@ func _apply_pending_scene() -> void:
 
 func _on_player_sprites_changed() -> void:
 	_player_sprites.clear()
+
+
+func _on_script_party_step() -> void:
+	_showing_walk_frame = true
+	_walk_phase = (_walk_phase + 1) % 4
+	_move_cooldown = SCRIPT_FRAME_SECONDS
 
 
 func _set_error(message: String) -> void:
