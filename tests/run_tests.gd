@@ -24,6 +24,7 @@ func _init() -> void:
 	_test_player_roles_structure()
 	_test_scene_draw_item_anchors()
 	_test_scene_y_sorting()
+	_test_pal_direction_mapping()
 	_test_party_trail()
 	_test_script_vm_foundation()
 	if _failures.is_empty():
@@ -264,11 +265,20 @@ func _test_party_trail() -> void:
 	var session := GameSession.new()
 	session.reset_new_game()
 	session.set_party_world_position(Vector2i(320, 160))
-	session.record_party_step(1, Vector2i(16, 8))
+	session.record_party_step(GameSession.DIR_EAST, Vector2i(16, 8))
 	_expect(session.party_world_position() == Vector2i(336, 168), "party leader trail movement")
-	_expect(session.trail_positions[0] == Vector2i(320, 160) and session.trail_directions[0] == 1, "party trail records previous leader")
-	_expect(session.party_member_world_position(1) == Vector2i(304, 168), "party second member formation")
+	_expect(session.trail_positions[0] == Vector2i(320, 160) and session.trail_directions[0] == GameSession.DIR_EAST, "party trail records previous leader")
+	_expect(session.party_member_world_position(1) == Vector2i(336, 152), "party second member formation")
 	_expect(session.party_member_world_position(2) == Vector2i(336, 168), "party third member formation")
+
+
+func _test_pal_direction_mapping() -> void:
+	_expect(GameSession.DIR_SOUTH == 0 and GameSession.DIR_WEST == 1, "PAL south/west direction enum")
+	_expect(GameSession.DIR_NORTH == 2 and GameSession.DIR_EAST == 3, "PAL north/east direction enum")
+	_expect(GameSession.movement_for_direction(GameSession.DIR_NORTH) == Vector2i(16, -8), "PAL north movement")
+	_expect(GameSession.movement_for_direction(GameSession.DIR_EAST) == Vector2i(16, 8), "PAL east movement")
+	_expect(GameSession.movement_for_direction(GameSession.DIR_SOUTH) == Vector2i(-16, 8), "PAL south movement")
+	_expect(GameSession.movement_for_direction(GameSession.DIR_WEST) == Vector2i(-16, -8), "PAL west movement")
 
 
 func _test_script_vm_foundation() -> void:

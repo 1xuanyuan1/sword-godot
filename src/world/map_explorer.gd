@@ -79,18 +79,21 @@ func _process(delta: float) -> void:
 	_move_cooldown = maxf(0.0, _move_cooldown - delta)
 	var movement := Vector2i.ZERO
 	var direction := _session.party_direction
+	var has_direction_input := false
 	if Input.is_key_pressed(KEY_UP):
-		movement = Vector2i(16, -8)
-		direction = 0 # North
+		direction = GameSession.DIR_NORTH
+		has_direction_input = true
 	elif Input.is_key_pressed(KEY_DOWN):
-		movement = Vector2i(-16, 8)
-		direction = 2 # South
+		direction = GameSession.DIR_SOUTH
+		has_direction_input = true
 	elif Input.is_key_pressed(KEY_LEFT):
-		movement = Vector2i(-16, -8)
-		direction = 3 # West
+		direction = GameSession.DIR_WEST
+		has_direction_input = true
 	elif Input.is_key_pressed(KEY_RIGHT):
-		movement = Vector2i(16, 8)
-		direction = 1 # East
+		direction = GameSession.DIR_EAST
+		has_direction_input = true
+	if has_direction_input:
+		movement = GameSession.movement_for_direction(direction)
 	if movement != Vector2i.ZERO:
 		if _move_cooldown > 0.0:
 			return

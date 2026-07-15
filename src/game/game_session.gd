@@ -5,6 +5,10 @@ extends RefCounted
 
 const PARTY_OFFSET := Vector2i(160, 112)
 const TRAIL_SIZE := 5
+const DIR_SOUTH := 0
+const DIR_WEST := 1
+const DIR_NORTH := 2
+const DIR_EAST := 3
 
 var scene_index: int = 0
 var viewport_position: Vector2i = Vector2i.ZERO
@@ -21,6 +25,19 @@ var trail_directions: PackedInt32Array = PackedInt32Array()
 
 func party_world_position() -> Vector2i:
 	return viewport_position + PARTY_OFFSET
+
+
+static func movement_for_direction(direction: int) -> Vector2i:
+	match direction:
+		DIR_SOUTH:
+			return Vector2i(-16, 8)
+		DIR_WEST:
+			return Vector2i(-16, -8)
+		DIR_NORTH:
+			return Vector2i(16, -8)
+		DIR_EAST:
+			return Vector2i(16, 8)
+	return Vector2i.ZERO
 
 
 func set_party_world_position(world_position: Vector2i) -> void:
@@ -46,11 +63,11 @@ func party_member_world_position(member_index: int) -> Vector2i:
 	var base := trail_positions[1]
 	var direction := trail_directions[1]
 	if member_index == 2:
-		base.x += -16 if direction in [1, 3] else 16
+		base.x += -16 if direction in [DIR_WEST, DIR_EAST] else 16
 		base.y += 8
 	else:
-		base.x += 16 if direction in [2, 3] else -16
-		base.y += 8 if direction in [0, 3] else -8
+		base.x += 16 if direction in [DIR_SOUTH, DIR_WEST] else -16
+		base.y += 8 if direction in [DIR_WEST, DIR_NORTH] else -8
 	return base
 
 
@@ -77,8 +94,8 @@ func _initialize_trail(world_position: Vector2i) -> void:
 	trail_positions.resize(TRAIL_SIZE)
 	trail_directions.resize(TRAIL_SIZE)
 	var backward := Vector2i(
-		16 if party_direction in [2, 3] else -16,
-		8 if party_direction in [0, 3] else -8
+		16 if party_direction in [DIR_SOUTH, DIR_WEST] else -16,
+		8 if party_direction in [DIR_WEST, DIR_NORTH] else -8
 	)
 	for index in range(TRAIL_SIZE):
 		trail_positions[index] = world_position + backward * index
