@@ -37,8 +37,12 @@ func _parse(data: PackedByteArray) -> void:
 	if table_words < 2 or table_words * 2 > data.size():
 		error_message = "Sprite 帧表无效"
 		return
+	# The first word is the offset-table length in words. The final table word is
+	# an unused/broken sentinel in several original GOP archives, so frame count
+	# is table_words - 1 and the chunk boundary is the reliable final end offset.
+	var frame_count_value := table_words - 1
 	var previous := -1
-	for index in range(table_words):
+	for index in range(frame_count_value):
 		var offset := PalBinary.u16_le(data, index * 2) * 2
 		if offset < table_words * 2 or offset > data.size() or previous > offset:
 			error_message = "Sprite 帧偏移无效：%d" % offset
@@ -46,5 +50,5 @@ func _parse(data: PackedByteArray) -> void:
 			return
 		_frame_offsets.append(offset)
 		previous = offset
+	_frame_offsets.append(data.size())
 	_data = data
-

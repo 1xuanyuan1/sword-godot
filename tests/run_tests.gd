@@ -11,9 +11,11 @@ func _init() -> void:
 	_test_mkf_archive()
 	_test_mkf_rejects_bad_offsets()
 	_test_rle_decoder()
+	_test_sprite_offsets()
 	_test_yj1_raw_block()
 	_test_palette_decoder()
 	_test_map_helpers()
+	_test_voc_decoder()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
 		quit(0)
@@ -68,6 +70,16 @@ func _test_rle_decoder() -> void:
 	_expect(image.opacity == PackedByteArray([0, 255, 255, 0, 255, 255, 255, 255]), "RLE opacity")
 
 
+func _test_sprite_offsets() -> void:
+	# 2 frames: table length 3 words, starts at 6 and 8, broken zero sentinel.
+	var data := PackedByteArray([3, 0, 4, 0, 0, 0, 0xaa, 0xbb, 0xcc, 0xdd])
+	var sprite := PalSprite.from_bytes(data)
+	_expect(sprite.is_valid(), "sprite broken sentinel compatibility")
+	_expect(sprite.frame_count() == 2, "sprite frame count")
+	_expect(sprite.get_frame(0) == PackedByteArray([0xaa, 0xbb]), "sprite first frame")
+	_expect(sprite.get_frame(1) == PackedByteArray([0xcc, 0xdd]), "sprite last frame uses chunk end")
+
+
 func _test_yj1_raw_block() -> void:
 	var source := PackedByteArray()
 	PalBinary.append_u32_le(source, Yj1Decoder.SIGNATURE)
@@ -102,3 +114,23 @@ func _test_map_helpers() -> void:
 	_expect(PalMapData.top_sprite_index(value) == ((((value >> 16) & 0xff) | (((value >> 16) >> 4) & 0x100)) - 1), "map top index")
 	_expect(PalMapData.is_blocked(0x2000), "map blocked flag")
 
+
+func _test_voc_decoder() -> void:
+	var voc := PackedByteArray()
+	voc.append_array("Creative Voice File\u001a".to_ascii_buffer())
+	PalBinary.append_u16_le(voc, 26)
+	PalBinary.append_u16_le(voc, 0x0114)
+	PalBinary.append_u16_le(voc, 0x111f)
+	voc.append(1)
+	voc.append_array(PackedByteArray([5, 0, 0])) # 2 metadata + 3 samples.
+	voc.append(156) # 10 kHz time constant.
+	voc.append(0) # 8-bit PCM codec.
+	voc.append_array(PackedByteArray([128, 129, 130]))
+	voc.append(0)
+	var decoder := VocDecoder.new()
+	_expect(decoder.decode(voc), "VOC type 01 decode")
+	_expect(decoder.sample_rate == 10000, "VOC sample rate")
+	_expect(decoder.samples == PackedByteArray([128, 129, 130]), "VOC samples")
+	var wav := decoder.to_wav()
+	_expect(wav.slice(0, 4).get_string_from_ascii() == "RIFF", "VOC WAV RIFF header")
+	_expect(wav.size() == 48, "VOC WAV padded length")

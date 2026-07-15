@@ -139,7 +139,7 @@ func _show_report(report: PalImportReport) -> void:
 	_details.clear()
 	var root := _details.create_item()
 	for file_name: String in report.files.keys():
-		if file_name == "fbp_preview":
+		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "voc_conversion"]:
 			continue
 		var metadata: Dictionary = report.files[file_name]
 		var item := _details.create_item(root)
@@ -170,4 +170,3 @@ func _format_size(bytes: int) -> String:
 	if bytes >= 1024:
 		return "%.1f KiB" % (bytes / 1024.0)
 	return "%d B" % bytes
-
