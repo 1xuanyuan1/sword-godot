@@ -50,6 +50,8 @@ flowchart LR
 
 每个 10 FPS 脚本帧中，`ScriptVM` 还会遍历当前场景的 EventObject：先更新临时消失/重现生命周期，再执行一条自动脚本。追逐事件通过 `set_scene_map()` 读取当前 PAL 地图阻挡；自动移动进入玩家接触范围后，`MapExplorer` 在同一更新周期运行触发脚本。
 
+手动搜索由 `MapExplorer` 按 SDLPal `PAL_GetSearchTriggerRange` 生成面向方向上的 13 个 half 格检查点，再按“检查点顺序 → EventObject 全局顺序”选择目标。搜索模式只决定允许扫描多少个检查点；它不使用普通欧氏或曼哈顿最近距离。命中普通 NPC 后，`MapExplorer` 先让 NPC 转向队伍、恢复双方站立状态并重绘，再把全局对象编号交给 `ScriptVM`。
+
 场景进入与传送离开是两条不同生命周期：`0059` 只请求加载目标场景并运行其 `script_on_enter`；`0038` 先把当前场景的 `script_on_teleport` 当作可等待的嵌套触发脚本执行，完成后再回到调用脚本。两种脚本都可以通过 `0059` 交给 `MapExplorer` 延迟到安全时机切换地图。
 
 ## 输入、事件与重绘
@@ -65,7 +67,8 @@ sequenceDiagram
     participant UI as 对话框/菜单
     U->>M: 方向键、空格、Esc
     M->>S: 校验阻挡并记录队伍步进
-    M->>V: 触发接触或搜索事件
+    M->>M: 按 half 格范围选择接触或搜索事件
+    M->>V: 传入 EventObject 全局编号并触发脚本
     V->>S: 修改位置、物品、金钱或调色板
     V-->>UI: 对话和 Toast 信号
     V-->>M: 重绘或场景切换请求

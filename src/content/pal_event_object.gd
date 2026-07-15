@@ -83,6 +83,12 @@ func is_search_trigger() -> bool:
 	return trigger_mode >= TRIGGER_SEARCH_NEAR and trigger_mode < TRIGGER_TOUCH_NEAR
 
 
+## 返回手动搜索可检查的 13 点序列长度上限。
+## 模式 1/2/3 分别允许索引 0–1、0–7、0–12，对应 SDLPal `mode * 6 - 4`。
+func search_trigger_checkpoint_count() -> int:
+	return mini(13, trigger_mode * 6 - 4) if is_search_trigger() else 0
+
+
 ## 是否在队伍接近后自动触发。
 func is_touch_trigger() -> bool:
 	return trigger_mode >= TRIGGER_TOUCH_NEAR and trigger_mode <= TRIGGER_TOUCH_FARTHEST

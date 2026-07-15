@@ -48,6 +48,15 @@
   --script res://tests/run_local_event_auto_script_test.gd
 ```
 
+客栈手动搜索范围和真实触发脚本回归：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_manual_search_test.gd
+```
+
+修改搜索或交互行为时，合成测试必须至少覆盖朝向检查点、身后排除、`trigger_mode 1/2/3` 的 2/8/13 点边界和同格 EventObject 顺序；本地测试负责验证真实资源中的对象编号及脚本可以完整结束。
+
 场景进入、出口、楼梯和传送离开生命周期回归：
 
 ```bash

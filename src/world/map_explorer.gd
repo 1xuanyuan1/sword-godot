@@ -242,20 +242,69 @@ func _is_blocked(world_position: Vector2i) -> bool:
 
 func _inspect_nearby_event() -> void:
 	var party := _session.party_world_position()
-	var closest: PalEventObject
-	var closest_distance := 999999
-	for event in _scene_events:
-		if not event.is_visible() or not event.is_search_trigger() or event.trigger_script <= 0:
-			continue
-		var distance := absi(event.position.x - party.x) + absi(event.position.y - party.y) * 2
-		if distance < closest_distance:
-			closest_distance = distance
-			closest = event
-	if closest == null or closest_distance > 64:
+	var checkpoints := _search_trigger_positions(party, _session.party_direction)
+	var found := _find_search_event(checkpoints, _scene_events)
+	if found == null:
 		_status.text = "附近没有可交互事件｜世界坐标 %s" % party
 		return
-	_status.text = "事件：脚本 0x%04X，自动脚本 0x%04X，Sprite %d（VM 基础阶段）" % [closest.trigger_script, closest.auto_script, closest.sprite_number]
-	_run_event_trigger(closest)
+
+	if _prepare_search_event(found):
+		_refresh_world()
+	_status.text = "事件：脚本 0x%04X，自动脚本 0x%04X，Sprite %d" % [found.trigger_script, found.auto_script, found.sprite_number]
+	_run_event_trigger(found)
+
+
+func _search_trigger_positions(party_position: Vector2i, party_direction: int) -> Array[Vector2i]:
+	# SDLPal `PAL_GetSearchTriggerRange` 会沿人物朝向生成中线和两侧共 13 个检查点。
+	# 这里保留 PAL 世界像素坐标，匹配时再转成 (tile_x, tile_y, half)，避免把菱形邻接
+	# 错当成普通直角坐标距离。
+	var x_offset := 16 if party_direction in [GameSession.DIR_NORTH, GameSession.DIR_EAST] else -16
+	var y_offset := 8 if party_direction in [GameSession.DIR_EAST, GameSession.DIR_SOUTH] else -8
+	var x := party_position.x
+	var y := party_position.y
+	var result: Array[Vector2i] = [party_position]
+	for _step in range(4):
+		result.append(Vector2i(x + x_offset, y + y_offset))
+		result.append(Vector2i(x, y + y_offset * 2))
+		result.append(Vector2i(x + x_offset * 2, y))
+		x += x_offset
+		y += y_offset
+	return result
+
+
+func _find_search_event(checkpoints: Array[Vector2i], events: Array[PalEventObject]) -> PalEventObject:
+	# 官方优先级是“检查点顺序 → EventObject 全局顺序”，不是按像素距离排序。
+	# 坐标比较也只比较 PAL 的 tile_x、tile_y 和 half，允许同一 half 格内的细微像素偏移。
+	for checkpoint_index in range(mini(13, checkpoints.size())):
+		var checkpoint_half := _pal_world_to_half(checkpoints[checkpoint_index])
+		for event in events:
+			if not event.is_visible() or not event.is_search_trigger():
+				continue
+			if checkpoint_index >= event.search_trigger_checkpoint_count():
+				continue
+			if _pal_world_to_half(event.position) == checkpoint_half:
+				return event
+	return null
+
+
+func _pal_world_to_half(world_position: Vector2i) -> Vector3i:
+	return Vector3i(
+		floori(world_position.x / 32.0),
+		floori(world_position.y / 16.0),
+		0 if posmod(world_position.x, 32) == 0 else 1
+	)
+
+
+func _prepare_search_event(event: PalEventObject) -> bool:
+	# PAL_Search 只让处于普通四方向动画范围内的对象转身；特殊剧情帧不应被搜索覆盖。
+	if event == null or event.sprite_frames * 4 <= event.current_frame:
+		return false
+	event.current_frame = 0
+	event.direction = (_session.party_direction + 2) % 4
+	# 普通站立帧由角色方向自然选出，不保留前一段剧情强制指定的动作帧。
+	_session.clear_party_gestures()
+	_showing_walk_frame = false
+	return true
 
 
 func _trigger_touch_event() -> bool:

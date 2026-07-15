@@ -13,7 +13,9 @@ Godot 版 `ScriptVM` 以固定 SDLPal 基准的 `script.c` 为行为参考。当
 - `003E` 系统消息使用中央黑底白字 Toast，约 1.4 秒后自动关闭，不需要按键。
 - `003B` 普通中央对白保持交互式显示；以成对引号标记的无角色剧情叙述复用系统 Toast，连续消息会先合并，再统一计时关闭。
 - 触发事件时传入全局 `EventObject` 编号，使方向、帧、位置、状态和层级修改作用于正确对象。
-- 搜索事件使用空格/回车；门、楼梯和传送点按照 `trigger_mode 4–8` 在接近时自动触发。
+- 搜索事件使用空格/回车；它不是“寻找像素距离最近的对象”，而是按人物朝向依次扫描 13 个 PAL half 格检查点。`trigger_mode 1/2/3` 分别只允许前 2/8/13 个点，同一检查点按 EventObject 全局顺序选择第一个。
+- 搜索命中后，处于普通四方向动画范围内的 NPC 会恢复站立帧并转向队伍；队伍也会清除上一段剧情留下的强制动作。特殊剧情帧不会被搜索覆盖。
+- 门、楼梯和传送点按照 `trigger_mode 4–8` 在接近时自动触发。
 
 ## EventObject 自动脚本
 
@@ -72,6 +74,15 @@ Godot 版 `ScriptVM` 以固定 SDLPal 基准的 `script.c` 为行为参考。当
 ```
 
 测试只记录指令是否完成和消息数量，不输出或提交原版对话内容。当前资源的首场景进入脚本可以执行到结束，不含未支持指令。
+
+客栈手动搜索的真实 EventObject 与触发脚本回归：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_manual_search_test.gd
+```
+
+合成测试另行固定朝东检查点生成、身后排除、SearchNear/SearchNormal 范围、同格事件顺序以及 NPC 转身站定行为。
 
 全部剧情场景的自动事件回归：
 

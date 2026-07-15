@@ -26,6 +26,7 @@ func _init() -> void:
 	_test_voc_decoder()
 	_test_music_reference_collection()
 	_test_content_structures()
+	_test_explorer_manual_search()
 	_test_item_definition()
 	_test_player_roles_structure()
 	_test_scene_draw_item_anchors()
@@ -334,6 +335,71 @@ func _test_content_structures() -> void:
 	dialog_database.scripts[0].operands[0] = 55
 	dialog_database._build_speaker_portrait_defaults()
 	_expect(dialog_database.portrait_for_speaker("李大娘") == 55 and dialog_database.portrait_for_speaker("旁白") == 0, "speaker portrait metadata fills only known character portraits")
+
+
+func _test_explorer_manual_search() -> void:
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	var party := Vector2i(160, 112)
+	var east_positions: Array[Vector2i] = explorer._search_trigger_positions(party, GameSession.DIR_EAST)
+	var expected_east: Array[Vector2i] = [
+		Vector2i(160, 112),
+		Vector2i(176, 120), Vector2i(160, 128), Vector2i(192, 112),
+		Vector2i(192, 128), Vector2i(176, 136), Vector2i(208, 120),
+		Vector2i(208, 136), Vector2i(192, 144), Vector2i(224, 128),
+		Vector2i(224, 144), Vector2i(208, 152), Vector2i(240, 136),
+	]
+	_expect(east_positions == expected_east, "manual search reproduces SDLPal's 13 east-facing checkpoints")
+
+	var behind := _synthetic_search_event(Vector2i(144, 104), 3, 101)
+	var events: Array[PalEventObject] = [behind]
+	_expect(explorer._find_search_event(east_positions, events) == null, "manual search cannot trigger an event behind the party")
+
+	var search_near_miss := _synthetic_search_event(east_positions[2], 1, 102)
+	var search_near_hit := _synthetic_search_event(east_positions[1], 1, 103)
+	events = [search_near_miss]
+	_expect(explorer._find_search_event(east_positions, events) == null, "SearchNear checks only checkpoint indices 0-1")
+	events = [search_near_hit]
+	_expect(explorer._find_search_event(east_positions, events) == search_near_hit, "SearchNear accepts its forward checkpoint")
+
+	var search_normal_hit := _synthetic_search_event(east_positions[7], 2, 104)
+	var search_normal_miss := _synthetic_search_event(east_positions[8], 2, 105)
+	events = [search_normal_hit]
+	_expect(explorer._find_search_event(east_positions, events) == search_normal_hit, "SearchNormal accepts checkpoint index 7")
+	events = [search_normal_miss]
+	_expect(explorer._find_search_event(east_positions, events) == null, "SearchNormal rejects checkpoint index 8")
+
+	var first := _synthetic_search_event(east_positions[1], 3, 106)
+	var second := _synthetic_search_event(east_positions[1] + Vector2i(2, 1), 3, 107)
+	events = [first, second]
+	_expect(explorer._find_search_event(east_positions, events) == first, "same-half search keeps EventObject array order")
+	first.trigger_script = 0
+	_expect(explorer._find_search_event(east_positions, events) == first, "same-half search preserves SDLPal order even for an empty trigger entry")
+	first.state = 0
+	_expect(explorer._find_search_event(east_positions, events) == second, "manual search skips hidden events before applying array order")
+
+	explorer._session.party_direction = GameSession.DIR_EAST
+	explorer._session.set_party_gesture(GameSession.DIR_EAST, 2, 0)
+	explorer._showing_walk_frame = true
+	second.sprite_frames = 3
+	second.current_frame = 4
+	second.direction = GameSession.DIR_SOUTH
+	_expect(explorer._prepare_search_event(second), "search prepares an event in its ordinary four-direction frame range")
+	_expect(second.current_frame == 0 and second.direction == GameSession.DIR_WEST, "searched NPC stands and faces the party")
+	_expect(explorer._session.scripted_party_frame(0) == -1 and not explorer._showing_walk_frame, "search clears forced party gestures before redraw")
+	second.current_frame = second.sprite_frames * 4
+	second.direction = GameSession.DIR_NORTH
+	_expect(not explorer._prepare_search_event(second) and second.direction == GameSession.DIR_NORTH, "search preserves a special event animation frame")
+	explorer.free()
+
+
+func _synthetic_search_event(position: Vector2i, trigger_mode: int, object_id: int) -> PalEventObject:
+	var event := PalEventObject.new()
+	event.position = position
+	event.state = 1
+	event.trigger_mode = trigger_mode
+	event.trigger_script = 1
+	event.object_id = object_id
+	return event
 
 
 func _test_item_definition() -> void:

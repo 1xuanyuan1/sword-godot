@@ -235,3 +235,21 @@ keywords:
   - `docs/SCRIPT_VM.md`
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-015] [change] 对齐官方手动搜索事件范围
+
+- **关联需求**: M2–M3 场景探索
+- **关联 TODO**: TD-002（阶段性）
+- **功能描述**: 将“选择附近最近事件”的临时实现替换为 SDLPal `PAL_GetSearchTriggerRange`/`PAL_Search` 的 13 点 half 格扫描；搜索模式 1/2/3 分别限制前 2/8/13 个检查点，同格事件保持 EventObject 全局顺序。命中普通动画 NPC 后恢复站立帧、转向队伍并清除队伍遗留动作，特殊剧情帧保持不变。
+- **验证情况**: 193 项合成测试通过，覆盖朝东 13 点序列、身后排除、SearchNear/SearchNormal 边界、同格优先级和 NPC 转身；本地客栈事件 5 按真实资源命中且脚本 `0x18AE` 完整结束，开场、黑苗客栈、出口、楼梯、厨房及桂花酒回归继续通过。
+- **涉及文件**:
+  - `src/content/pal_event_object.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_manual_search_test.gd`
+  - `README.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
