@@ -21,6 +21,7 @@ func _init() -> void:
 	_test_rng_frame_decoder()
 	_test_rng_rejects_malformed_delta()
 	_test_map_helpers()
+	_test_tileset_builder()
 	_test_voc_decoder()
 	_test_content_structures()
 	_test_item_definition()
@@ -192,6 +193,83 @@ func _test_map_helpers() -> void:
 	_expect(PalMapData.bottom_sprite_index(value) == ((value & 0xff) | ((value >> 4) & 0x100)), "map bottom index")
 	_expect(PalMapData.top_sprite_index(value) == ((((value >> 16) & 0xff) | (((value >> 16) >> 4) & 0x100)) - 1), "map top index")
 	_expect(PalMapData.is_blocked(0x2000), "map blocked flag")
+
+
+func _test_tileset_builder() -> void:
+	var map_bytes := PackedByteArray()
+	map_bytes.resize(PalMapData.BYTE_SIZE)
+	# 同一底层 Sprite 在相邻 half 上携带不同阻挡/高度，验证必须生成 alternative tile。
+	map_bytes.encode_u32(4, 0x2000 | (3 << 8) | (2 << 16) | (4 << 24))
+	# 损坏底层索引按 SDLPal 规则回退到 (0,0,0) 的图块，而不是阻止整张地图导入。
+	map_bytes.encode_u32(8, 5)
+	var map_data := PalMapData.from_bytes(map_bytes)
+	var tile_sprite := _synthetic_map_tile_sprite()
+	var tile_set := PalTileSetBuilder.build_tileset(map_data, tile_sprite)
+	_expect(tile_set != null, "TileSet synthetic build")
+	if tile_set == null:
+		return
+
+	var source := tile_set.get_source(PalTileSetBuilder.ATLAS_SOURCE_ID) as TileSetAtlasSource
+	_expect(source != null and source.texture_region_size == Vector2i(32, 16), "TileSet atlas source and region")
+	var atlas_image := source.texture.get_image()
+	_expect(atlas_image.get_width() == PalTileSetBuilder.ATLAS_COLUMNS * 32, "TileSet deterministic atlas width")
+	var encoded := atlas_image.get_pixel(0, 0)
+	_expect(roundi(encoded.r * 255.0) == 7 and roundi(encoded.g * 255.0) == 255, "TileSet RG index and opacity")
+	var transparent_padding := atlas_image.get_pixel(0, 15)
+	_expect(roundi(transparent_padding.g * 255.0) == 0, "TileSet transparent sixteenth row")
+
+	var original := Vector3i(3, 5, 1)
+	var cell := PalTileSetBuilder.pal_half_to_map_cell(original.x, original.y, original.z)
+	_expect(PalTileSetBuilder.map_cell_to_pal_half(cell) == original, "PAL half cell round trip")
+	var coordinate_layer := TileMapLayer.new()
+	coordinate_layer.tile_set = tile_set
+	coordinate_layer.position = Vector2(-16, -8)
+	var mapped_center := coordinate_layer.map_to_local(cell) + coordinate_layer.position
+	_expect(mapped_center == Vector2(112, 88), "PAL half maps to exact Godot isometric center, actual %s" % mapped_center)
+	coordinate_layer.free()
+
+	var build := PalTileSetBuilder.build_map_resources(999, map_data, tile_sprite, "user://pal_tileset_test/content")
+	_expect(bool(build.get("success", false)), "TileSet resource and PackedScene save")
+	if not bool(build.get("success", false)):
+		return
+	var packed := ResourceLoader.load(str(build["tilemap_path"]), "PackedScene", ResourceLoader.CACHE_MODE_REPLACE) as PackedScene
+	_expect(packed != null, "TileMap PackedScene reload")
+	if packed == null:
+		return
+	var instance := packed.instantiate()
+	var bottom := instance.get_node("StaticBottom") as TileMapLayer
+	var top := instance.get_node("StaticTop") as TileMapLayer
+	var semantic_cell := PalTileSetBuilder.pal_half_to_map_cell(0, 0, 1)
+	var bottom_data := bottom.get_cell_tile_data(semantic_cell)
+	var top_data := top.get_cell_tile_data(semantic_cell)
+	_expect(bottom_data != null and bool(bottom_data.get_custom_data("pal_blocked")), "TileSet blocked alternative metadata")
+	_expect(bottom_data != null and int(bottom_data.get_custom_data("pal_height")) == 3, "TileSet bottom height metadata")
+	_expect(top_data != null and int(top_data.get_custom_data("pal_sprite_index")) == 1 and int(top_data.get_custom_data("pal_height")) == 4, "TileSet top metadata")
+	var fallback_data := bottom.get_cell_tile_data(PalTileSetBuilder.pal_half_to_map_cell(1, 0, 0))
+	_expect(fallback_data != null and int(fallback_data.get_custom_data("pal_sprite_index")) == 0, "TileSet invalid bottom frame fallback")
+	instance.free()
+
+
+func _synthetic_map_tile_sprite() -> PalSprite:
+	var frames: Array[PackedByteArray] = []
+	for color_index in [7, 9]:
+		var frame := PackedByteArray()
+		PalBinary.append_u16_le(frame, 32)
+		PalBinary.append_u16_le(frame, 15)
+		for _row in range(15):
+			frame.append(32)
+			for _column in range(32):
+				frame.append(color_index)
+		# PAL Sprite 偏移以 16 位字计数，补齐到偶数字节。
+		frame.append(0)
+		frames.append(frame)
+	var sprite_bytes := PackedByteArray()
+	PalBinary.append_u16_le(sprite_bytes, 3)
+	PalBinary.append_u16_le(sprite_bytes, int((6 + frames[0].size()) / 2.0))
+	PalBinary.append_u16_le(sprite_bytes, 0)
+	sprite_bytes.append_array(frames[0])
+	sprite_bytes.append_array(frames[1])
+	return PalSprite.from_bytes(sprite_bytes)
 
 
 func _test_voc_decoder() -> void:

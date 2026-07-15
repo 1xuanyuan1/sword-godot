@@ -49,6 +49,9 @@ static func _draw_layer(canvas: PalIndexedImage, map_data: PalMapData, tile_spri
 					frame_index = PalMapData.bottom_sprite_index(tile) if layer == 0 else PalMapData.top_sprite_index(tile)
 				elif layer == 0:
 					frame_index = PalMapData.bottom_sprite_index(map_data.tile_value(0, 0, 0))
+				# SDLPal 对缺失底层帧回退到 (0,0,0)，缺失上层帧则保持透明。
+				if layer == 0 and (frame_index < 0 or frame_index >= tile_sprite.frame_count()):
+					frame_index = PalMapData.bottom_sprite_index(map_data.tile_value(0, 0, 0))
 				if frame_index >= 0 and frame_index < tile_sprite.frame_count():
 					var tile_image := RleDecoder.decode(tile_sprite.get_frame(frame_index))
 					if tile_image.is_valid():

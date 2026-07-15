@@ -38,6 +38,7 @@ var _rgm_portraits: Dictionary = {}
 var _item_bitmaps: Dictionary = {}
 var _ui_sprite: PalSprite
 var _speaker_portrait_defaults: Dictionary = {}
+var _tilemap_scenes: Dictionary = {}
 
 
 ## 从生成目录加载核心结构和文字数据库，并清空旧缓存。
@@ -58,6 +59,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	_item_bitmaps.clear()
 	_ui_sprite = null
 	_speaker_portrait_defaults.clear()
+	_tilemap_scenes.clear()
 	var core := root_path.path_join("core")
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
@@ -97,6 +99,23 @@ func load_map(map_number: int) -> PalMapData:
 func load_map_tiles(map_number: int) -> PalSprite:
 	var bytes := _read_file(root_path.path_join("world/tiles/%03d.gop" % map_number))
 	return PalSprite.from_bytes(bytes)
+
+
+## 加载导入器为指定地图生成的 TileMapLayer 场景，并在本次运行中缓存资源。
+## 文件缺失、格式过旧或资源损坏时返回 `null`，并提示用户重新导入 Data。
+func load_tilemap_scene(map_number: int) -> PackedScene:
+	if _tilemap_scenes.has(map_number):
+		return _tilemap_scenes[map_number]
+	var path := root_path.path_join("world/tilemaps/%03d.tscn" % map_number)
+	if not FileAccess.file_exists(path):
+		error_message = "地图 %d 缺少 TileMapLayer 资源，请在资源实验室重新导入 Data" % map_number
+		return null
+	var scene := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_REUSE) as PackedScene
+	if scene == null:
+		error_message = "地图 %d TileMapLayer 资源损坏：%s" % [map_number, path]
+		return null
+	_tilemap_scenes[map_number] = scene
+	return scene
 
 
 ## 读取 256 色 RGB 调色板；`night` 为真时选择同编号的夜间版本。

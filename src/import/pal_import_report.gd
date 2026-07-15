@@ -5,6 +5,8 @@
 class_name PalImportReport
 extends RefCounted
 
+const FORMAT_VERSION := 2
+
 ## 用户选择的源数据目录。
 var source_directory: String = ""
 ## 本次生成产物目录。
@@ -35,7 +37,7 @@ func summary() -> String:
 ## 转为可安全写入 JSON 的清单字典，不包含原版资源字节。
 func to_dictionary() -> Dictionary:
 	return {
-		"format_version": 1,
+		"format_version": FORMAT_VERSION,
 		"source_edition": source_edition,
 		"source_directory": source_directory,
 		"generated_at_utc": Time.get_datetime_string_from_system(true),

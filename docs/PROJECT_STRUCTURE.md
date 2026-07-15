@@ -63,7 +63,7 @@ sword/
 
 - `tests/run_tests.gd`：CI 使用合成字节运行，不依赖原版游戏。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
-- `generated/pal/content/`：运行时数据库、Sprite、地图、TileSet 等本地产物。
+- `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。
 - `generated/pal/visual_tests/`：本地截图和像素对照结果。
 
 只有源码、测试、文档和完全合成的数据可以提交。`Data/`、`generated/`、存档、音频转换结果和原版截图均不可提交。

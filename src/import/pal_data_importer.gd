@@ -69,6 +69,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 
 	_generate_palette_previews(files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_content_database(files_by_lowercase, absolute_output, report)
+	_generate_tileset_maps(absolute_output, report)
 	_convert_item_bitmaps(files_by_lowercase["ball.mkf"], absolute_output, report)
 	_convert_mgo_sprites(files_by_lowercase["mgo.mkf"], absolute_output, report)
 	_convert_rgm_portraits(files_by_lowercase["rgm.mkf"], absolute_output, report)
@@ -173,6 +174,70 @@ static func _generate_content_database(files_by_lowercase: Dictionary, absolute_
 		"maps": imported_maps,
 		"output": content_root,
 	}
+
+
+static func _generate_tileset_maps(absolute_output: String, report: PalImportReport) -> void:
+	var content_root := absolute_output.path_join("content")
+	var map_directory := content_root.path_join("world/maps")
+	var tile_directory := content_root.path_join("world/tiles")
+	var directory := DirAccess.open(map_directory)
+	if directory == null:
+		report.errors.append("无法读取已生成的地图目录：%s" % map_directory)
+		return
+
+	# 每次完整重建，避免用户切换 Data 版本后残留已经不存在的旧地图资源。
+	_clear_generated_resources(content_root.path_join("world/tilesets"), ".tres")
+	_clear_generated_resources(content_root.path_join("world/tilesets"), ".res")
+	_clear_generated_resources(content_root.path_join("world/tilemaps"), ".tscn")
+	var map_files := Array(directory.get_files())
+	map_files.sort()
+	var generated := 0
+	var map_reports: Dictionary = {}
+	for file_name in map_files:
+		if not file_name.ends_with(".map"):
+			continue
+		var map_number: int = str(file_name).get_basename().to_int()
+		var map_path := map_directory.path_join(file_name)
+		var tile_path := tile_directory.path_join("%03d.gop" % map_number)
+		var map_bytes := _read_bytes(map_path)
+		var tile_bytes := _read_bytes(tile_path)
+		var map_data := PalMapData.from_bytes(map_bytes)
+		var tile_sprite := PalSprite.from_bytes(tile_bytes)
+		var build := PalTileSetBuilder.build_map_resources(map_number, map_data, tile_sprite, content_root)
+		if not bool(build.get("success", false)):
+			report.errors.append("地图 %d TileSet 生成失败：%s" % [map_number, build.get("error", "未知错误")])
+			continue
+		generated += 1
+		map_reports[str(map_number)] = {
+			"map_sha256": _sha256(map_bytes),
+			"gop_sha256": _sha256(tile_bytes),
+			"tile_frames": build["tile_frames"],
+			"alternative_tiles": build["alternative_tiles"],
+			"fallback_bottom_tiles": build["fallback_bottom_tiles"],
+			"ignored_top_tiles": build["ignored_top_tiles"],
+			"tileset_path": build["tileset_path"],
+			"tilemap_path": build["tilemap_path"],
+		}
+		if int(build["fallback_bottom_tiles"]) > 0 or int(build["ignored_top_tiles"]) > 0:
+			report.warnings.append("地图 %d 含 %d 个缺失底层帧和 %d 个缺失上层帧，已按 SDLPal 规则兼容" % [map_number, build["fallback_bottom_tiles"], build["ignored_top_tiles"]])
+	report.files["tileset_maps"] = {
+		"format_version": 1,
+		"generated": generated,
+		"maps": map_reports,
+		"output": content_root.path_join("world"),
+	}
+	if generated == 0:
+		report.errors.append("没有成功生成任何 TileSet 地图")
+
+
+static func _clear_generated_resources(path: String, extension: String) -> void:
+	DirAccess.make_dir_recursive_absolute(path)
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return
+	for file_name in directory.get_files():
+		if file_name.ends_with(extension):
+			directory.remove(file_name)
 
 
 static func _convert_mgo_sprites(mgo_path: String, absolute_output: String, report: PalImportReport) -> void:
@@ -508,3 +573,15 @@ static func _write_bytes(path: String, data: PackedByteArray) -> bool:
 		return false
 	file.store_buffer(data)
 	return true
+
+
+static func _read_bytes(path: String) -> PackedByteArray:
+	var file := FileAccess.open(path, FileAccess.READ)
+	return file.get_buffer(file.get_length()) if file != null else PackedByteArray()
+
+
+static func _sha256(data: PackedByteArray) -> String:
+	var context := HashingContext.new()
+	if context.start(HashingContext.HASH_SHA256) != OK or context.update(data) != OK:
+		return ""
+	return context.finish().hex_encode()

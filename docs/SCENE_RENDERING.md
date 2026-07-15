@@ -1,6 +1,28 @@
 # 场景角色与遮挡渲染
 
-探索样板已不再使用几何占位标记。角色和事件对象会从本机导入的 `MGO.MKF` 读取原版 Sprite，并在 320×200 索引画布上与地图共同合成。
+探索样板已不再使用几何占位标记。角色和事件对象会从本机导入的 `MGO.MKF` 读取原版 Sprite。地图导入阶段为每个唯一 `map_number` 生成 Godot 4.7 `TileSet` 和四个 `TileMapLayer`；迁移期仍保留 CPU 索引画布作为像素基准。
+
+## TileSet 生成产物
+
+- GOP 的所有 32×15 RLE 图块装入 32×16 单元的 RG8 图集：R 是 PAL 调色板索引，G 是透明度，最后一行透明。
+- 图集使用保留压缩缓冲的无损 `PortableCompressedTexture2D`，随 TileSet 保存为本地二进制 `.res`。
+- `StaticBottom` 和 `StaticTop` 保存完整地图；`CoverBottom`、`CoverTop` 为运行时特殊遮挡预留。
+- 相同 GOP Sprite 在不同位置可以拥有不同阻挡或逻辑高度，因此 TileSet 使用 alternative tile 保存 `pal_layer`、`pal_sprite_index`、`pal_blocked` 和 `pal_height`。
+- 原版资源和这些 Godot 资源全部位于被 Git 忽略的 `generated/pal/content/world/`。
+
+PAL 每格有两个 half。它们映射到 Godot 等距单元：
+
+```gdscript
+Vector2i(map_x + map_y + half, map_y - map_x)
+```
+
+Godot 等距单元 `(0,0)` 的默认中心是 `(16,8)`，因此生成的 TileMapLayer 统一偏移 `(-16,-8)`。最终单元中心恰好回到 PAL 世界坐标：
+
+```text
+(map_x × 32 + half × 16, map_y × 16 + half × 8)
+```
+
+当前数据的地图 145 含一个引用不存在 GOP 帧的原始记录。SDLPal 对缺失底层帧会回退到 `(0,0,0)` 底层图块，对缺失上层帧则跳过；导入器沿用该行为并报告警告，不会伪造新素材。
 
 ## 数据链路
 
