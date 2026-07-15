@@ -142,6 +142,7 @@ func _process(delta: float) -> void:
 		if _script_vm != null:
 			auto_world_changed = _script_vm.tick_frame() or auto_world_changed
 	if auto_world_changed:
+		_displace_party_from_blockers()
 		_refresh_world()
 		# 自动脚本可能让 NPC 主动走入接触范围；官方会在同一游戏更新周期检查触发。
 		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog:
@@ -245,6 +246,28 @@ func _is_blocked(world_position: Vector2i) -> bool:
 		if absi(event.position.x - world_position.x) + absi(event.position.y - world_position.y) * 2 <= 12:
 			return true
 	return false
+
+
+func _displace_party_from_blockers() -> bool:
+	# SDLPal `PAL_GameUpdate` 会在每个 EventObject 自动脚本之后检查 NPC 是否挤到
+	# 队伍脚下；候选方向从 NPC 朝向的下一个方向开始，依次旋转一圈寻找可走 half 格。
+	var displaced := false
+	for event in _scene_events:
+		if not event.is_visible() or not event.blocks_movement() or event.sprite_number <= 0:
+			continue
+		var party := _session.party_world_position()
+		if absi(event.position.x - party.x) + absi(event.position.y - party.y) * 2 > 12:
+			continue
+		var direction := (event.direction + 1) % 4
+		for _attempt in range(4):
+			var movement := GameSession.movement_for_direction(direction)
+			if not _is_blocked(party + movement):
+				_session.displace_party_from_blocker(movement)
+				_showing_walk_frame = false
+				displaced = true
+				break
+			direction = (direction + 1) % 4
+	return displaced
 
 
 func _inspect_nearby_event() -> void:

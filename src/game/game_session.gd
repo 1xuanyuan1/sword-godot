@@ -91,6 +91,14 @@ func record_party_step(direction: int, movement: Vector2i) -> void:
 	viewport_position += movement
 
 
+## 因阻挡型 EventObject 挤占队伍位置而平移视口，但不写入主动行走轨迹。
+## `movement` 是一个 PAL half 格偏移；会清除动作和收拢状态，但保持队伍朝向。
+func displace_party_from_blocker(movement: Vector2i) -> void:
+	clear_party_gestures()
+	party_formation_collapsed = false
+	viewport_position += movement
+
+
 ## 根据 SDLPal 编队偏移返回指定队员的世界位置。
 func party_member_world_position(member_index: int) -> Vector2i:
 	if member_index <= 0 or trail_positions.size() < 2:

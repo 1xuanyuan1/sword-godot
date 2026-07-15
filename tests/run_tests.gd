@@ -34,6 +34,7 @@ func _init() -> void:
 	_test_scene_y_sorting()
 	_test_pal_direction_mapping()
 	_test_party_trail()
+	_test_explorer_blocker_displacement()
 	_test_audio_settings()
 	_test_audio_player_foundation()
 	_test_script_vm_foundation()
@@ -459,6 +460,47 @@ func _synthetic_touch_event(position: Vector2i, trigger_mode: int, object_id: in
 	event.trigger_script = trigger_script
 	event.object_id = object_id
 	return event
+
+
+func _test_explorer_blocker_displacement() -> void:
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	var map_bytes := PackedByteArray()
+	map_bytes.resize(PalMapData.BYTE_SIZE)
+	explorer._map_data = PalMapData.from_bytes(map_bytes)
+	explorer._use_legacy_renderer = true
+	var party := Vector2i(320, 160)
+	explorer._session.set_party_world_position(party)
+	var original_trail: Array[Vector2i] = []
+	original_trail.assign(explorer._session.trail_positions)
+	var overlapping := PalEventObject.new()
+	overlapping.object_id = 301
+	overlapping.position = party
+	overlapping.state = 2
+	overlapping.sprite_number = 1
+	overlapping.direction = GameSession.DIR_SOUTH
+	var events: Array[PalEventObject] = [overlapping]
+	explorer._scene_events = events
+	_expect(explorer._displace_party_from_blockers(), "blocking NPC overlap displaces the party")
+	_expect(explorer._session.party_world_position() == party + GameSession.movement_for_direction(GameSession.DIR_WEST), "blocker displacement starts one direction after the NPC facing")
+	_expect(explorer._session.trail_positions == original_trail and explorer._session.party_direction == GameSession.DIR_SOUTH, "blocker displacement preserves trail and party facing")
+
+	explorer._session.set_party_world_position(party)
+	var west_blocker := PalEventObject.new()
+	west_blocker.object_id = 302
+	west_blocker.position = party + GameSession.movement_for_direction(GameSession.DIR_WEST)
+	west_blocker.state = 2
+	west_blocker.sprite_number = 1
+	events = [overlapping, west_blocker]
+	explorer._scene_events = events
+	_expect(explorer._displace_party_from_blockers(), "blocker displacement tries another direction when the first is occupied")
+	_expect(explorer._session.party_world_position() == party + GameSession.movement_for_direction(GameSession.DIR_NORTH), "blocker displacement rotates candidates in PAL direction order")
+
+	explorer._session.set_party_world_position(party)
+	overlapping.sprite_number = 0
+	events = [overlapping]
+	explorer._scene_events = events
+	_expect(not explorer._displace_party_from_blockers() and explorer._session.party_world_position() == party, "sprite-less blocker trigger does not push the party")
+	explorer.free()
 
 
 func _test_item_definition() -> void:

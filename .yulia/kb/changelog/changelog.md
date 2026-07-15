@@ -270,3 +270,19 @@ keywords:
   - `docs/SCRIPT_VM.md`
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-017] [feat] 增加阻挡型 NPC 队伍脱困行为
+
+- **关联需求**: M2–M3 场景探索
+- **关联 TODO**: TD-002（阶段性）
+- **功能描述**: 对齐 SDLPal `PAL_GameUpdate` 的队伍挤占处理；阻挡型有 Sprite NPC 自动移动到队伍脚下时，从 NPC 朝向的下一方向开始旋转尝试四个 half 格，将队伍平移到首个可走位置。被动位移保持队伍朝向和历史轨迹，避免门口路线冲突伪装成主动行走或永久卡住玩家。
+- **验证情况**: 210 项合成测试通过，覆盖首选方向、候选阻挡后的旋转、轨迹/朝向保持和无 Sprite 触发点排除；294 个剧情场景共 1539 个 EventObject 发生动作或状态变化且无未支持指令，开场、黑苗 NPC 入房、楼梯、厨房、传送离开和桂花酒流程继续通过。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
