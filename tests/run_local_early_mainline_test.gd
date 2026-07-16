@@ -26,7 +26,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、求药归来、黑苗人离店、御剑教学、天亮返店、赵灵儿营救战、张四登船、仙灵岛抵达与道具叙述 Toast 主线完成")
+	print("PASS: 买虾、求药归来、黑苗人离店、御剑教学、天亮返店、赵灵儿营救战、首次/再次乘船赴岛与道具叙述 Toast 主线完成")
 	quit(0)
 
 
@@ -350,11 +350,94 @@ func _test_post_training_dawn_and_rescue(database: PalContentDatabase, session: 
 		failure = "营救战后没有安装李大娘后续入口：脚本 %d，模式 %d" % [database.event_objects[56].trigger_script, database.event_objects[56].trigger_mode]
 	elif music_requests != [[34, true, 0.0], [24, true, 3.0]] or fade_requests != [[true, 0.6]] or session.music_number != 24:
 		failure = "营救战前后音乐或渐隐时序不正确：音乐 %s，渐隐 %s" % [music_requests, fade_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	fade_requests.clear()
+	session.scene_index = 2
+	vm.run_trigger(7031, 57)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "营救战后向李大娘借船遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1514, 1530) or next_entries != [7067]:
+		failure = "营救战后李大娘对话或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif database.event_objects[123].trigger_script != 7071:
+		failure = "李大娘对话没有安装张四再赴仙灵岛入口：%d" % database.event_objects[123].trigger_script
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	vm.run_trigger(7067, 57)
+	_drive_script(vm)
+	if messages != _message_range(1531, 1532) or next_entries != [7067]:
+		failure = "李大娘稳定提醒入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	vm.run_trigger(7071, 124)
+	_drive_script(vm)
+	var destination_boat := database.event_objects[117]
+	if not unsupported.is_empty():
+		failure = "张四再次送往仙灵岛遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1533, 1552) or next_entries != [7071]:
+		failure = "张四再赴仙灵岛对话或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif database.event_objects[116].trigger_script != 5925 or database.event_objects[116].trigger_mode != 6:
+		failure = "张四没有启用余杭码头登船入口：脚本 %d，模式 %d" % [database.event_objects[116].trigger_script, database.event_objects[116].trigger_mode]
+	elif database.event_objects[123].state != 0 or destination_boat.state != 2 or destination_boat.position != Vector2i(1120, 1424):
+		failure = "张四离场或目标船只状态不正确：张四 %d，船 %d/%s" % [database.event_objects[123].state, destination_boat.state, destination_boat.position]
+	elif database.scenes[14].script_on_enter != 9541:
+		failure = "再赴仙灵岛没有安装双人抵达入口：%d" % database.scenes[14].script_on_enter
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	fade_requests.clear()
+	var boat := database.event_objects[116]
+	var boat_start := boat.position
+	session.set_party_world_position(Vector2i(1184, 1424))
+	vm.run_trigger(0x1725, 117)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "赵灵儿同行登船遇到未支持指令：%s" % [unsupported]
+	elif fade_requests != [[true, 0.6]] or session.scene_index != 14 or session.party_world_position() != Vector2i(752, 808):
+		failure = "赵灵儿同行登船转场不正确：渐隐 %s，场景 %d，落点 %s" % [fade_requests, session.scene_index, session.party_world_position()]
+	elif boat.position != boat_start + Vector2i(288, -144):
+		failure = "赵灵儿同行时船只没有同步驶离：%s→%s" % [boat_start, boat.position]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[14].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "赵灵儿同行抵达仙灵岛遇到未支持指令：%s" % [unsupported]
+	elif not messages.is_empty() or next_entries != [9545]:
+		failure = "赵灵儿同行抵达入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([1, 0]) or session.music_number != 70 or session.battle_music_number != 37:
+		failure = "赵灵儿同行抵达后的队伍或音乐不正确：队伍 %s，BGM %d/%d" % [session.party_roles, session.music_number, session.battle_music_number]
 	vm.free()
 	return failure
 
 
-func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String:
+func _test_boat_steps_and_item_narration(_progressed_database: PalContentDatabase) -> String:
+	# 主线数据库已被第二次赴岛剧情改写；重新加载一份只读内容验证首次求药乘船。
+	var database := PalContentDatabase.new()
+	if not database.load_generated():
+		return "首次乘船回归无法重新加载本地生成资源：%s" % database.error_message
 	var session := GameSession.new()
 	session.reset_new_game()
 	session.scene_index = -1
