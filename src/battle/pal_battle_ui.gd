@@ -10,6 +10,7 @@ enum Mode {
 	WAITING,
 	COMMAND,
 	ENEMY_TARGET,
+	PLAYER_TARGET,
 	MAGIC_LIST,
 	RESULT,
 }
@@ -23,6 +24,8 @@ const UI_FRAME_PLAYER_FACE_FIRST := 48
 const UI_FRAME_NUMBER_CYAN := 56
 const UI_FRAME_CURRENT_ARROW_RED := 68
 const UI_FRAME_CURRENT_ARROW := 69
+const UI_FRAME_SELECTED_ARROW_RED := 66
+const UI_FRAME_SELECTED_ARROW := 67
 const UI_FRAME_MAGIC_CURSOR := 69
 const ACTION_POSITIONS: Array[Vector2i] = [
 	Vector2i(27, 140),
@@ -53,6 +56,8 @@ var mode: Mode = Mode.WAITING
 var selected_action: int = 0
 ## 当前选择的敌人索引；敌人本体闪烁由战斗画面处理。
 var selected_enemy: int = -1
+## 当前选择的队伍位置；我方单体仙术用箭头指示该角色。
+var selected_party_index: int = 0
 ## 当前仙术列表的选择索引。
 var selected_magic_index: int = 0
 ## 玩家战斗 Sprite 的脚底坐标，用来绘制当前角色箭头。
@@ -120,7 +125,7 @@ func open_magic_list(role_index: int) -> void:
 			_magic_entries.append({
 				"object_id": object_id,
 				"mp_cost": definition.mp_cost,
-				"enabled": object.is_usable_in_battle() and definition.mp_cost <= current_mp,
+				"enabled": object.is_usable_in_battle() and definition.mp_cost <= current_mp and controller != null and controller.can_pending_player_use_magic(object_id),
 			})
 	mode = Mode.MAGIC_LIST
 	queue_redraw()
@@ -144,6 +149,12 @@ func selected_magic_object() -> int:
 ## 返回当前仙术是否同时满足战斗标志和 MP 消耗；列表为空时为 `false`。
 func selected_magic_enabled() -> bool:
 	return bool(_magic_entries[selected_magic_index].get("enabled", false)) if selected_magic_index >= 0 and selected_magic_index < _magic_entries.size() else false
+
+
+## 更新我方单体目标的队伍位置，并重绘选中箭头。
+func set_player_selection(party_index: int) -> void:
+	selected_party_index = clampi(party_index, 0, maxi(0, player_foot_positions.size() - 1))
+	queue_redraw()
 
 
 ## 在指定 PAL 坐标显示一个上浮数字；`frame_start` 应为 19、29 或 56。
@@ -195,6 +206,8 @@ func _draw() -> void:
 	if controller.is_accepting_commands():
 		_draw_player_status_boxes()
 		_draw_current_player_arrow()
+		if mode == Mode.PLAYER_TARGET:
+			_draw_selected_player_arrow()
 	if mode == Mode.COMMAND:
 		_draw_action_icons()
 	elif mode == Mode.MAGIC_LIST:
@@ -224,6 +237,13 @@ func _draw_current_player_arrow() -> void:
 		return
 	var frame := UI_FRAME_CURRENT_ARROW_RED if int(Time.get_ticks_msec() / 80) % 2 == 0 else UI_FRAME_CURRENT_ARROW
 	_draw_ui_frame(frame, player_foot_positions[party_index] + Vector2i(-8, -74))
+
+
+func _draw_selected_player_arrow() -> void:
+	if selected_party_index < 0 or selected_party_index >= player_foot_positions.size():
+		return
+	var frame := UI_FRAME_SELECTED_ARROW_RED if int(Time.get_ticks_msec() / 80) % 2 == 0 else UI_FRAME_SELECTED_ARROW
+	_draw_ui_frame(frame, player_foot_positions[selected_party_index] + Vector2i(-8, -67))
 
 
 func _draw_action_icons() -> void:

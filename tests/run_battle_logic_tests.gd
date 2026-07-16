@@ -15,6 +15,9 @@ func _init() -> void:
 	_test_minimum_damage()
 	_test_dead_party_member_revives_for_battle()
 	_test_dead_target_reselection_and_victory()
+	_test_single_target_healing_magic()
+	_test_offensive_magic_damage()
+	_test_unsupported_status_magic_is_disabled()
 	_test_defeat()
 	if _failures.is_empty():
 		print("PASS: %d classic battle logic checks" % _checks)
@@ -121,6 +124,60 @@ func _test_dead_target_reselection_and_victory() -> void:
 	_expect(controller.battle_result == PalBattleController.BattleResult.VICTORY, "defeating the last enemy ends the battle in victory")
 
 
+func _test_single_target_healing_magic() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	database.player_roles.dexterities[0] = 999
+	var heal := PalScriptEntry.new()
+	heal.operation = 0x001b
+	heal.operands = PackedInt32Array([0, 75, 0])
+	var stop := PalScriptEntry.new()
+	stop.operation = 0
+	stop.operands = PackedInt32Array([0, 0, 0])
+	database.scripts = [PalScriptEntry.new(), heal, stop]
+	_add_magic(database, 100, PalMagicDefinition.TYPE_APPLY_TO_PLAYER, 6, 0, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE, 1)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	session.learned_magics_by_role[0] = PackedInt32Array([100])
+	session.role_hp[1] = 20
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 23)
+	_expect(controller.can_pending_player_use_magic(100) and controller.submit_magic(100, 1), "healing magic validates learned state, MP and ally target")
+	controller.submit_defend()
+	var result := controller.execute_next_action()
+	_expect(result != null and result.action_type == PalBattleController.ActionType.MAGIC and result.magic_object_id == 100 and result.target_index == 1, "magic action preserves object and target for animation")
+	_expect(session.role_mp[0] == 44 and session.role_hp[1] == 95, "healing magic consumes MP and runs opcode 001B on selected role")
+	_expect(result != null and result.hits.size() == 1 and result.hits[0].healing == 75, "healing result exposes the restored HP for yellow battle numbers")
+
+
+func _test_offensive_magic_damage() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	database.player_roles.dexterities[0] = 999
+	database.player_roles.magic_strengths[0] = 80
+	_add_magic(database, 101, PalMagicDefinition.TYPE_NORMAL, 5, 50, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE | PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.learned_magics_by_role[0] = PackedInt32Array([101])
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 29)
+	_expect(controller.submit_magic(101, 0), "offensive single-target magic command is accepted")
+	var result := controller.execute_next_action()
+	_expect(result != null and not result.hits.is_empty() and result.hits[0].target_is_enemy and result.hits[0].damage >= 50, "offensive magic uses base damage and returns an enemy hit")
+	_expect(session.role_mp[0] == 45 and controller.enemies[0].hp == 999 - result.hits[0].damage, "offensive magic consumes MP and updates enemy HP")
+
+
+func _test_unsupported_status_magic_is_disabled() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	var status_script := PalScriptEntry.new()
+	status_script.operation = 0x002d
+	status_script.operands = PackedInt32Array([6, 7, 0])
+	database.scripts = [PalScriptEntry.new(), status_script]
+	_add_magic(database, 102, PalMagicDefinition.TYPE_APPLY_TO_PLAYER, 5, 0, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE, 1)
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.learned_magics_by_role[0] = PackedInt32Array([102])
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 31)
+	_expect(not controller.can_pending_player_use_magic(102) and not controller.submit_magic(102, 0), "status magic stays disabled until its success opcode is implemented")
+	_expect(session.role_mp[0] == 50, "rejecting an unsupported status magic does not consume MP")
+
+
 func _test_defeat() -> void:
 	var database := _synthetic_database([
 		_enemy_definition(999, 10, 1000, 0, 500, false),
@@ -201,6 +258,23 @@ func _enemy_definition(health: int, level: int, attack: int, defense: int, dexte
 	enemy.physical_resistance = 1
 	enemy.dual_move = 1 if dual_move else 0
 	return enemy
+
+
+func _add_magic(database: PalContentDatabase, object_id: int, magic_type: int, mp_cost: int, base_damage: int, flags: int, success_script: int) -> void:
+	while database.magic_objects.size() <= object_id:
+		database.magic_objects.append(PalMagicObjectDefinition.new())
+	var object := PalMagicObjectDefinition.new()
+	object.object_id = object_id
+	object.magic_number = database.magics.size()
+	object.flags = flags
+	object.script_on_success = success_script
+	database.magic_objects[object_id] = object
+	var definition := PalMagicDefinition.new()
+	definition.magic_number = database.magics.size()
+	definition.magic_type = magic_type
+	definition.mp_cost = mp_cost
+	definition.base_damage = base_damage
+	database.magics.append(definition)
 
 
 func _session_for(database: PalContentDatabase, party_roles: PackedInt32Array) -> GameSession:

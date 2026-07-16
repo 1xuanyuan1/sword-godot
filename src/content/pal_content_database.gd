@@ -50,6 +50,7 @@ var source_encoding: String = ""
 var _mgo_sprites: Dictionary = {}
 var _enemy_battle_sprites: Dictionary = {}
 var _player_battle_sprites: Dictionary = {}
+var _magic_effect_sprites: Dictionary = {}
 var _battle_backgrounds: Dictionary = {}
 var _rgm_portraits: Dictionary = {}
 var _item_bitmaps: Dictionary = {}
@@ -83,6 +84,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	_mgo_sprites.clear()
 	_enemy_battle_sprites.clear()
 	_player_battle_sprites.clear()
+	_magic_effect_sprites.clear()
 	_battle_backgrounds.clear()
 	_rgm_portraits.clear()
 	_item_bitmaps.clear()
@@ -202,6 +204,15 @@ func load_player_battle_sprite(sprite_number: int) -> PalSprite:
 		return _player_battle_sprites[sprite_number]
 	var sprite := _load_generated_sprite(root_path.path_join("battle/sprites/players/%03d.spr" % sprite_number))
 	_player_battle_sprites[sprite_number] = sprite
+	return sprite
+
+
+## 按 FIRE.MKF 特效编号读取并缓存仙术 Sprite；未重新导入时返回无效对象。
+func load_magic_effect_sprite(effect_number: int) -> PalSprite:
+	if _magic_effect_sprites.has(effect_number):
+		return _magic_effect_sprites[effect_number]
+	var sprite := _load_generated_sprite(root_path.path_join("battle/sprites/magic/%03d.spr" % effect_number))
+	_magic_effect_sprites[effect_number] = sprite
 	return sprite
 
 

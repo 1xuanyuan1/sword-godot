@@ -15,6 +15,7 @@ enum BattleResult {
 enum ActionType {
 	ATTACK,
 	DEFEND,
+	MAGIC,
 }
 
 ## 单个敌人在本场战斗中的可变状态。
@@ -35,6 +36,7 @@ class PlayerState extends RefCounted:
 	var party_index: int = 0
 	var role_index: int = 0
 	var action_type: int = -1
+	var action_id: int = 0
 	var target_index: int = -1
 	var defending: bool = false
 
@@ -52,6 +54,8 @@ class Hit extends RefCounted:
 	var target_is_enemy: bool = false
 	var target_index: int = -1
 	var damage: int = 0
+	var healing: int = 0
+	var mp_restored: int = 0
 	var critical: bool = false
 	var auto_defended: bool = false
 	var defeated: bool = false
@@ -62,6 +66,9 @@ class ActionResult extends RefCounted:
 	var actor_is_enemy: bool = false
 	var actor_index: int = -1
 	var action_type: int = ActionType.ATTACK
+	var magic_object_id: int = 0
+	var target_index: int = -1
+	var mp_cost: int = 0
 	var second_action: bool = false
 	var skipped: bool = false
 	var unsupported: bool = false
@@ -225,6 +232,41 @@ func submit_defend() -> bool:
 	return true
 
 
+## 返回当前等待指令的角色能否使用指定仙术。
+## 会校验习得状态、战斗标志、MP、目标类型和本阶段已支持的成功脚本。
+func can_pending_player_use_magic(magic_object_id: int) -> bool:
+	var party_index := pending_party_index()
+	if party_index < 0:
+		return false
+	var role_index := players[party_index].role_index
+	var object := database.magic_object_definition(magic_object_id)
+	var definition := database.magic_definition_for_object(magic_object_id)
+	return object != null and definition != null and session.has_magic(role_index, magic_object_id) and object.is_usable_in_battle() and definition.mp_cost <= session.role_mp[role_index] and _magic_effect_is_supported(object, definition)
+
+
+## 为当前队员提交仙术和目标；全体仙术会把目标规范化为 -1。
+## 目标无效、MP 不足或成功脚本尚未支持时返回 `false`，不会消耗真气。
+func submit_magic(magic_object_id: int, target_index: int) -> bool:
+	var party_index := pending_party_index()
+	if party_index < 0 or not can_pending_player_use_magic(magic_object_id):
+		return false
+	var object := database.magic_object_definition(magic_object_id)
+	var definition := database.magic_definition_for_object(magic_object_id)
+	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY, PalMagicDefinition.TYPE_SUMMON]:
+		target_index = -1
+	elif object.is_used_on_enemy():
+		if target_index < 0 or target_index >= enemies.size() or not enemies[target_index].is_alive():
+			return false
+	elif target_index < 0 or target_index >= players.size() or _role_hp(players[target_index].role_index) <= 0:
+		return false
+	var player := players[party_index]
+	player.action_type = ActionType.MAGIC
+	player.action_id = magic_object_id
+	player.target_index = target_index
+	_advance_command_cursor()
+	return true
+
+
 ## 在全队指令完成后按经典身法规则构造行动队列。
 ## 指令尚未完成、战斗已结束或队列已开始执行时返回 `false`。
 func build_action_queue() -> bool:
@@ -308,6 +350,7 @@ func _prepare_command_phase() -> void:
 	_command_cursor = 0
 	for player in players:
 		player.action_type = -1
+		player.action_id = 0
 		player.target_index = -1
 		player.defending = false
 	_skip_players_without_commands()
@@ -387,6 +430,9 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 		player.defending = true
 		result.summary = "%s进入防御" % _role_name(player.role_index)
 		return result
+	if player.action_type == ActionType.MAGIC:
+		_execute_player_magic(player, result)
+		return result
 	if player.action_type != ActionType.ATTACK:
 		result.skipped = true
 		result.summary = "未支持的玩家指令"
@@ -407,6 +453,146 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 			"（暴击）" if hit.critical else "",
 		]
 	return result
+
+
+func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
+	var object := database.magic_object_definition(player.action_id)
+	var definition := database.magic_definition_for_object(player.action_id)
+	result.magic_object_id = player.action_id
+	result.target_index = player.target_index
+	if object == null or definition == null or not _magic_effect_is_supported(object, definition):
+		result.unsupported = true
+		result.summary = "该仙术的状态或脚本效果尚未接入"
+		return
+	if definition.mp_cost > session.role_mp[player.role_index]:
+		result.unsupported = true
+		result.summary = "%s真气不足" % _role_name(player.role_index)
+		return
+	result.mp_cost = definition.mp_cost
+	session.increase_role_hp_mp(player.role_index, 0, -definition.mp_cost)
+	if object.is_used_on_enemy():
+		var target_indices := living_enemy_indices() if player.target_index < 0 else PackedInt32Array([_find_alive_enemy_from(player.target_index)])
+		for target_index in target_indices:
+			if target_index < 0:
+				continue
+			var damage := _calculate_player_magic_damage(player.role_index, target_index, definition)
+			result.hits.append(_apply_enemy_damage(target_index, maxi(1, damage), false))
+	else:
+		var event_role := player.role_index
+		if player.target_index >= 0 and player.target_index < players.size():
+			event_role = players[player.target_index].role_index
+		_run_supported_magic_script(object.script_on_use, player.role_index, result)
+		_run_supported_magic_script(object.script_on_success, event_role, result)
+	result.summary = "%s施展%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
+
+
+func _calculate_player_magic_damage(role_index: int, target_index: int, definition: PalMagicDefinition) -> int:
+	var enemy := enemies[target_index].definition
+	var magic_strength := database.player_roles.magic_strength_for(role_index)
+	magic_strength = int(magic_strength * _random.next_float(10.0, 11.0) / 10.0)
+	var defense := enemy.defense + (enemy.level + 6) * 4
+	var damage := calculate_base_damage(magic_strength, defense) / 4
+	damage += _signed_word(definition.base_damage)
+	if definition.elemental != 0:
+		var resistance := enemy.poison_resistance if definition.elemental > PalBattlefield.ELEMENT_COUNT else enemy.elemental_resistances[definition.elemental - 1]
+		damage = int(damage * (10.0 - float(resistance)))
+		damage /= 5
+		if definition.elemental <= PalBattlefield.ELEMENT_COUNT:
+			var battlefield := database.battlefield_definition(battlefield_id)
+			var field_effect := battlefield.magic_effects[definition.elemental - 1] if battlefield != null and battlefield.magic_effects.size() >= definition.elemental else 0
+			damage = int(damage * (10.0 + field_effect) / 10.0)
+	return damage
+
+
+func _magic_effect_is_supported(object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> bool:
+	if object.is_used_on_enemy():
+		return _signed_word(definition.base_damage) > 0 and object.script_on_use == 0 and object.script_on_success == 0 and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]
+	return definition.magic_type in [PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY] and _magic_script_is_supported(object.script_on_use) and _magic_script_is_supported(object.script_on_success)
+
+
+func _magic_script_is_supported(entry_index: int) -> bool:
+	var cursor := entry_index
+	for _step in range(64):
+		if cursor == 0:
+			return true
+		if cursor < 0 or cursor >= database.scripts.size():
+			return false
+		var entry := database.scripts[cursor]
+		match entry.operation:
+			0x0000, 0x0001:
+				return true
+			0x0003:
+				cursor = entry.operands[0]
+			0x001b, 0x001c, 0x001d:
+				cursor += 1
+			_:
+				return false
+	return false
+
+
+func _run_supported_magic_script(entry_index: int, event_role: int, result: ActionResult) -> void:
+	var cursor := entry_index
+	for _step in range(64):
+		if cursor == 0 or cursor < 0 or cursor >= database.scripts.size():
+			return
+		var entry := database.scripts[cursor]
+		match entry.operation:
+			0x0000, 0x0001:
+				return
+			0x0003:
+				cursor = entry.operands[0]
+				continue
+			0x001b, 0x001c, 0x001d:
+				var hp_delta := _signed_word(entry.operands[1]) if entry.operation in [0x001b, 0x001d] else 0
+				var mp_delta := _signed_word(entry.operands[1]) if entry.operation in [0x001c, 0x001d] else 0
+				if entry.operands[0] != 0:
+					for party_index in range(players.size()):
+						_apply_player_stat_delta(party_index, hp_delta, mp_delta, result)
+				else:
+					var party_index := _party_index_for_role(event_role)
+					if party_index >= 0:
+						_apply_player_stat_delta(party_index, hp_delta, mp_delta, result)
+				cursor += 1
+			_:
+				return
+
+
+func _apply_player_stat_delta(party_index: int, hp_delta: int, mp_delta: int, result: ActionResult) -> void:
+	if party_index < 0 or party_index >= players.size():
+		return
+	var role_index := players[party_index].role_index
+	# PAL_IncreaseHPMP 不会让普通治疗复活已经倒下的角色。
+	if _role_hp(role_index) <= 0:
+		return
+	var old_hp := session.role_hp[role_index]
+	var old_mp := session.role_mp[role_index]
+	session.increase_role_hp_mp(role_index, hp_delta, mp_delta)
+	var hp_change := session.role_hp[role_index] - old_hp
+	var mp_change := session.role_mp[role_index] - old_mp
+	if hp_change == 0 and mp_change == 0:
+		return
+	var hit := _player_hit_for_result(result, party_index)
+	hit.healing += maxi(0, hp_change)
+	hit.damage += maxi(0, -hp_change)
+	hit.mp_restored += maxi(0, mp_change)
+	hit.defeated = session.role_hp[role_index] == 0
+
+
+func _player_hit_for_result(result: ActionResult, party_index: int) -> Hit:
+	for hit in result.hits:
+		if not hit.target_is_enemy and hit.target_index == party_index:
+			return hit
+	var hit := Hit.new()
+	hit.target_index = party_index
+	result.hits.append(hit)
+	return hit
+
+
+func _party_index_for_role(role_index: int) -> int:
+	for party_index in range(players.size()):
+		if players[party_index].role_index == role_index:
+			return party_index
+	return -1
 
 
 func _execute_player_attack_all(player: PlayerState, result: ActionResult) -> void:

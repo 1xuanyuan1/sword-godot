@@ -12,6 +12,7 @@ signal battle_finished(result: int)
 enum InputMode {
 	COMMAND,
 	ENEMY_TARGET,
+	PLAYER_TARGET,
 	MAGIC_LIST,
 	WAITING,
 	RESULT,
@@ -34,6 +35,7 @@ var _session: GameSession
 var _controller: PalBattleController
 var _background: TextureRect
 var _fighter_root: Node2D
+var _magic_root: Node2D
 var _battle_ui: PalBattleUI
 var _error_label: Label
 var _enemy_team_id: int = 18
@@ -50,11 +52,14 @@ var _player_current_frames: PackedInt32Array = PackedInt32Array()
 var _palette: PackedByteArray = PackedByteArray()
 var _fighter_texture_cache: Dictionary = {}
 var _selected_enemy_index: int = 0
+var _selected_party_index: int = 0
 var _selected_action: int = 0
+var _pending_magic_object_id: int = 0
 var _input_mode: InputMode = InputMode.WAITING
 var _action_timer: float = 0.0
 var _animation_in_progress: bool = false
 var _last_enemy_flash_phase: int = -1
+var _audio_player: PalAudioPlayer
 
 
 func _ready() -> void:
@@ -86,6 +91,12 @@ func _process(delta: float) -> void:
 func load_battle(enemy_team_id: int, battlefield_id: int, party_roles: PackedInt32Array) -> bool:
 	var preview_session := GameSession.new()
 	preview_session.party_roles = party_roles.slice(0, mini(3, party_roles.size()))
+	# 资源实验室用于反复验证指令和特效，默认补满队员 HP/MP，避免未入队角色的
+	# 原始初始值让五灵咒全部变灰；剧情战斗仍完整沿用正式 GameSession。
+	if _database != null and preview_session.initialize_role_state(_database.player_roles):
+		for role_index in preview_session.party_roles:
+			preview_session.role_hp[role_index] = preview_session.role_max_hp[role_index]
+			preview_session.role_mp[role_index] = preview_session.role_max_mp[role_index]
 	return _start_battle_view(_database, preview_session, enemy_team_id, battlefield_id)
 
 
@@ -96,6 +107,12 @@ func begin_battle(content_database: PalContentDatabase, game_session: GameSessio
 	_session = game_session
 	show()
 	return _start_battle_view(content_database, game_session, enemy_team_id, battlefield_id)
+
+
+## 注入探索场景的统一音频播放器，供仙术特效播放 DATA.MKF 定义的 VOC 音效。
+## 传入 `null` 时战斗仍可运行，只跳过音效。
+func configure_audio_player(audio_player: PalAudioPlayer) -> void:
+	_audio_player = audio_player
 
 
 func _start_battle_view(content_database: PalContentDatabase, game_session: GameSession, enemy_team_id: int, battlefield_id: int) -> bool:
@@ -152,7 +169,9 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 		return false
 	_battle_ui.configure(_database, _session, _controller, _player_foot_positions)
 	_selected_enemy_index = _controller.living_enemy_indices()[0]
+	_selected_party_index = 0
 	_selected_action = 0
+	_pending_magic_object_id = 0
 	_action_timer = 0.0
 	_animation_in_progress = false
 	_enter_command_mode()
@@ -207,6 +226,9 @@ func _build_interface() -> void:
 	_fighter_root = Node2D.new()
 	_fighter_root.name = "Fighters"
 	add_child(_fighter_root)
+	_magic_root = Node2D.new()
+	_magic_root.name = "MagicEffects"
+	add_child(_magic_root)
 	_battle_ui = PalBattleUI.new()
 	_battle_ui.name = "ClassicBattleUI"
 	_battle_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -289,6 +311,8 @@ func _texture_for_indexed(indexed: PalIndexedImage, palette: PackedByteArray) ->
 func _clear_fighters() -> void:
 	for child in _fighter_root.get_children():
 		child.free()
+	for child in _magic_root.get_children():
+		child.free()
 	_enemy_nodes.clear()
 	_player_nodes.clear()
 	_enemy_sprites.clear()
@@ -314,6 +338,8 @@ func _handle_direction(direction: Vector2i) -> void:
 				_set_action_selection(3)
 		InputMode.ENEMY_TARGET:
 			_select_enemy(-1 if direction.x < 0 or direction.y > 0 else 1)
+		InputMode.PLAYER_TARGET:
+			_select_player(-1 if direction.x < 0 or direction.y > 0 else 1)
 		InputMode.MAGIC_LIST:
 			_battle_ui.move_magic_selection(direction.x, direction.y)
 
@@ -336,6 +362,13 @@ func _select_enemy(step: int) -> void:
 	_refresh_enemy_target_flash(true)
 
 
+func _select_player(step: int) -> void:
+	if _controller == null or _input_mode != InputMode.PLAYER_TARGET:
+		return
+	_selected_party_index = clampi(_selected_party_index + step, 0, _controller.players.size() - 1)
+	_battle_ui.set_player_selection(_selected_party_index)
+
+
 func _confirm_current_selection() -> void:
 	if _controller == null or _animation_in_progress:
 		return
@@ -355,11 +388,12 @@ func _confirm_current_selection() -> void:
 				3:
 					_battle_ui.show_message("其他指令正在接入", 1000)
 		InputMode.ENEMY_TARGET:
-			_submit_attack()
+			_submit_targeted_action(_selected_enemy_index)
+		InputMode.PLAYER_TARGET:
+			_submit_targeted_action(_selected_party_index)
 		InputMode.MAGIC_LIST:
 			if _battle_ui.selected_magic_enabled():
-				# 此阶段只接入真实名称、消耗和可用状态，避免用普通攻击冒充仙术结算。
-				_battle_ui.show_message("仙术结算与特效正在接入", 1200)
+				_confirm_magic_selection()
 
 
 func _begin_enemy_target_selection() -> void:
@@ -369,7 +403,7 @@ func _begin_enemy_target_selection() -> void:
 	_selected_enemy_index = living[0] if _selected_enemy_index not in living else _selected_enemy_index
 	# 经典模式只剩一个目标时无需多按一次确认键。
 	if living.size() == 1:
-		_submit_attack()
+		_submit_targeted_action(living[0])
 		return
 	_input_mode = InputMode.ENEMY_TARGET
 	_battle_ui.set_mode(PalBattleUI.Mode.ENEMY_TARGET)
@@ -378,9 +412,47 @@ func _begin_enemy_target_selection() -> void:
 	_refresh_enemy_target_flash(true)
 
 
+func _confirm_magic_selection() -> void:
+	var magic_object_id := _battle_ui.selected_magic_object()
+	var object := _database.magic_object_definition(magic_object_id)
+	var definition := _database.magic_definition_for_object(magic_object_id)
+	if object == null or definition == null:
+		return
+	_pending_magic_object_id = magic_object_id
+	var applies_to_all := object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY]
+	if applies_to_all:
+		_submit_magic(-1)
+	elif object.is_used_on_enemy():
+		_begin_enemy_target_selection()
+	else:
+		_selected_party_index = 0
+		if _controller.players.size() == 1:
+			_submit_magic(0)
+			return
+		_input_mode = InputMode.PLAYER_TARGET
+		_battle_ui.set_player_selection(_selected_party_index)
+		_battle_ui.set_mode(PalBattleUI.Mode.PLAYER_TARGET)
+
+
+func _submit_targeted_action(target_index: int) -> void:
+	if _pending_magic_object_id > 0:
+		_submit_magic(target_index)
+	else:
+		_submit_attack()
+
+
+func _submit_magic(target_index: int) -> void:
+	if _pending_magic_object_id <= 0 or not _controller.submit_magic(_pending_magic_object_id, target_index):
+		return
+	_reset_enemy_highlight()
+	_pending_magic_object_id = 0
+	_after_command_submitted()
+
+
 func _submit_attack() -> void:
 	if not _controller.submit_attack(_selected_enemy_index):
 		return
+	_pending_magic_object_id = 0
 	_reset_enemy_highlight()
 	_after_command_submitted()
 
@@ -406,6 +478,7 @@ func _after_command_submitted() -> void:
 func _enter_command_mode() -> void:
 	_input_mode = InputMode.COMMAND
 	_selected_action = 0
+	_pending_magic_object_id = 0
 	_battle_ui.set_action_selection(0)
 	_battle_ui.set_enemy_selection(_selected_enemy_index)
 	_battle_ui.set_mode(PalBattleUI.Mode.COMMAND)
@@ -416,7 +489,7 @@ func _enter_command_mode() -> void:
 func _cancel_or_leave() -> void:
 	if _animation_in_progress:
 		return
-	if _input_mode in [InputMode.ENEMY_TARGET, InputMode.MAGIC_LIST]:
+	if _input_mode in [InputMode.ENEMY_TARGET, InputMode.PLAYER_TARGET, InputMode.MAGIC_LIST]:
 		_enter_command_mode()
 	elif lab_mode:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -466,6 +539,9 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 		await _wait_frames(4)
 		_set_player_frame(result.actor_index, _resting_player_frame(result.actor_index))
 		return
+	if result.action_type == PalBattleController.ActionType.MAGIC and not result.actor_is_enemy:
+		await _play_player_magic(result)
+		return
 	if result.actor_is_enemy:
 		await _play_enemy_attack(result)
 	else:
@@ -505,6 +581,137 @@ func _play_player_attack(result: PalBattleController.ActionResult) -> void:
 	await _move_player(actor_index, original_foot, 8, BATTLE_FRAME_SECONDS * 3.0)
 	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
 	await _wait_frames(2)
+
+
+func _play_player_magic(result: PalBattleController.ActionResult) -> void:
+	if result.actor_index < 0 or result.actor_index >= _player_nodes.size():
+		return
+	var definition := _database.magic_definition_for_object(result.magic_object_id)
+	var object := _database.magic_object_definition(result.magic_object_id)
+	if definition == null or object == null:
+		return
+	var actor_index := result.actor_index
+	var original_foot := _player_foot_positions[actor_index]
+	var casting_foot := original_foot
+	# fight.c::PAL_BattleShowPlayerPreMagicAnim 以 4、3、2、1 像素的步长向左上蓄势。
+	for step in range(4, 0, -1):
+		casting_foot -= Vector2i(step, step / 2)
+		_set_player_frame(actor_index, _player_current_frames[actor_index], casting_foot)
+		await _wait_frames(1)
+	await _wait_frames(2)
+	_set_player_frame(actor_index, 5, casting_foot)
+	await _wait_frames(1)
+	var effect_sprite := _database.load_magic_effect_sprite(definition.effect_sprite)
+	if effect_sprite != null and effect_sprite.is_valid():
+		await _play_magic_effect_sprite(effect_sprite, definition, result, casting_foot)
+	else:
+		_battle_ui.show_message("仙术特效资源缺失，请重新导入 Data", 1000)
+		if _audio_player != null:
+			_audio_player.play_sound(definition.sound)
+		await _wait_frames(4)
+	await _show_magic_result(result, object, definition)
+	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
+	await _wait_frames(5)
+
+
+func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition, result: PalBattleController.ActionResult, casting_foot: Vector2i) -> void:
+	var effect_positions := _magic_effect_positions(definition, result)
+	if effect_positions.is_empty():
+		return
+	var effect_nodes: Array[Sprite2D] = []
+	for index in range(effect_positions.size()):
+		var node := Sprite2D.new()
+		node.name = "Magic%02d" % index
+		node.centered = false
+		node.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_magic_root.add_child(node)
+		effect_nodes.append(node)
+	var frame_count := sprite.frame_count()
+	var repeat_start := clampi(definition.fire_delay, 0, maxi(0, frame_count - 1))
+	var repeated_frames := maxi(0, frame_count - repeat_start) * definition.effect_times
+	var total_frames := mini(512, frame_count + repeated_frames + definition.shake)
+	var delay_seconds := clampf((definition.speed + 5) * 0.01, 0.01, 0.2)
+	for animation_index in range(total_frames):
+		var frame_index := animation_index if animation_index < frame_count else repeat_start + posmod(animation_index - repeat_start, maxi(1, frame_count - repeat_start))
+		if animation_index == repeat_start:
+			_set_player_frame(result.actor_index, 6, casting_foot)
+			if _audio_player != null:
+				_audio_player.play_sound(definition.sound)
+		var frame := RleDecoder.decode(sprite.get_frame(frame_index))
+		if not frame.is_valid():
+			continue
+		for node_index in range(effect_nodes.size()):
+			var foot := effect_positions[node_index]
+			var node := effect_nodes[node_index]
+			node.texture = _texture_for_sprite_frame(sprite, frame_index, 0)
+			node.position = Vector2(foot.x - frame.width / 2.0, foot.y - frame.height)
+			node.z_index = foot.y + definition.specific
+		await get_tree().create_timer(delay_seconds).timeout
+	for node in effect_nodes:
+		node.free()
+
+
+func _magic_effect_positions(definition: PalMagicDefinition, result: PalBattleController.ActionResult) -> Array[Vector2i]:
+	var positions: Array[Vector2i] = []
+	match definition.magic_type:
+		PalMagicDefinition.TYPE_NORMAL:
+			if result.target_index >= 0 and result.target_index < _enemy_foot_positions.size():
+				positions.append(_enemy_foot_positions[result.target_index])
+		PalMagicDefinition.TYPE_ATTACK_ALL:
+			positions = [Vector2i(70, 140), Vector2i(100, 110), Vector2i(160, 100)]
+		PalMagicDefinition.TYPE_ATTACK_WHOLE:
+			positions.append(Vector2i(120, 100))
+		PalMagicDefinition.TYPE_ATTACK_FIELD:
+			positions.append(Vector2i(160, 200))
+		PalMagicDefinition.TYPE_APPLY_TO_PLAYER:
+			if result.target_index >= 0 and result.target_index < _player_foot_positions.size():
+				positions.append(_player_foot_positions[result.target_index])
+		PalMagicDefinition.TYPE_APPLY_TO_PARTY:
+			positions = _player_foot_positions.duplicate()
+	for index in range(positions.size()):
+		positions[index] += Vector2i(definition.x_offset, definition.y_offset)
+	return positions
+
+
+func _show_magic_result(result: PalBattleController.ActionResult, object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> void:
+	if object.is_used_on_enemy():
+		for hit in result.hits:
+			if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
+				continue
+			_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 6)
+			var foot := _enemy_foot_positions[hit.target_index]
+			_battle_ui.show_number(hit.damage, Vector2i(foot.x - 9, maxi(10, foot.y - 115)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
+		await _wait_frames(3)
+		for hit in result.hits:
+			if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
+				continue
+			if hit.defeated:
+				_enemy_nodes[hit.target_index].hide()
+			else:
+				_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 0)
+		return
+	var affected := PackedInt32Array()
+	if definition.magic_type == PalMagicDefinition.TYPE_APPLY_TO_PARTY or result.target_index < 0:
+		for party_index in range(_player_nodes.size()):
+			affected.append(party_index)
+	else:
+		affected.append(result.target_index)
+	for hit in result.hits:
+		if hit.target_index < 0 or hit.target_index >= _player_foot_positions.size():
+			continue
+		var foot := _player_foot_positions[hit.target_index]
+		if hit.healing > 0:
+			_battle_ui.show_number(hit.healing, Vector2i(foot.x - 9, maxi(10, foot.y - 75)), PalBattleUI.UI_FRAME_NUMBER_YELLOW)
+		if hit.mp_restored > 0:
+			_battle_ui.show_number(hit.mp_restored, Vector2i(foot.x - 9, maxi(10, foot.y - 67)), PalBattleUI.UI_FRAME_NUMBER_CYAN)
+	for shift in range(7):
+		for party_index in affected:
+			_set_player_frame(party_index, _player_current_frames[party_index], _player_foot_positions[party_index], shift)
+		await _wait_frames(1)
+	for shift in range(6, -1, -1):
+		for party_index in affected:
+			_set_player_frame(party_index, _player_current_frames[party_index], _player_foot_positions[party_index], shift)
+		await _wait_frames(1)
 
 
 func _play_enemy_attack(result: PalBattleController.ActionResult) -> void:

@@ -74,6 +74,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_convert_mgo_sprites(files_by_lowercase["mgo.mkf"], absolute_output, report)
 	_convert_battle_sprite_archive(files_by_lowercase["abc.mkf"], absolute_output.path_join("content/battle/sprites/enemies"), "enemy_battle_sprites", report)
 	_convert_battle_sprite_archive(files_by_lowercase["f.mkf"], absolute_output.path_join("content/battle/sprites/players"), "player_battle_sprites", report)
+	_convert_battle_sprite_archive(files_by_lowercase["fire.mkf"], absolute_output.path_join("content/battle/sprites/magic"), "magic_effect_sprites", report)
 	_convert_battle_backgrounds(files_by_lowercase["fbp.mkf"], absolute_output, report)
 	_convert_rgm_portraits(files_by_lowercase["rgm.mkf"], absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)

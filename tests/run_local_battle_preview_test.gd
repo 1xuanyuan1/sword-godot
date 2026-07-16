@@ -49,7 +49,74 @@ func _run() -> void:
 	if magic_image == null or magic_image.save_png(magic_path) != OK:
 		_fail("无法写入仙术列表截图")
 		return
-	preview._cancel_or_leave()
+	preview._confirm_current_selection()
+	await process_frame
+	if preview._input_mode != PalBattlePreview.InputMode.PLAYER_TARGET:
+		_fail("气疗术没有进入我方角色目标选择")
+		return
+	preview._select_player(1)
+	preview._session.role_hp[1] = 28
+	var hp_before := preview._session.role_hp[1]
+	var mp_before := preview._session.role_mp[0]
+	preview._confirm_current_selection()
+	preview._submit_defend()
+	var magic_result: PalBattleController.ActionResult
+	for _step in range(8):
+		var candidate := preview._controller.execute_next_action()
+		if candidate == null:
+			break
+		if candidate.action_type == PalBattleController.ActionType.MAGIC:
+			magic_result = candidate
+			break
+	if magic_result == null or preview._session.role_hp[1] != mini(preview._session.role_max_hp[1], hp_before + 75) or preview._session.role_mp[0] != mp_before - 6:
+		_fail("气疗术没有按真实脚本恢复 75 HP 并消耗 6 MP")
+		return
+	preview._play_player_magic(magic_result)
+	await create_timer(0.62).timeout
+	if preview._magic_root.get_child_count() == 0:
+		_fail("气疗术播放期间没有绘制 FIRE.MKF 特效")
+		return
+	var healing_image := viewport.get_texture().get_image()
+	var healing_path := output_directory.path_join("battle_healing_magic.png")
+	if healing_image == null or healing_image.save_png(healing_path) != OK:
+		_fail("无法写入气疗术动画截图")
+		return
+	await create_timer(1.5).timeout
+	if preview._magic_root.get_child_count() != 0:
+		_fail("气疗术结束后没有清除临时特效节点")
+		return
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview._submit_defend()
+	preview._set_action_selection(1)
+	preview._confirm_current_selection()
+	preview._battle_ui.selected_magic_index = 5 # 排序后的“风咒”。
+	preview._confirm_current_selection()
+	if preview._input_mode != PalBattlePreview.InputMode.ENEMY_TARGET:
+		_fail("风咒没有进入敌方目标选择")
+		return
+	preview._confirm_current_selection()
+	var offensive_result: PalBattleController.ActionResult
+	for _step in range(8):
+		var candidate := preview._controller.execute_next_action()
+		if candidate == null:
+			break
+		if candidate.action_type == PalBattleController.ActionType.MAGIC:
+			offensive_result = candidate
+			break
+	if offensive_result == null or offensive_result.hits.is_empty() or offensive_result.hits[0].damage <= 0 or preview._session.role_mp[1] != 235:
+		_fail("风咒没有扣除 5 MP 并按官方公式伤害敌人")
+		return
+	preview._play_player_magic(offensive_result)
+	await create_timer(0.48).timeout
+	if preview._magic_root.get_child_count() == 0:
+		_fail("风咒播放期间没有绘制 FIRE.MKF 特效")
+		return
+	var offensive_image := viewport.get_texture().get_image()
+	var offensive_path := output_directory.path_join("battle_offensive_magic.png")
+	if offensive_image == null or offensive_image.save_png(offensive_path) != OK:
+		_fail("无法写入风咒动画截图")
+		return
+	await create_timer(1.2).timeout
 	var attack_result := PalBattleController.ActionResult.new()
 	attack_result.actor_index = 0
 	var hit := PalBattleController.Hit.new()
@@ -69,7 +136,7 @@ func _run() -> void:
 	if preview._player_nodes[0].position.distance_to(expected_position) > 0.1:
 		_fail("玩家普攻动画结束后没有回到原始战位")
 		return
-	print("PASS: 敌队 18 / 战场 21 的原版状态框、四向指令、真实仙术列表和普攻位移动画均可绘制：%s、%s、%s" % [output_path, magic_path, attack_path])
+	print("PASS: 敌队 18 / 战场 21 的经典指令、目标选择、气疗术/风咒结算、FIRE 特效和普攻动画均可绘制：%s、%s、%s、%s、%s" % [output_path, magic_path, healing_path, offensive_path, attack_path])
 	quit(0)
 
 

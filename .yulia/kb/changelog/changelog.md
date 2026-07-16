@@ -162,6 +162,32 @@ keywords:
   - `docs/PROJECT_STRUCTURE.md`
   - `docs/ARCHITECTURE.md`
 
+---
+
+### [FT-027] [feat] 接通玩家仙术结算与原版 FIRE 特效
+
+- **关联需求**: M3 法术系统、M4 经典战斗
+- **关联 TODO**: TD-003、TD-005（阶段性）
+- **功能描述**: 导入全部 `FIRE.MKF` 仙术逐帧 Sprite，按 `DATA.MKF #4` 的速度、重复、偏移、图层和音效字段播放原版特效；战斗控制器新增玩家仙术指令、敌我目标与 MP 校验，支持气疗术、观音咒等 `001B/001C/001D` 恢复脚本，以及按敌人抗性和战场修正结算的基础五灵攻击仙术。普通治疗不复活倒地角色；依赖毒、异常状态或持续回合脚本的仙术在对应系统完成前保持不可用，不会伪造效果或消耗 MP。
+- **验证情况**: 252 项合成格式测试、30 项经典战斗逻辑检查和 10 项剧情战斗桥接检查通过；本地资源确认 55 组 FIRE 特效全部可加载，并真实渲染验证气疗术恢复 75 HP、消耗 6 MP，以及风咒消耗 5 MP、伤害敌人、目标选择、特效与 DATA 音效。
+- **涉及文件**:
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/content/pal_magic_definition.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/ui/import_lab.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `tests/run_tests.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

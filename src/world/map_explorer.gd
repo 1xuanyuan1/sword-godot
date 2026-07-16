@@ -57,6 +57,7 @@ func _ready() -> void:
 	add_child(_audio_player)
 	_audio_player.configure(_database, _session)
 	_audio_player.audio_missing.connect(_on_audio_missing)
+	_battle_view.configure_audio_player(_audio_player)
 	_script_vm = ScriptVM.new()
 	_script_vm.configure(_database, _session)
 	_script_vm.unsupported_instruction.connect(_on_unsupported_instruction)

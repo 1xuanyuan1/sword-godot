@@ -7,6 +7,14 @@ class_name PalMagicDefinition
 extends RefCounted
 
 const BYTE_SIZE := 32
+const TYPE_NORMAL := 0
+const TYPE_ATTACK_ALL := 1
+const TYPE_ATTACK_WHOLE := 2
+const TYPE_ATTACK_FIELD := 3
+const TYPE_APPLY_TO_PLAYER := 4
+const TYPE_APPLY_TO_PARTY := 5
+const TYPE_TRANCE := 8
+const TYPE_SUMMON := 9
 
 ## DATA.MKF 仙术表中的记录编号。
 var magic_number: int = 0
@@ -52,9 +60,9 @@ static func from_bytes(data: PackedByteArray, offset: int, id: int) -> PalMagicD
 	definition.magic_number = id
 	definition.effect_sprite = PalBinary.u16_le(data, offset)
 	definition.magic_type = PalBinary.u16_le(data, offset + 2)
-	definition.x_offset = PalBinary.u16_le(data, offset + 4)
-	definition.y_offset = PalBinary.u16_le(data, offset + 6)
-	definition.specific = PalBinary.u16_le(data, offset + 8)
+	definition.x_offset = PalBinary.i16_le(data, offset + 4)
+	definition.y_offset = PalBinary.i16_le(data, offset + 6)
+	definition.specific = PalBinary.i16_le(data, offset + 8)
 	definition.speed = PalBinary.i16_le(data, offset + 10)
 	definition.keep_effect = PalBinary.u16_le(data, offset + 12)
 	definition.fire_delay = PalBinary.u16_le(data, offset + 14)

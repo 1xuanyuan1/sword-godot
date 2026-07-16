@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用本机合法导入资源验证脚本引用的敌队、战场背景和双方战斗 Sprite 可完整解析。
+## 使用本机合法导入资源验证敌队、战场背景、双方战斗 Sprite 和 FIRE 仙术特效可完整解析。
 ## 测试只输出编号与计数，不转储原版图像或文本。
 extends SceneTree
 
@@ -47,11 +47,20 @@ func _init() -> void:
 		if not database.load_player_battle_sprite(sprite_number).is_valid():
 			_fail("角色 %d 缺少战斗 Sprite %d" % [role_index, sprite_number])
 			return
+	var effect_numbers: Dictionary = {}
+	for magic in database.magics:
+		# 召唤与未使用记录会把该字段解释为其他编号；FIRE.MKF 本数据集只有 0–54。
+		if magic.effect_sprite >= 0 and magic.effect_sprite < 55:
+			effect_numbers[magic.effect_sprite] = true
+	for effect_number in effect_numbers:
+		if not database.load_magic_effect_sprite(effect_number).is_valid():
+			_fail("仙术属性引用的 FIRE.MKF 特效 %d 缺失" % effect_number)
+			return
 	var first_team := database.enemy_team_definition(18)
 	if first_team == null or first_team.active_object_ids() != PackedInt32Array([495, 495]) or not database.load_battle_background(21).is_valid():
 		_fail("前期首场强制战斗没有解析为战场 21、敌队 18 的两个敌人")
 		return
-	print("PASS: %d 个脚本敌队、%d 个脚本战场及 6 名角色战斗资源均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size()])
+	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色及 %d 组 FIRE 仙术特效均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size()])
 	quit(0)
 
 
