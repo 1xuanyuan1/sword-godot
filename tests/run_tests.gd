@@ -46,6 +46,7 @@ func _init() -> void:
 	_test_script_vm_dialog_pause()
 	_test_script_vm_title_and_body()
 	_test_script_vm_dialog_page_break()
+	_test_script_vm_trigger_event_steps()
 	_test_script_vm_frame_delay_and_auto_walk()
 	_test_script_vm_auto_event_lifecycle()
 	_test_script_vm_inn_conversation_operations()
@@ -996,6 +997,26 @@ func _test_script_vm_dialog_page_break() -> void:
 	vm.free()
 
 
+func _test_script_vm_trigger_event_steps() -> void:
+	var database := PalContentDatabase.new()
+	database.scripts.append(PalScriptEntry.new())
+	for operation in [0x000e, 0x000b, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	var event := PalEventObject.new()
+	event.object_id = 1
+	event.position = Vector2i.ZERO
+	event.sprite_frames = 3
+	database.event_objects.append(event)
+	var vm := ScriptVM.new()
+	vm.configure(database)
+	vm.run_trigger(1, 1)
+	_expect(event.position == Vector2i(0, 4) and event.direction == GameSession.DIR_SOUTH and event.current_frame == 2, "trigger opcodes 000B–000E move and animate the invoking boat/NPC between redraws")
+	vm.free()
+
+
 func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	var database := PalContentDatabase.new()
 	database.scripts.append(PalScriptEntry.new())
@@ -1290,8 +1311,8 @@ func _test_script_vm_center_toast() -> void:
 
 func _test_script_vm_quoted_narration_toast() -> void:
 	var database := PalContentDatabase.new()
-	database.messages = ["\"桌上摆着一份丰盛的酒菜", "嗯～看起来很好吃的样子\"", "普通中央对白"]
-	for operation in [0, 0x003b, 0xffff, 0xffff, 0, 0x003b, 0xffff, 0]:
+	database.messages = ["\"桌上摆着一份丰盛的酒菜", "嗯～看起来很好吃的样子\"", "普通中央对白", "\"收下剧情道具", "并服下丹丸\""]
+	for operation in [0, 0x003b, 0xffff, 0xffff, 0, 0x003b, 0xffff, 0, 0x003c, 0xffff, 0xffff, 0]:
 		var entry := PalScriptEntry.new()
 		entry.operation = operation
 		entry.operands = PackedInt32Array([0, 0, 0])
@@ -1299,6 +1320,8 @@ func _test_script_vm_quoted_narration_toast() -> void:
 	database.scripts[2].operands[0] = 0
 	database.scripts[3].operands[0] = 1
 	database.scripts[6].operands[0] = 2
+	database.scripts[9].operands[0] = 3
+	database.scripts[10].operands[0] = 4
 	var positions: Array[int] = []
 	var messages: Array[int] = []
 	var vm := ScriptVM.new()
@@ -1314,6 +1337,11 @@ func _test_script_vm_quoted_narration_toast() -> void:
 	messages.clear()
 	vm.run_trigger(5)
 	_expect(positions == [2] and messages == [2] and vm.waiting_for_dialog, "unquoted center dialog keeps the normal interactive presentation")
+	vm.advance_dialog()
+	positions.clear()
+	messages.clear()
+	vm.run_trigger(8)
+	_expect(positions == [3] and messages == [3, 4] and vm.waiting_for_frames and not vm.waiting_for_dialog, "quoted narration behind a zero-portrait 003C also uses the compact toast presentation")
 	vm.free()
 
 

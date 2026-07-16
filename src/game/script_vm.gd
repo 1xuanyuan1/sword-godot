@@ -276,6 +276,12 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				return _wait_for_frames(next_cursor, entry.operands[0] if entry.operands[0] > 0 else 1)
+			# 触发脚本中的当前 EventObject 向南/西/北/东走一步；乘船等剧情会在重绘之间连续使用。
+			0x000b, 0x000c, 0x000d, 0x000e:
+				var event := _event_by_id(_event_object_id)
+				if event != null:
+					event.direction = entry.operation - 0x000b
+					_npc_walk_one_step(event, 2)
 			# 设置当前事件方向和当前帧；对应 operand[0]/operand[1]，0xFFFF 表示不修改。
 			0x000f:
 				var event := _event_by_id(_event_object_id)
@@ -361,14 +367,14 @@ func _continue_execution() -> int:
 			0x003c:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
-				_dialog_is_toast = false
-				dialog_started.emit(0, entry.operands[1], entry.operands[0])
+				_dialog_is_toast = entry.operands[0] == 0 and _starts_quoted_narration(next_cursor)
+				dialog_started.emit(3 if _dialog_is_toast else 0, entry.operands[1], 0 if _dialog_is_toast else entry.operands[0])
 			# 开始下方肖像对话；operand[0] 为 RGM 肖像，operand[1] 为颜色。
 			0x003d:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
-				_dialog_is_toast = false
-				dialog_started.emit(1, entry.operands[1], entry.operands[0])
+				_dialog_is_toast = entry.operands[0] == 0 and _starts_quoted_narration(next_cursor)
+				dialog_started.emit(3 if _dialog_is_toast else 1, entry.operands[1], 0 if _dialog_is_toast else entry.operands[0])
 			# 显示中央窗口文字；本项目用于无角色系统 Toast。
 			0x003e:
 				if _dialog_has_body:

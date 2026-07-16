@@ -16,11 +16,13 @@ func _init() -> void:
 		failure = _test_fish_vendor(database)
 	if failure.is_empty():
 		failure = _test_medicine_return_and_temple_reminder(database)
+	if failure.is_empty():
+		failure = _test_boat_steps_and_item_narration(database)
 	if not failure.is_empty():
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾 790–803、鱼嫂 1182–1188、求药归来 1190–1213 与山神庙提醒 1214–1220 主线完成")
+	print("PASS: 买虾、求药归来、乘船 000B–000E 与破天锤/忘忧散叙述 Toast 主线完成")
 	quit(0)
 
 
@@ -131,6 +133,41 @@ func _test_medicine_return_and_temple_reminder(database: PalContentDatabase) -> 
 	elif next_entries != [6225]:
 		failure = "山神庙提醒没有返回下一稳定入口：%s" % next_entries
 	vm.free()
+	return failure
+
+
+func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = -1
+	var narration_vm := ScriptVM.new()
+	narration_vm.configure(database, session)
+	var narration_positions: Array[int] = []
+	var narration_messages: Array[int] = []
+	var unsupported: Array[String] = []
+	narration_vm.dialog_started.connect(func(position: int, _color: int, _portrait: int) -> void: narration_positions.append(position))
+	narration_vm.dialog_message.connect(func(index: int) -> void: narration_messages.append(index))
+	narration_vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	narration_vm.run_trigger(0x15c7)
+	_drive_script(narration_vm)
+	if narration_positions != [3] or narration_messages != [998, 999]:
+		narration_vm.free()
+		return "破天锤/忘忧散行为叙述没有合并为 Toast：位置 %s，消息 %s" % [narration_positions, narration_messages]
+	narration_vm.free()
+	var boat := database.event_objects[116]
+	var destination_boat := database.event_objects[117]
+	var original_position := boat.position
+	var boat_vm := ScriptVM.new()
+	boat_vm.configure(database, session)
+	boat_vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	boat_vm.run_trigger(0x170c, 117)
+	_drive_script(boat_vm)
+	var failure := ""
+	if not unsupported.is_empty():
+		failure = "乘船流程遇到未支持指令：%s" % unsupported
+	elif boat.position != original_position + Vector2i(0, 16) or boat.state != 0 or destination_boat.state != 2:
+		failure = "乘船事件没有完成八步移动及船只切换：位置 %s→%s，状态 %d/%d" % [original_position, boat.position, boat.state, destination_boat.state]
+	boat_vm.free()
 	return failure
 
 
