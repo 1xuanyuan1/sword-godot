@@ -19,6 +19,25 @@ static func request(checkpoint_id: String) -> bool:
 			_pending = {"id": checkpoint_id, "scene": 2, "script": 5079, "event": 63, "position": Vector2i(1088, 1648), "inventory": {272: 1}}
 		"wine_menu":
 			_pending = {"id": checkpoint_id, "scene": 2, "script": 0, "event": 0, "position": Vector2i(1040, 1672), "direction": GameSession.DIR_SOUTH, "inventory": {272: 1}, "hint": "按 M 打开菜单，选择物品并使用桂花酒"}
+		"fairy_island_boat":
+			# 求药返回余杭后的原版剧情状态：张四已移到码头，并准备执行乘船脚本 0x16F9。
+			_pending = {
+				"id": checkpoint_id,
+				"scene": 4,
+				"script": 0,
+				"event": 0,
+				"position": Vector2i(1136, 1368),
+				"direction": GameSession.DIR_EAST,
+				"music": 87,
+				"scene_enter_scripts": {4: 0x14c7},
+				"event_overrides": {
+					25: {"trigger_script": 0x15cb},
+					60: {"auto_script": 0x15d0, "trigger_mode": 2},
+					124: {"position": Vector2i(1152, 1376), "trigger_script": 0x16f9, "direction": GameSession.DIR_EAST},
+					125: {"trigger_script": 0x1755},
+				},
+				"hint": "向右面对张四并按空格，验证上船移动与后续剧情",
+			}
 		_:
 			_pending = {}
 			return false

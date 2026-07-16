@@ -57,6 +57,7 @@ func _build_interface() -> void:
 	_add_checkpoint_button(grid, "端酒菜给黑苗人", "meal_delivery")
 	_add_checkpoint_button(grid, "醉道士喝桂花酒", "drunken_swordsman")
 	_add_checkpoint_button(grid, "桂花酒物品菜单", "wine_menu")
+	_add_checkpoint_button(grid, "码头乘船（待验收）", "fairy_island_boat")
 
 	var back_button := Button.new()
 	back_button.text = "返回资源实验室（Esc）"

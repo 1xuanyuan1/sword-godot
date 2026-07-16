@@ -473,6 +473,7 @@ func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
 		var index := int(overridden_scene_index)
 		if index >= 0 and index < _database.scenes.size():
 			_database.scenes[index].script_on_enter = int(scene_enter_scripts[overridden_scene_index])
+	_apply_debug_event_overrides(checkpoint.get("event_overrides", {}))
 	if checkpoint.has("direction"):
 		_session.party_direction = int(checkpoint["direction"])
 	if checkpoint.has("position"):
@@ -493,6 +494,28 @@ func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
 	_status.text = "剧情测试：%s｜%s" % [checkpoint.get("id", ""), checkpoint.get("hint", "场景 %d｜脚本 0x%04X" % [scene_index + 1, script_entry])]
 	if script_entry > 0:
 		_script_vm.run_trigger(script_entry, event_object_id)
+
+
+func _apply_debug_event_overrides(overrides: Dictionary) -> void:
+	# 人工检查点只写入明确列出的 PAL 运行时字段；不接受任意属性名，避免测试数据误改内容定义。
+	for raw_object_id in overrides:
+		var object_id := int(raw_object_id)
+		if object_id <= 0 or object_id > _database.event_objects.size():
+			continue
+		var event: PalEventObject = _database.event_objects[object_id - 1]
+		var values: Dictionary = overrides[raw_object_id]
+		if values.has("position"):
+			event.position = values["position"]
+		if values.has("trigger_script"):
+			event.trigger_script = int(values["trigger_script"])
+		if values.has("auto_script"):
+			event.auto_script = int(values["auto_script"])
+		if values.has("state"):
+			event.state = int(values["state"])
+		if values.has("trigger_mode"):
+			event.trigger_mode = int(values["trigger_mode"])
+		if values.has("direction"):
+			event.direction = int(values["direction"])
 
 
 func _refresh_world() -> void:

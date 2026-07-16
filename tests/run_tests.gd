@@ -1395,6 +1395,11 @@ func _test_debug_checkpoints() -> void:
 	_expect(DebugCheckpoint.request("drunken_swordsman"), "drunken swordsman checkpoint is accepted")
 	checkpoint = DebugCheckpoint.consume()
 	_expect(checkpoint.get("script") == 5079 and checkpoint.get("inventory", {}).get(272) == 1, "drunken swordsman checkpoint restores osmanthus wine")
+	_expect(DebugCheckpoint.request("fairy_island_boat"), "fairy island boat checkpoint is accepted")
+	checkpoint = DebugCheckpoint.consume()
+	var boat_overrides: Dictionary = checkpoint.get("event_overrides", {})
+	_expect(checkpoint.get("scene") == 4 and checkpoint.get("position") == Vector2i(1136, 1368) and checkpoint.get("music") == 87, "boat checkpoint opens the real Yuhang dock state next to Zhang Si")
+	_expect(boat_overrides.get(124, {}).get("trigger_script") == 0x16f9 and boat_overrides.get(124, {}).get("position") == Vector2i(1152, 1376), "boat checkpoint restores Zhang Si's post-medicine position and boarding script")
 	_expect(not DebugCheckpoint.request("kitchen_entry") and not DebugCheckpoint.request("stairs"), "completed non-wine manual checkpoints are archived from the test lab")
 	_expect(DebugCheckpoint.consume().is_empty() and not DebugCheckpoint.request("missing"), "debug story checkpoint is consumed once and rejects unknown ids")
 
