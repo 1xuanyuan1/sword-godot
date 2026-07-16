@@ -381,6 +381,19 @@ func _continue_execution() -> int:
 				if event != null:
 					event.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
 					event.current_frame = (event.current_frame + 1) % maxi(1, event.sprite_frames)
+			# 修改 1-based 场景的进入/传送脚本；两个新入口都为零时同时清空。
+			0x006d:
+				var scene_number := entry.operands[0]
+				if scene_number > 0 and scene_number <= database.scenes.size():
+					var scene := database.scenes[scene_number - 1]
+					if entry.operands[1] == 0 and entry.operands[2] == 0:
+						scene.script_on_enter = 0
+						scene.script_on_teleport = 0
+					else:
+						if entry.operands[1] != 0:
+							scene.script_on_enter = entry.operands[1]
+						if entry.operands[2] != 0:
+							scene.script_on_teleport = entry.operands[2]
 			# 队伍移动一步：operand[0]/[1] 为世界偏移，operand[2]×8 为逻辑层。
 			0x006e:
 				if session != null:
@@ -422,6 +435,12 @@ func _continue_execution() -> int:
 						session.party_roles.append(0)
 					session.clear_party_gestures()
 					player_sprites_changed.emit()
+			# 停止当前 BGM；operand[0] 为 0 时淡出 2 秒，否则淡出 operand[0]×3 秒。
+			0x0077:
+				var fade_seconds := 2.0 if entry.operands[0] == 0 else float(entry.operands[0]) * 3.0
+				if session != null:
+					session.music_number = 0
+				music_requested.emit(0, false, fade_seconds)
 			# 直接移动 operand[0] 事件，operand[1]/[2] 为有符号世界偏移。
 			0x007d:
 				var event := _resolve_event(entry.operands[0])
@@ -444,6 +463,13 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_page_break.emit()
 				redraw_requested.emit(0)
+			# 将 operand[0] 到 operand[1]（含两端）的 EventObject 状态批量改为 signed(operand[2])。
+			0x009a:
+				var target_state := _signed_word(entry.operands[2])
+				for event_object_id in range(entry.operands[0], entry.operands[1] + 1):
+					var event := _event_by_id(event_object_id)
+					if event != null:
+						event.state = target_state
 			# 把所有队员收拢到队长位置，下一次正常移动后恢复跟随编队。
 			0x00a1:
 				if session != null:

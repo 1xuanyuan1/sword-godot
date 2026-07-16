@@ -40,6 +40,7 @@ func _init() -> void:
 	_test_script_vm_foundation()
 	_test_script_vm_audio_requests()
 	_test_script_vm_scene_teleport()
+	_test_script_vm_scene_runtime_mutations()
 	_test_script_vm_dialog_pause()
 	_test_script_vm_title_and_body()
 	_test_script_vm_dialog_page_break()
@@ -719,6 +720,46 @@ func _test_script_vm_scene_teleport() -> void:
 	failure_vm.run_trigger(1)
 	_expect(not failure_vm.script_success and session.scene_index == 0 and sounds == [99], "opcode 0038 jumps to its failure entry when the scene has no teleport script")
 	failure_vm.free()
+
+
+func _test_script_vm_scene_runtime_mutations() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x006d, 0x009a, 0x0077, 0, 0x006d, 0x0077, 0, 0x006d, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([2, 41, 0])
+	database.scripts[2].operands = PackedInt32Array([2, 4, 0xfffe])
+	database.scripts[5].operands = PackedInt32Array([2, 0, 42])
+	database.scripts[6].operands[0] = 4
+	database.scripts[8].operands = PackedInt32Array([2, 0, 0])
+	database.scenes.append(PalSceneDefinition.new())
+	var changed_scene := PalSceneDefinition.new()
+	changed_scene.script_on_enter = 7
+	changed_scene.script_on_teleport = 9
+	database.scenes.append(changed_scene)
+	for object_id in range(1, 6):
+		var event := PalEventObject.new()
+		event.object_id = object_id
+		event.state = object_id
+		database.event_objects.append(event)
+	var session := GameSession.new()
+	session.music_number = 31
+	var music_requests: Array = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: music_requests.append([number, loop, fade]))
+	vm.run_trigger(1)
+	_expect(changed_scene.script_on_enter == 41 and changed_scene.script_on_teleport == 9, "opcode 006D updates one scene script without clearing the other")
+	_expect(database.event_objects.map(func(event: PalEventObject) -> int: return event.state) == [1, -2, -2, -2, 5], "opcode 009A applies a signed state to the inclusive event range")
+	_expect(session.music_number == 0 and music_requests == [[0, false, 2.0]], "opcode 0077 stops BGM with the default two-second fade")
+	vm.run_trigger(5)
+	_expect(changed_scene.script_on_enter == 41 and changed_scene.script_on_teleport == 42, "opcode 006D can update only the teleport script")
+	_expect(music_requests.back() == [0, false, 12.0], "opcode 0077 converts a nonzero operand to a three-second fade unit")
+	vm.run_trigger(8)
+	_expect(changed_scene.script_on_enter == 0 and changed_scene.script_on_teleport == 0, "opcode 006D clears both scene scripts when both new entries are zero")
+	vm.free()
 
 
 func _test_script_vm_dialog_pause() -> void:
