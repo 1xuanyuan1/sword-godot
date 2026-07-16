@@ -1,0 +1,419 @@
+# Copyright (C) 2026 sword-godot contributors
+# Adapted from SDLPal uibattle.c, magicmenu.c and ui.c.
+# SPDX-License-Identifier: GPL-3.0-or-later
+## 使用 DATA.MKF #9 原版 UI Sprite 绘制经典战斗状态框、四向指令和仙术列表。
+## 本节点只读取战斗状态并绘图；输入状态和战斗结算仍由 `PalBattlePreview` 与控制器持有。
+class_name PalBattleUI
+extends Control
+
+enum Mode {
+	WAITING,
+	COMMAND,
+	ENEMY_TARGET,
+	MAGIC_LIST,
+	RESULT,
+}
+
+const UI_FRAME_PLAYER_INFO := 18
+const UI_FRAME_NUMBER_YELLOW := 19
+const UI_FRAME_NUMBER_BLUE := 29
+const UI_FRAME_SLASH := 39
+const UI_FRAME_ACTION_FIRST := 40
+const UI_FRAME_PLAYER_FACE_FIRST := 48
+const UI_FRAME_NUMBER_CYAN := 56
+const UI_FRAME_CURRENT_ARROW_RED := 68
+const UI_FRAME_CURRENT_ARROW := 69
+const UI_FRAME_MAGIC_CURSOR := 69
+const ACTION_POSITIONS: Array[Vector2i] = [
+	Vector2i(27, 140),
+	Vector2i(0, 155),
+	Vector2i(54, 155),
+	Vector2i(27, 170),
+]
+const PLAYER_INFO_POSITION := Vector2i(91, 165)
+const PLAYER_INFO_SPACING := 77
+const MAGIC_COLUMNS := 3
+const MAGIC_ROWS := 5
+const MAGIC_COLUMN_WIDTH := 87
+const MAGIC_ROW_HEIGHT := 18
+const COLOR_MENU_NORMAL := 0x4f
+const COLOR_MENU_INACTIVE := 0x18
+const COLOR_MENU_SELECTED_INACTIVE := 0x1c
+const COLOR_MENU_SELECTED_FIRST := 0xf9
+
+## 战斗使用的只读内容数据库。
+var database: PalContentDatabase
+## 保存角色 HP、MP、金钱和已学仙术的会话。
+var session: GameSession
+## 提供当前队伍、指令游标和胜负状态的战斗控制器。
+var controller: PalBattleController
+## 当前经典战斗 UI 页面。
+var mode: Mode = Mode.WAITING
+## 四向主行动中的当前选择，依次为攻击、仙术、合击、其他。
+var selected_action: int = 0
+## 当前选择的敌人索引；敌人本体闪烁由战斗画面处理。
+var selected_enemy: int = -1
+## 当前仙术列表的选择索引。
+var selected_magic_index: int = 0
+## 玩家战斗 Sprite 的脚底坐标，用来绘制当前角色箭头。
+var player_foot_positions: Array[Vector2i] = []
+
+var _ui_sprite: PalSprite
+var _palette: PackedByteArray = PackedByteArray()
+var _ui_textures: Dictionary = {}
+var _font_texture: Texture2D
+var _font_glyphs: Dictionary = {}
+var _magic_entries: Array[Dictionary] = []
+var _floating_numbers: Array[Dictionary] = []
+var _message: String = ""
+var _message_until: int = 0
+
+
+func _ready() -> void:
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	set_process(true)
+
+
+## 注入战斗数据和角色脚底坐标，并加载本地生成的官方 UI 与点阵字资源。
+## 只读取参数，不修改 `GameSession` 或 `PalBattleController`。
+func configure(content_database: PalContentDatabase, game_session: GameSession, battle_controller: PalBattleController, foot_positions: Array[Vector2i]) -> void:
+	database = content_database
+	session = game_session
+	controller = battle_controller
+	player_foot_positions = foot_positions.duplicate()
+	_load_classic_resources()
+	queue_redraw()
+
+
+## 切换战斗 UI 页面；不会提交任何战斗指令。
+func set_mode(next_mode: Mode) -> void:
+	mode = next_mode
+	queue_redraw()
+
+
+## 更新四向主行动选择，范围会限制在 0–3。
+func set_action_selection(action_index: int) -> void:
+	selected_action = clampi(action_index, 0, 3)
+	queue_redraw()
+
+
+## 更新敌人选择索引；索引只用于画面同步，不读取敌人 HP。
+func set_enemy_selection(enemy_index: int) -> void:
+	selected_enemy = enemy_index
+	queue_redraw()
+
+
+## 根据指定角色的已学仙术重建经典 3×5 列表，并切换到仙术页面。
+## 无效对象仍会被跳过；列表按 OBJECT 对象编号升序排列，与 SDLPal 一致。
+func open_magic_list(role_index: int) -> void:
+	_magic_entries.clear()
+	selected_magic_index = 0
+	if database != null and session != null and role_index >= 0 and role_index < session.learned_magics_by_role.size():
+		var object_ids := session.learned_magics_by_role[role_index].duplicate()
+		object_ids.sort()
+		var current_mp := session.role_mp[role_index] if role_index < session.role_mp.size() else 0
+		for object_id in object_ids:
+			var object := database.magic_object_definition(object_id)
+			var definition := database.magic_definition_for_object(object_id)
+			if object == null or definition == null:
+				continue
+			_magic_entries.append({
+				"object_id": object_id,
+				"mp_cost": definition.mp_cost,
+				"enabled": object.is_usable_in_battle() and definition.mp_cost <= current_mp,
+			})
+	mode = Mode.MAGIC_LIST
+	queue_redraw()
+
+
+## 按经典 3 列网格移动仙术光标；空列表保持在零。
+func move_magic_selection(column_delta: int, row_delta: int) -> void:
+	if _magic_entries.is_empty():
+		selected_magic_index = 0
+		return
+	var candidate := selected_magic_index + column_delta + row_delta * MAGIC_COLUMNS
+	selected_magic_index = clampi(candidate, 0, _magic_entries.size() - 1)
+	queue_redraw()
+
+
+## 返回当前仙术对象编号；列表为空时返回 0。
+func selected_magic_object() -> int:
+	return int(_magic_entries[selected_magic_index].get("object_id", 0)) if selected_magic_index >= 0 and selected_magic_index < _magic_entries.size() else 0
+
+
+## 返回当前仙术是否同时满足战斗标志和 MP 消耗；列表为空时为 `false`。
+func selected_magic_enabled() -> bool:
+	return bool(_magic_entries[selected_magic_index].get("enabled", false)) if selected_magic_index >= 0 and selected_magic_index < _magic_entries.size() else false
+
+
+## 在指定 PAL 坐标显示一个上浮数字；`frame_start` 应为 19、29 或 56。
+func show_number(value: int, position: Vector2i, frame_start: int = UI_FRAME_NUMBER_BLUE) -> void:
+	if value <= 0:
+		return
+	_floating_numbers.append({
+		"value": value,
+		"position": position,
+		"frame_start": frame_start,
+		"started": Time.get_ticks_msec(),
+	})
+	queue_redraw()
+
+
+## 显示经典单行提示窗；`duration_ms <= 0` 时保留到下一次清除。
+func show_message(text: String, duration_ms: int = 0) -> void:
+	_message = text
+	_message_until = Time.get_ticks_msec() + duration_ms if duration_ms > 0 else 0
+	queue_redraw()
+
+
+## 清除当前单行提示窗。
+func clear_message() -> void:
+	_message = ""
+	_message_until = 0
+	queue_redraw()
+
+
+## 返回官方 UI Sprite、点阵字和调色板是否全部成功载入。
+func has_classic_resources() -> bool:
+	return _ui_sprite != null and _ui_sprite.is_valid() and _ui_sprite.frame_count() > UI_FRAME_MAGIC_CURSOR and _font_texture != null and not _font_glyphs.is_empty()
+
+
+func _process(_delta: float) -> void:
+	var now := Time.get_ticks_msec()
+	if _message_until > 0 and now >= _message_until:
+		_message = ""
+		_message_until = 0
+	for index in range(_floating_numbers.size() - 1, -1, -1):
+		if now - int(_floating_numbers[index].get("started", now)) > 440:
+			_floating_numbers.remove_at(index)
+	queue_redraw()
+
+
+func _draw() -> void:
+	if database == null or session == null or controller == null:
+		return
+	if controller.is_accepting_commands():
+		_draw_player_status_boxes()
+		_draw_current_player_arrow()
+	if mode == Mode.COMMAND:
+		_draw_action_icons()
+	elif mode == Mode.MAGIC_LIST:
+		_draw_magic_menu()
+	_draw_floating_numbers()
+	if not _message.is_empty():
+		_draw_message_box(_message)
+
+
+func _draw_player_status_boxes() -> void:
+	for player in controller.players:
+		var role_index: int = player.role_index
+		var position := PLAYER_INFO_POSITION + Vector2i(PLAYER_INFO_SPACING * player.party_index, 0)
+		_draw_ui_frame(UI_FRAME_PLAYER_INFO, position)
+		_draw_ui_frame(UI_FRAME_PLAYER_FACE_FIRST + role_index, position + Vector2i(-2, -4))
+		_draw_ui_frame(UI_FRAME_SLASH, position + Vector2i(49, 6))
+		_draw_number(session.role_max_hp[role_index], 4, position + Vector2i(47, 8), UI_FRAME_NUMBER_YELLOW)
+		_draw_number(session.role_hp[role_index], 4, position + Vector2i(26, 5), UI_FRAME_NUMBER_YELLOW)
+		_draw_ui_frame(UI_FRAME_SLASH, position + Vector2i(49, 22))
+		_draw_number(session.role_max_mp[role_index], 4, position + Vector2i(47, 24), UI_FRAME_NUMBER_CYAN)
+		_draw_number(session.role_mp[role_index], 4, position + Vector2i(26, 21), UI_FRAME_NUMBER_CYAN)
+
+
+func _draw_current_player_arrow() -> void:
+	var party_index := controller.pending_party_index()
+	if party_index < 0 or party_index >= player_foot_positions.size():
+		return
+	var frame := UI_FRAME_CURRENT_ARROW_RED if int(Time.get_ticks_msec() / 80) % 2 == 0 else UI_FRAME_CURRENT_ARROW
+	_draw_ui_frame(frame, player_foot_positions[party_index] + Vector2i(-8, -74))
+
+
+func _draw_action_icons() -> void:
+	var valid := [true, not _magic_entries_for_pending_role().is_empty(), false, true]
+	for index in range(4):
+		if index == selected_action:
+			_draw_ui_frame(UI_FRAME_ACTION_FIRST + index, ACTION_POSITIONS[index])
+		elif valid[index]:
+			_draw_ui_frame(UI_FRAME_ACTION_FIRST + index, ACTION_POSITIONS[index], 0x00, -4)
+		else:
+			_draw_ui_frame(UI_FRAME_ACTION_FIRST + index, ACTION_POSITIONS[index], 0x10, -4)
+
+
+func _draw_magic_menu() -> void:
+	_draw_single_line_box(Vector2i.ZERO, 5, 0)
+	_draw_pal_text(database.get_word(21), Vector2i(10, 10), _palette_color(COLOR_MENU_NORMAL))
+	_draw_number(session.cash, 6, Vector2i(49, 14), UI_FRAME_NUMBER_YELLOW)
+	_draw_single_line_box(Vector2i(215, 0), 5, 0)
+	var party_index := controller.pending_party_index()
+	var role_index := controller.pending_role_index()
+	var current_mp := session.role_mp[role_index] if role_index >= 0 and role_index < session.role_mp.size() else 0
+	var needed_mp := int(_magic_entries[selected_magic_index].get("mp_cost", 0)) if selected_magic_index >= 0 and selected_magic_index < _magic_entries.size() else 0
+	_draw_ui_frame(UI_FRAME_SLASH, Vector2i(260, 14))
+	_draw_number(needed_mp, 4, Vector2i(230, 14), UI_FRAME_NUMBER_YELLOW)
+	_draw_number(current_mp, 4, Vector2i(265, 14), UI_FRAME_NUMBER_CYAN)
+	_draw_classic_box(Vector2i(10, 42), MAGIC_ROWS - 1, 16, 1)
+	for index in range(mini(MAGIC_ROWS * MAGIC_COLUMNS, _magic_entries.size())):
+		var entry := _magic_entries[index]
+		var enabled := bool(entry.get("enabled", false))
+		var color_index := COLOR_MENU_NORMAL if enabled else COLOR_MENU_INACTIVE
+		if index == selected_magic_index:
+			color_index = _selected_color_index() if enabled else COLOR_MENU_SELECTED_INACTIVE
+		var column := index % MAGIC_COLUMNS
+		var row := index / MAGIC_COLUMNS
+		var position := Vector2i(35 + column * MAGIC_COLUMN_WIDTH, 54 + row * MAGIC_ROW_HEIGHT)
+		_draw_pal_text(database.get_word(int(entry.get("object_id", 0))), position, _palette_color(color_index), true)
+		if index == selected_magic_index:
+			_draw_ui_frame(UI_FRAME_MAGIC_CURSOR, position + Vector2i(25, 10))
+	if _magic_entries.is_empty():
+		_draw_pal_text("没有可用仙术", Vector2i(35, 54), _palette_color(COLOR_MENU_INACTIVE), true)
+
+
+func _draw_floating_numbers() -> void:
+	var now := Time.get_ticks_msec()
+	for number in _floating_numbers:
+		var elapsed_frames := int((now - int(number.get("started", now))) / 40)
+		var position: Vector2i = number.get("position", Vector2i.ZERO)
+		position.y -= elapsed_frames
+		_draw_number(int(number.get("value", 0)), 5, position, int(number.get("frame_start", UI_FRAME_NUMBER_BLUE)))
+
+
+func _draw_message_box(text: String) -> void:
+	var width := _pal_text_width(text)
+	var interior := maxi(1, ceili(width / 16.0))
+	var position := Vector2i(160 - (interior * 16 + 16) / 2, 40)
+	_draw_single_line_box(position, interior, 0)
+	_draw_pal_text(text, position + Vector2i(8 + maxi(0, (interior * 16 - width) / 2), 10), _palette_color(COLOR_MENU_NORMAL), true)
+
+
+func _magic_entries_for_pending_role() -> PackedInt32Array:
+	var role_index := controller.pending_role_index()
+	if role_index < 0 or role_index >= session.learned_magics_by_role.size():
+		return PackedInt32Array()
+	return session.learned_magics_by_role[role_index]
+
+
+func _load_classic_resources() -> void:
+	_ui_sprite = database.load_ui_sprite()
+	_palette = database.load_palette(session.palette_index, session.night_palette)
+	_ui_textures.clear()
+	_font_glyphs.clear()
+	var metadata_file := FileAccess.open(database.root_path.path_join("text/font_glyphs.json"), FileAccess.READ)
+	if metadata_file != null:
+		var parsed = JSON.parse_string(metadata_file.get_as_text())
+		if parsed is Dictionary:
+			_font_glyphs = parsed.get("glyphs", {})
+	var atlas_image := Image.load_from_file(ProjectSettings.globalize_path(database.root_path.path_join("text/font_atlas.png")))
+	if not atlas_image.is_empty():
+		_font_texture = ImageTexture.create_from_image(atlas_image)
+
+
+func _draw_classic_box(position: Vector2i, rows: int, columns: int, style: int) -> void:
+	var y := position.y
+	for row in range(rows + 2):
+		var frame_row := 0 if row == 0 else (2 if row == rows + 1 else 1)
+		var x := position.x
+		var row_height := 0
+		for column in range(columns + 2):
+			var frame_column := 0 if column == 0 else (2 if column == columns + 1 else 1)
+			var texture := _ui_texture(style * 9 + frame_row * 3 + frame_column)
+			if texture == null:
+				continue
+			draw_texture(texture, Vector2(x, y))
+			x += texture.get_width()
+			row_height = maxi(row_height, texture.get_height())
+		y += row_height
+
+
+func _draw_single_line_box(position: Vector2i, length: int, shadow_offset: int) -> void:
+	var x := position.x
+	for part in range(length + 2):
+		var frame := 44 if part == 0 else (46 if part == length + 1 else 45)
+		var texture := _ui_texture(frame)
+		if texture == null:
+			continue
+		if shadow_offset > 0:
+			draw_texture(texture, Vector2(x + shadow_offset, position.y + shadow_offset), Color(0, 0, 0, 0.72))
+		draw_texture(texture, Vector2(x, position.y))
+		x += texture.get_width()
+
+
+func _draw_ui_frame(frame_index: int, position: Vector2i, mono_high_nibble: int = -1, low_shift: int = 0) -> void:
+	var texture := _ui_texture(frame_index, mono_high_nibble, low_shift)
+	if texture != null:
+		draw_texture(texture, Vector2(position))
+
+
+func _ui_texture(frame_index: int, mono_high_nibble: int = -1, low_shift: int = 0) -> Texture2D:
+	var cache_key := "%d:%d:%d" % [frame_index, mono_high_nibble, low_shift]
+	if _ui_textures.has(cache_key):
+		return _ui_textures[cache_key]
+	if _ui_sprite == null or not _ui_sprite.is_valid() or frame_index < 0 or frame_index >= _ui_sprite.frame_count() or _palette.is_empty():
+		return null
+	var indexed := RleDecoder.decode(_ui_sprite.get_frame(frame_index))
+	if mono_high_nibble >= 0 and indexed.is_valid():
+		indexed = _mono_color_image(indexed, mono_high_nibble, low_shift)
+	var texture: Texture2D = ImageTexture.create_from_image(indexed.to_rgba_image(_palette)) if indexed.is_valid() else null
+	_ui_textures[cache_key] = texture
+	return texture
+
+
+func _mono_color_image(source: PalIndexedImage, high_nibble: int, low_shift: int) -> PalIndexedImage:
+	var result := PalIndexedImage.new()
+	result.width = source.width
+	result.height = source.height
+	result.indices = source.indices.duplicate()
+	result.opacity = source.opacity.duplicate()
+	for index in range(result.indices.size()):
+		if result.opacity[index] == 0:
+			continue
+		var low := clampi((result.indices[index] & 0x0f) + low_shift, 0, 15)
+		result.indices[index] = (high_nibble & 0xf0) | low
+	return result
+
+
+func _draw_pal_text(text: String, position: Vector2i, color: Color, shadow: bool = false) -> void:
+	if shadow:
+		_draw_pal_glyphs(text, position + Vector2i(1, 1), Color(0, 0, 0, 0.9))
+	_draw_pal_glyphs(text, position, color)
+
+
+func _draw_pal_glyphs(text: String, position: Vector2i, color: Color) -> void:
+	if _font_texture == null or _font_glyphs.is_empty():
+		draw_string(ThemeDB.fallback_font, Vector2(position + Vector2i(0, 13)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+		return
+	var x := position.x
+	for character in text:
+		var key := str(character)
+		if _font_glyphs.has(key):
+			var values: Array = _font_glyphs[key]
+			var region := Rect2(float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+			draw_texture_rect_region(_font_texture, Rect2(Vector2(x, position.y), region.size), region, color)
+			x += 16
+		else:
+			draw_string(ThemeDB.fallback_font, Vector2(x, position.y + 13), key, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+			x += 8
+
+
+func _draw_number(value: int, length: int, position: Vector2i, frame_start: int) -> void:
+	var digits := str(maxi(0, value))
+	if digits.length() > length:
+		digits = digits.right(length)
+	var x := position.x + 6 * (length - 1)
+	for index in range(digits.length() - 1, -1, -1):
+		_draw_ui_frame(frame_start + int(digits[index]), Vector2i(x, position.y))
+		x -= 6
+
+
+func _pal_text_width(text: String) -> int:
+	var width := 0
+	for character in text:
+		width += 16 if _font_glyphs.has(str(character)) else 8
+	return width
+
+
+func _selected_color_index() -> int:
+	return COLOR_MENU_SELECTED_FIRST + int(Time.get_ticks_msec() / 100) % 6
+
+
+func _palette_color(index: int) -> Color:
+	if index < 0 or _palette.size() < (index + 1) * 3:
+		return Color.WHITE
+	return Color8(_palette[index * 3], _palette[index * 3 + 1], _palette[index * 3 + 2])

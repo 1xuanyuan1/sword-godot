@@ -25,12 +25,16 @@ var scripts: Array[PalScriptEntry] = []
 var items: Array[PalItemDefinition] = []
 ## DOS OBJECT 表按敌人结构解释后的定义；索引与对象编号一致。
 var enemy_objects: Array[PalEnemyObjectDefinition] = []
+## DOS OBJECT 表按仙术结构解释后的定义；索引与对象编号一致。
+var magic_objects: Array[PalMagicObjectDefinition] = []
 ## `DATA.MKF #1` 中的敌人基础属性。
 var enemies: Array[PalEnemyDefinition] = []
 ## `DATA.MKF #2` 中的敌队编组。
 var enemy_teams: Array[PalEnemyTeam] = []
 ## `DATA.MKF #5` 中的战场效果表。
 var battlefields: Array[PalBattlefield] = []
+## `DATA.MKF #4` 中的仙术特效、类型、消耗和基础数值。
+var magics: Array[PalMagicDefinition] = []
 ## `DATA.MKF #13` 中按敌人数排列的五槽站位矩阵。
 var enemy_positions: PalBattlefield.EnemyPositions
 ## 角色肖像、场景 Sprite、名字和步态字段。
@@ -66,9 +70,11 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	scripts.clear()
 	items.clear()
 	enemy_objects.clear()
+	magic_objects.clear()
 	enemies.clear()
 	enemy_teams.clear()
 	battlefields.clear()
+	magics.clear()
 	enemy_positions = null
 	player_roles = null
 	words.clear()
@@ -92,11 +98,12 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	var object_bytes := _read_file(core.path_join("objects_dos.bin"))
 	var enemy_bytes := _read_file(root_path.path_join("data/01.bin"))
 	var enemy_team_bytes := _read_file(root_path.path_join("data/02.bin"))
+	var magic_bytes := _read_file(root_path.path_join("data/04.bin"))
 	var battlefield_bytes := _read_file(root_path.path_join("data/05.bin"))
 	var enemy_position_bytes := _read_file(root_path.path_join("data/13.bin"))
 	if not error_message.is_empty():
 		return false
-	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0 or enemy_bytes.size() % PalEnemyDefinition.BYTE_SIZE != 0 or enemy_team_bytes.size() % PalEnemyTeam.BYTE_SIZE != 0 or battlefield_bytes.size() % PalBattlefield.BYTE_SIZE != 0:
+	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0 or enemy_bytes.size() % PalEnemyDefinition.BYTE_SIZE != 0 or enemy_team_bytes.size() % PalEnemyTeam.BYTE_SIZE != 0 or magic_bytes.size() % PalMagicDefinition.BYTE_SIZE != 0 or battlefield_bytes.size() % PalBattlefield.BYTE_SIZE != 0:
 		error_message = "生成数据库的结构长度不匹配"
 		return false
 	for offset in range(0, event_bytes.size(), PalEventObject.BYTE_SIZE):
@@ -111,10 +118,13 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		var object_id := items.size()
 		items.append(PalItemDefinition.from_bytes(object_bytes, offset, object_id))
 		enemy_objects.append(PalEnemyObjectDefinition.from_bytes(object_bytes, offset, object_id))
+		magic_objects.append(PalMagicObjectDefinition.from_bytes(object_bytes, offset, object_id))
 	for offset in range(0, enemy_bytes.size(), PalEnemyDefinition.BYTE_SIZE):
 		enemies.append(PalEnemyDefinition.from_bytes(enemy_bytes, offset, enemies.size()))
 	for offset in range(0, enemy_team_bytes.size(), PalEnemyTeam.BYTE_SIZE):
 		enemy_teams.append(PalEnemyTeam.from_bytes(enemy_team_bytes, offset, enemy_teams.size()))
+	for offset in range(0, magic_bytes.size(), PalMagicDefinition.BYTE_SIZE):
+		magics.append(PalMagicDefinition.from_bytes(magic_bytes, offset, magics.size()))
 	for offset in range(0, battlefield_bytes.size(), PalBattlefield.BYTE_SIZE):
 		battlefields.append(PalBattlefield.from_bytes(battlefield_bytes, offset, battlefields.size()))
 	enemy_positions = PalBattlefield.EnemyPositions.from_bytes(enemy_position_bytes)
@@ -293,6 +303,17 @@ func enemy_team_definition(team_id: int) -> PalEnemyTeam:
 ## 返回 OBJECT 表中的敌人视图，编号越界时返回 `null`。
 func enemy_object_definition(object_id: int) -> PalEnemyObjectDefinition:
 	return enemy_objects[object_id] if object_id >= 0 and object_id < enemy_objects.size() else null
+
+
+## 返回 OBJECT 表中的仙术视图，编号越界时返回 `null`。
+func magic_object_definition(object_id: int) -> PalMagicObjectDefinition:
+	return magic_objects[object_id] if object_id >= 0 and object_id < magic_objects.size() else null
+
+
+## 通过仙术对象编号返回 DATA.MKF 属性；映射无效时返回 `null`。
+func magic_definition_for_object(object_id: int) -> PalMagicDefinition:
+	var object := magic_object_definition(object_id)
+	return magics[object.magic_number] if object != null and object.magic_number >= 0 and object.magic_number < magics.size() else null
 
 
 ## 通过 OBJECT 敌人对象编号返回对应基础属性；映射无效时返回 `null`。

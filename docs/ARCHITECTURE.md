@@ -11,7 +11,7 @@ flowchart LR
     D --> F[ScriptVM]
     E <--> F
     D --> G[MapExplorer]
-    D --> O[PalBattlePreview / PalBattleController]
+    D --> O[PalBattlePreview / PalBattleController / PalBattleUI]
     E --> O
     E --> G
     F --> G
@@ -36,7 +36,8 @@ flowchart LR
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
 | `PalBattleController` | 单场敌人体力、指令、身法队列和胜负 | 读取原始文件、绘制 Sprite |
-| `PalBattlePreview` | 当前样板所选敌队、战场和显示节点 | 自行计算伤害、修改探索剧情 |
+| `PalBattlePreview` | 当前敌队、战场、双方节点、目标选择和攻击动画 | 自行计算伤害、修改探索剧情 |
+| `PalBattleUI` | 原版状态框、四向指令、仙术列表和上浮数字 | 提交指令、扣除 HP/MP |
 | `PalRngPlayer` | 当前过场帧区间、播放速度和可见状态 | 修改角色数值、决定后续脚本入口 |
 | UI | 对话、Toast、菜单和资源实验室的显示状态 | 绕过 ScriptVM 修改剧情 |
 
@@ -101,6 +102,6 @@ CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileM
 
 ## 战斗资源与状态边界
 
-`PalContentDatabase` 读取敌人属性、敌队、战场、敌人位置和双方战斗 Sprite，这些都是只读内容。`PalBattleController` 从这些定义创建单场敌人状态，收集全队攻击/防御指令，生成经典身法队列并返回与画面无关的 `ActionResult`。角色跨战斗的体力、真气和等级继续由 `GameSession` 持有；`PalBattlePreview` 只按结果更新 Sprite 与提示文字。
+`PalContentDatabase` 读取敌人、仙术、战场、站位、官方 UI 和双方战斗 Sprite，这些都是只读内容。`PalBattleController` 从这些定义创建单场敌人状态，收集全队攻击/防御指令，生成经典身法队列并返回与画面无关的 `ActionResult`。角色跨战斗的体力、真气、等级和已学仙术继续由 `GameSession` 持有；`PalBattlePreview` 根据结果播放接近、攻击、受击和归位动画，`PalBattleUI` 只绘制官方状态框、四向指令、目标反馈、仙术列表与数字，不自行改动数值。
 
 脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时暂停 ScriptVM，并由 `MapExplorer` 在 HUD 上覆盖创建复用同一 `GameSession` 的战斗。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗使用 `operand[2]` 分支。进入战斗时播放 `0045` 保存的 BGM，确认结果后恢复场景 BGM，再解除 `waiting_for_battle`；地图输入和自动事件不会在战斗背后继续运行。

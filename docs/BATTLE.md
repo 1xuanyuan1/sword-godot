@@ -9,9 +9,12 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 | 敌人属性 | `DATA.MKF #1` | 保留为 `content/data/01.bin`，由 `PalEnemyDefinition` 解析 |
 | 敌队五槽编组 | `DATA.MKF #2` | 保留为 `content/data/02.bin`，由 `PalEnemyTeam` 解析 |
 | 角色属性和战斗 Sprite 编号 | `DATA.MKF #3` | 保留为 `content/data/03.bin`，由 `PalPlayerRoles` 解析 |
+| 仙术特效、类型、MP 和基础伤害 | `DATA.MKF #4` | 保留为 `content/data/04.bin`，由 `PalMagicDefinition` 解析 |
 | 战场波动和五灵修正 | `DATA.MKF #5` | 保留为 `content/data/05.bin`，由 `PalBattlefield` 解析 |
+| 状态框、四向图标和数字 | `DATA.MKF #9` | 由 `PalBattleUI` 运行时解码 |
 | 五种敌人数站位 | `DATA.MKF #13` | 保留为 `content/data/13.bin`，由敌人位置矩阵解析 |
 | 敌人对象到属性索引 | `SSS.MKF #2` | `content/core/objects_dos.bin` |
+| 仙术对象到属性与脚本 | `SSS.MKF #2` | `PalMagicObjectDefinition` 按同一 OBJECT 项解释 |
 | 敌人战斗 Sprite | `ABC.MKF` | `content/battle/sprites/enemies/*.spr` |
 | 玩家战斗 Sprite | `F.MKF` | `content/battle/sprites/players/*.spr` |
 | 320×200 战场背景 | `FBP.MKF` | `content/battle/backgrounds/*.idx` |
@@ -42,13 +45,16 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 资源实验室中的“战斗样板”默认加载敌队 18、战场 21 和李逍遥/赵灵儿：
 
-- 左/右方向键选择仍存活的敌人；
-- 空格或回车为当前队员提交普通攻击；
+- 主行动按官方菱形排列：上攻击、左仙术、右合击、下其他；
+- 选择攻击后，方向键切换仍存活的敌人，空格或回车确认；只剩一个敌人时直接确认；
+- 选择仙术后显示角色已学会的真实仙术、MP 消耗和可用状态；当前阶段不伪造尚未接入的施法结算；
 - `D` 为当前队员提交防御；
 - `[` / `]` 切换非空敌队，`PageUp` / `PageDown` 切换战场背景；
 - Esc 返回资源实验室。
 
-样板使用新的临时 `GameSession`，不会污染探索进度。它已使用 `PalBattleController` 真实执行攻击、防御、敌人物理攻击、自动防御、体力扣减、死亡和胜负，不伪造结果；当前文字提示仍是开发期界面，最终经典战斗 UI 与逐帧动画会在后续阶段替换。
+样板使用新的临时 `GameSession`，不会污染探索进度。它已使用 `PalBattleController` 真实执行攻击、防御、敌人物理攻击、自动防御、体力扣减、死亡和胜负，不伪造结果。`PalBattleUI` 按 `uibattle.c` 固定坐标绘制角色状态框、头像、HP/MP 数字、当前角色箭头和四向图标；选敌时直接让敌人 Sprite 按调色板索引低四位 `+7` 闪烁，不显示自制目标 HP 或编号。
+
+玩家物理攻击按 `fight.c::PAL_BattleShowPlayerAttackAnim()` 使用 F.MKF 的备战帧 7、接近帧 8 和攻击帧 9，再让敌人受击变色、显示蓝色上浮伤害并回到原战位。敌人物理攻击同样读取敌人属性中的待机、施法和攻击帧数，接近目标后显示格挡或受击帧、伤害数字和归位过程。
 
 ## 当前回合逻辑
 
@@ -89,10 +95,10 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 ## 尚未完成
 
-- 敌我法术、合击、使用/投掷物品、逃跑和自动战斗；
+- 敌我法术结算与特效、合击、使用/投掷物品、逃跑和自动战斗；
 - 中毒、异常状态、装备加成、保护与替队员承伤；
 - 经验、金钱、升级、掉落和战后脚本；
-- 原版指令窗口、数字 Sprite、攻击/施法/受击/死亡动画和音效；
+- 施法、完整死亡与逃跑动画，以及战斗动作音效；
 - 逃跑、自动战斗和战斗中脚本事件的完整执行。
 
 敌人本轮抽中法术时，控制器会明确返回“尚未接入”的动作，不会静默改成物理攻击。默认敌队 18 不触发该边界，已经可以完整验证当前普攻闭环。

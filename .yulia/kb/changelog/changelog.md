@@ -141,6 +141,27 @@ keywords:
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-026] [feat] 还原经典战斗 UI、仙术列表与物理攻击动画
+
+- **关联需求**: M4 经典战斗提前实施
+- **关联 TODO**: TD-003、TD-005（阶段性）
+- **功能描述**: 移除战斗顶部/底部开发文字条、自制目标三角和目标 HP，新增独立 `PalBattleUI`，按固定 SDLPal `uibattle.c` 坐标使用 `DATA.MKF #9` 绘制原版角色状态框、头像、黄/青 HP/MP 数字、当前角色箭头及攻击／仙术／合击／其他四向图标。选敌改为调色板低四位 `+7` 的 Sprite 闪烁，伤害改为官方蓝色数字上浮。新增 OBJECT 仙术视图与 `DATA.MKF #4` 解析，战斗仙术页可显示角色真实名称、MP 消耗和可用状态；尚未实现的施法不会冒充普攻。玩家与敌人物理攻击加入备战、接近、攻击、受击、数字和归位动画。
+- **验证情况**: 252 项合成格式测试、21 项经典战斗逻辑检查、10 项剧情战斗桥接检查及中文文档检查通过。本地真实渲染验证敌队 18 / 战场 21 的官方状态框、四向指令、李逍遥“气疗术”及 6/100 MP 显示，并截取普攻接近攻击帧；生成截图继续只保存在被忽略的 `generated/pal/visual_tests/`。
+- **涉及文件**:
+  - `src/content/pal_magic_object_definition.gd`
+  - `src/content/pal_magic_definition.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点
