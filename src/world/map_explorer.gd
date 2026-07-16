@@ -23,6 +23,7 @@ var _ui_layer: CanvasLayer
 var _status: Label
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
+var _rng_player: PalRngPlayer
 var _audio_player: Node
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
@@ -49,6 +50,7 @@ func _ready() -> void:
 	_session.reset_new_game()
 	_game_menu.configure(_database, _session)
 	_game_menu.audio_settings_changed.connect(_on_audio_settings_changed)
+	_rng_player.configure(_database)
 	_audio_player = AudioPlayer.new()
 	_audio_player.name = "PalAudioPlayer"
 	add_child(_audio_player)
@@ -69,6 +71,7 @@ func _ready() -> void:
 	_script_vm.party_walk_finished.connect(_on_script_party_walk_finished)
 	_script_vm.music_requested.connect(_on_music_requested)
 	_script_vm.sound_requested.connect(_on_sound_requested)
+	_script_vm.rng_animation_requested.connect(_on_rng_animation_requested)
 	add_child(_script_vm)
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
 	if checkpoint.is_empty():
@@ -128,6 +131,11 @@ func _build_interface() -> void:
 	_game_menu.item_use_requested.connect(_on_item_use_requested)
 	_ui_layer.add_child(_game_menu)
 
+	_rng_player = PalRngPlayer.new()
+	_rng_player.name = "RngPlayer"
+	_rng_player.playback_finished.connect(_on_rng_playback_finished)
+	_ui_layer.add_child(_rng_player)
+
 
 func _process(delta: float) -> void:
 	if _map_data == null or not _map_data.is_valid():
@@ -144,9 +152,9 @@ func _process(delta: float) -> void:
 		_displace_party_from_blockers()
 		_refresh_world()
 		# 自动脚本可能让 NPC 主动走入接触范围；官方会在同一游戏更新周期检查触发。
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng:
 			_trigger_touch_event()
-	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog):
+	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng):
 		return
 	# 同一轮接触扫描中的同步短脚本会在帧末续跑；期间不能夹入一次玩家移动。
 	if _touch_scan_active:
@@ -193,7 +201,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.keycode in MENU_KEYCODES:
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _touch_scan_active:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng and not _touch_scan_active:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
 			else:
@@ -208,6 +216,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_script_vm.advance_dialog()
 			return
 		if _script_vm != null and _script_vm.running:
+			return
+		if _script_vm != null and _script_vm.waiting_for_rng:
 			return
 		if _touch_scan_active:
 			return
@@ -335,7 +345,7 @@ func _prepare_search_event(event: PalEventObject) -> bool:
 
 
 func _trigger_touch_event() -> bool:
-	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng:
 		return false
 	_touch_scan_active = true
 	_touch_scan_next_index = 0
@@ -343,7 +353,7 @@ func _trigger_touch_event() -> bool:
 
 
 func _continue_touch_scan() -> bool:
-	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng:
 		return false
 	if _pending_scene_index >= 0:
 		_reset_touch_scan()
@@ -427,7 +437,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 
 
 func _run_scene_enter_script(scene_index: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng:
 		return
 	if scene_index < 0 or scene_index >= _database.scenes.size():
 		return
@@ -589,6 +599,18 @@ func _on_sound_requested(sound_number: int) -> void:
 		_audio_player.play_sound(sound_number)
 
 
+func _on_rng_animation_requested(animation_number: int, start_frame: int, end_frame: int, frames_per_second: int) -> void:
+	if _rng_player == null:
+		_script_vm.complete_rng_animation()
+		return
+	_rng_player.play(animation_number, start_frame, end_frame, frames_per_second)
+
+
+func _on_rng_playback_finished() -> void:
+	if _script_vm != null:
+		_script_vm.complete_rng_animation()
+
+
 func _on_audio_settings_changed(_music_volume: int, _sound_volume: int) -> void:
 	if _audio_player != null:
 		_audio_player.apply_session_volumes()
@@ -705,7 +727,7 @@ func _on_script_party_walk_finished() -> void:
 
 
 func _on_item_use_requested(item_id: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _session.item_count(item_id) <= 0:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _session.item_count(item_id) <= 0:
 		return
 	var item := _database.item_definition(item_id)
 	if item == null or not item.is_usable():

@@ -51,6 +51,8 @@ var role_max_mp: PackedInt32Array = PackedInt32Array()
 var role_hp: PackedInt32Array = PackedInt32Array()
 ## 每名角色当前真气。
 var role_mp: PackedInt32Array = PackedInt32Array()
+## 每名角色已学会的仙术对象编号。
+var learned_magics_by_role: Array[PackedInt32Array] = []
 ## SDLPal 五格队伍轨迹的世界位置。
 var trail_positions: Array[Vector2i] = []
 ## 与队伍轨迹位置对应的方向。
@@ -181,18 +183,21 @@ func clear_party_gestures() -> void:
 
 #region Role state, inventory and lifecycle
 
-## 从只读 PLAYERROLES 内容建立新游戏角色数值。
+## 从只读 PLAYERROLES 内容建立新游戏角色数值和初始仙术。
 ## 已初始化的会话不会被重复覆盖；`reset_new_game()` 后可重新调用。
 func initialize_role_state(roles: PalPlayerRoles) -> bool:
 	if roles == null or not roles.is_valid():
 		return false
-	if role_hp.size() == PalPlayerRoles.ROLE_COUNT:
+	if role_hp.size() == PalPlayerRoles.ROLE_COUNT and learned_magics_by_role.size() == PalPlayerRoles.ROLE_COUNT:
 		return true
 	role_levels = roles.levels.duplicate()
 	role_max_hp = roles.max_hp.duplicate()
 	role_max_mp = roles.max_mp.duplicate()
 	role_hp = roles.hp.duplicate()
 	role_mp = roles.mp.duplicate()
+	learned_magics_by_role.clear()
+	for role_index in range(PalPlayerRoles.ROLE_COUNT):
+		learned_magics_by_role.append(roles.magics_for(role_index))
 	return true
 
 
@@ -207,6 +212,22 @@ func increase_role_hp_mp(role_index: int, hp_delta: int, mp_delta: int) -> bool:
 	role_mp[role_index] = clampi(old_mp + mp_delta, 0, role_max_mp[role_index])
 	return role_hp[role_index] != old_hp or role_mp[role_index] != old_mp
 
+
+## 为指定角色加入一个仙术对象；已学会时保持不变并返回 `false`。
+func add_magic(role_index: int, magic_id: int) -> bool:
+	if role_index < 0 or role_index >= learned_magics_by_role.size() or magic_id <= 0:
+		return false
+	var magics := learned_magics_by_role[role_index]
+	if magic_id in magics or magics.size() >= PalPlayerRoles.MAGIC_SLOT_COUNT:
+		return false
+	magics.append(magic_id)
+	learned_magics_by_role[role_index] = magics
+	return true
+
+
+## 返回指定角色是否已经学会该仙术对象。
+func has_magic(role_index: int, magic_id: int) -> bool:
+	return role_index >= 0 and role_index < learned_magics_by_role.size() and magic_id in learned_magics_by_role[role_index]
 
 ## 返回指定物品数量，背包中不存在时为 0。
 func item_count(item_id: int) -> int:
@@ -250,6 +271,7 @@ func reset_new_game() -> void:
 	role_max_mp = PackedInt32Array()
 	role_hp = PackedInt32Array()
 	role_mp = PackedInt32Array()
+	learned_magics_by_role.clear()
 	clear_party_gestures()
 	_initialize_trail(party_world_position())
 

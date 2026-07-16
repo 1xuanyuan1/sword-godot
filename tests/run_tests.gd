@@ -40,6 +40,7 @@ func _init() -> void:
 	_test_audio_player_foundation()
 	_test_script_vm_foundation()
 	_test_script_vm_audio_requests()
+	_test_script_vm_rng_and_role_state()
 	_test_script_vm_scene_teleport()
 	_test_script_vm_scene_runtime_mutations()
 	_test_script_vm_dialog_pause()
@@ -749,6 +750,53 @@ func _test_script_vm_audio_requests() -> void:
 	vm.free()
 
 
+func _test_script_vm_rng_and_role_state() -> void:
+	var roles := PalPlayerRoles.new()
+	for role_index in range(PalPlayerRoles.ROLE_COUNT):
+		roles.avatar_numbers.append(0)
+		roles.battle_sprite_numbers.append(0)
+		roles.scene_sprite_numbers.append(0)
+		roles.name_word_indices.append(0)
+		roles.attack_all.append(0)
+		roles.levels.append(1)
+		roles.max_hp.append(100 + role_index)
+		roles.max_mp.append(50 + role_index)
+		roles.hp.append(10)
+		roles.mp.append(5)
+		roles.attack_strengths.append(20)
+		roles.magic_strengths.append(20)
+		roles.defenses.append(20)
+		roles.dexterities.append(20)
+		roles.flee_rates.append(20)
+		roles.poison_resistances.append(0)
+		roles.elemental_resistances_by_role.append(PackedInt32Array([0, 0, 0, 0, 0]))
+		roles.magics_by_role.append(PackedInt32Array())
+		roles.walk_frames.append(3)
+	var database := PalContentDatabase.new()
+	database.player_roles = roles
+	for operation in [0, 0x001d, 0x0036, 0x0037, 0x0055, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([1, 9999, 0])
+	database.scripts[2].operands[0] = 1
+	database.scripts[3].operands = PackedInt32Array([2, 4, 14])
+	database.scripts[4].operands = PackedInt32Array([345, 1, 0])
+	var session := GameSession.new()
+	var rng_requests: Array = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.rng_animation_requested.connect(func(animation: int, start: int, finish: int, fps: int) -> void: rng_requests.append([animation, start, finish, fps]))
+	vm.run_trigger(1)
+	_expect(session.role_hp[0] == 100 and session.role_mp[0] == 50, "opcode 001D restores party HP and MP within PLAYERROLES maxima")
+	_expect(vm.waiting_for_rng and not vm.running and rng_requests == [[1, 2, 4, 14]], "opcodes 0036/0037 request the selected RNG frame range and block script execution")
+	_expect(not session.has_magic(0, 345), "script actions after an RNG movie do not execute early")
+	vm.complete_rng_animation()
+	_expect(not vm.waiting_for_rng and not vm.running and session.has_magic(0, 345), "opcode 0055 teaches the selected player magic after RNG playback")
+	vm.free()
+
+
 func _test_script_vm_scene_teleport() -> void:
 	var database := PalContentDatabase.new()
 	for operation in [0, 0x0038, 0x0047, 0x00a1, 0, 0x0046, 0x0059, 0, 0x0047, 0]:
@@ -1254,6 +1302,7 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._status.get_parent() == explorer._ui_layer, "status label stays outside the Camera2D world canvas")
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
+	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
 	_expect(explorer._tile_world.get_parent() == explorer, "TileMap world remains on the Camera2D world canvas")
 	explorer.free()
 

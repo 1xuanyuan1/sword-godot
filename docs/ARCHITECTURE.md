@@ -17,7 +17,7 @@ flowchart LR
     F --> G
     G --> H[PalTileMapWorld]
     G --> I[HUD CanvasLayer]
-    I --> K[状态栏 / 对话框 / 经典菜单]
+    I --> K[状态栏 / 对话框 / 经典菜单 / RNG 播放器]
     H --> J[TileMapLayer / Sprite2D / Camera2D]
     G --> L[PalAudioPlayer]
     L --> N[AudioStreamPlayer BGM / SFX]
@@ -29,7 +29,7 @@ flowchart LR
 | --- | --- | --- |
 | `PalDataImporter` | 一次导入的校验结果和生成路径 | 游戏运行、存档、剧情状态 |
 | `PalContentDatabase` | 场景、脚本、事件、物品、角色定义和资源缓存 | 玩家当前金钱、位置、背包 |
-| `GameSession` | 当前场景、队伍、位置、轨迹、背包、金钱、角色等级与 HP/MP、调色板 | 解码原版文件、绘制 UI |
+| `GameSession` | 当前场景、队伍、位置、轨迹、背包、金钱、角色等级/HP/MP/仙术、调色板 | 解码原版文件、绘制 UI |
 | `ScriptVM` | 当前指令入口、等待原因、自动脚本调度 | 持久化内容、直接绘制画面 |
 | `MapExplorer` | 输入与各模块的编排、当前场景事件引用 | 重新解释资源格式 |
 | `PalMapCoordinates` | 世界像素到菱形 MAP half 的碰撞换算、玩家活动边界 | 读取地图内容、修改队伍位置 |
@@ -37,6 +37,7 @@ flowchart LR
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
 | `PalBattleController` | 单场敌人体力、指令、身法队列和胜负 | 读取原始文件、绘制 Sprite |
 | `PalBattlePreview` | 当前样板所选敌队、战场和显示节点 | 自行计算伤害、修改探索剧情 |
+| `PalRngPlayer` | 当前过场帧区间、播放速度和可见状态 | 修改角色数值、决定后续脚本入口 |
 | UI | 对话、Toast、菜单和资源实验室的显示状态 | 绕过 ScriptVM 修改剧情 |
 
 ## 启动与场景加载
@@ -51,7 +52,7 @@ flowchart LR
 
 `PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 默认走该路径，命令行用户参数 `--pal-map-backend=legacy` 可临时启用 CPU 基准。
 
-`Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast 和经典菜单统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。
+`Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast、经典菜单和 RNG 过场播放器统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。RNG 播放期间 `ScriptVM.waiting_for_rng` 阻止地图输入和后续指令，播放完成后再恢复。
 
 每个 10 FPS 脚本帧中，`ScriptVM` 还会遍历当前场景的 EventObject：先更新临时消失/重现生命周期，再执行一条自动脚本。追逐事件通过 `set_scene_map()` 读取当前 PAL 地图阻挡；自动移动进入玩家接触范围后，`MapExplorer` 在同一更新周期运行触发脚本。
 

@@ -56,7 +56,7 @@ sword/
 
 ### `src/game`
 
-`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、调色板和场景索引。`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
+`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP/仙术、调色板和场景索引。`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
 
 ### `src/world`
 
@@ -64,7 +64,7 @@ sword/
 
 ### `src/ui`
 
-只负责屏幕控件和输入反馈。菜单和对话框读取内容数据库与会话，但不直接解析 MKF，也不自行推进 ScriptVM。
+只负责屏幕控件和输入反馈。菜单和对话框读取内容数据库与会话，但不直接解析 MKF，也不自行推进 ScriptVM。`PalRngPlayer` 只播放导入后的帧区间，并以完成信号解除 VM 的剧情等待。
 
 ### `src/debug`
 

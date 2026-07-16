@@ -26,6 +26,8 @@ signal dialog_ended
 signal music_requested(music_number: int, loop: bool, fade_seconds: float)
 ## 请求播放一次音效。
 signal sound_requested(sound_number: int)
+## 请求播放阻塞剧情的 RNG 过场；`end_frame == -1` 表示播放到动画结束。
+signal rng_animation_requested(animation_number: int, start_frame: int, end_frame: int, frames_per_second: int)
 ## 请求探索控制器切换到从 0 开始的场景索引。
 signal scene_change_requested(scene_index: int)
 ## PLAYERROLES 场景 Sprite 或队伍成员发生变化。
@@ -49,6 +51,8 @@ var waiting_for_dialog: bool = false
 var waiting_for_frames: bool = false
 ## 是否正在逐帧把队伍移动到脚本目标。
 var waiting_for_party_walk: bool = false
+## 是否正在等待剧情 RNG 动画播放完成。
+var waiting_for_rng: bool = false
 ## 最近一次条件指令是否成功，供后续分支判断。
 var script_success: bool = true
 
@@ -66,6 +70,7 @@ var _party_walk_target: Vector2i = Vector2i.ZERO
 var _party_walk_speed: int = 0
 var _scene_map_data: PalMapData
 var _reported_auto_instructions: Dictionary = {}
+var _current_rng_animation: int = 0
 
 
 #region Public lifecycle
@@ -74,6 +79,8 @@ var _reported_auto_instructions: Dictionary = {}
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
 	database = content_database
 	session = game_session
+	if session != null and database != null:
+		session.initialize_role_state(database.player_roles)
 	_reported_auto_instructions.clear()
 
 
@@ -86,7 +93,7 @@ func set_scene_map(map_data: PalMapData) -> void:
 ## 从指定脚本入口执行一个触发事件。
 ## VM 忙碌或入口无效时不修改状态并返回原入口；暂停或结束时返回未来入口。
 func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
-	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog:
+	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog or waiting_for_rng:
 		return entry_index
 	if event_object_id == 0xffff:
 		event_object_id = _last_event_object_id
@@ -97,6 +104,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	_dialog_is_toast = false
 	waiting_for_frames = false
 	waiting_for_party_walk = false
+	waiting_for_rng = false
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
 	_cursor = entry_index
@@ -117,12 +125,22 @@ func advance_dialog() -> void:
 	_continue_execution()
 
 
+## 通知 VM 当前 RNG 过场已经播放完成，并从下一条脚本继续。
+func complete_rng_animation() -> void:
+	if not waiting_for_rng:
+		return
+	waiting_for_rng = false
+	running = true
+	_continue_execution()
+
+
 ## 立即清空所有等待、调用栈和对话状态，并发出 `dialog_ended`。
 func stop() -> void:
 	running = false
 	waiting_for_dialog = false
 	waiting_for_frames = false
 	waiting_for_party_walk = false
+	waiting_for_rng = false
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0
@@ -135,6 +153,8 @@ func stop() -> void:
 ## 返回本帧是否可能改变世界画面。
 func tick_frame() -> bool:
 	_auto_frame_number += 1
+	if waiting_for_rng:
+		return false
 	# SDLPal pauses scene updates while waiting for a dialog key.
 	var world_changed := false if waiting_for_dialog or _close_dialog_after_frame_wait else _tick_auto_scripts()
 	if waiting_for_party_walk:
@@ -247,6 +267,15 @@ func _continue_execution() -> int:
 				if event != null and entry.operands[0] != 0:
 					event.direction = entry.operands[1]
 					event.current_frame = entry.operands[2]
+			# 同时增减角色体力与真气；operand[0] 非零时作用于全队，否则作用于当前角色。
+			0x001d:
+				if session != null:
+					var delta := _signed_word(entry.operands[1])
+					if entry.operands[0] != 0:
+						for role_index in session.party_roles:
+							session.increase_role_hp_mp(role_index, delta, delta)
+					elif not session.increase_role_hp_mp(_event_object_id, delta, delta):
+						script_success = false
 			# 增减金钱 signed(operand[0])；不足以扣除时跳到 operand[1]。
 			0x001e:
 				if session != null:
@@ -303,6 +332,21 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				_dialog_is_toast = true
 				dialog_started.emit(3, entry.operands[0], 0)
+			# 选择后续 0037 要播放的 RNG 动画编号。
+			0x0036:
+				_current_rng_animation = entry.operands[0]
+			# 播放当前 RNG 动画；存在播放器时阻塞脚本直到回调完成。
+			0x0037:
+				var end_frame := entry.operands[1] if entry.operands[1] > 0 else -1
+				var frames_per_second := entry.operands[2] if entry.operands[2] > 0 else 16
+				if get_signal_connection_list(&"rng_animation_requested").is_empty():
+					rng_animation_requested.emit(_current_rng_animation, entry.operands[0], end_frame, frames_per_second)
+				else:
+					_cursor = next_cursor
+					running = false
+					waiting_for_rng = true
+					rng_animation_requested.emit(_current_rng_animation, entry.operands[0], end_frame, frames_per_second)
+					return _cursor
 			# 执行当前场景的传送离开脚本；不存在时跳到 operand[0] 失败入口。
 			0x0038:
 				var teleport_entry := 0
@@ -364,6 +408,11 @@ func _continue_execution() -> int:
 			0x0054:
 				if session != null:
 					session.night_palette = true
+			# 为 operand[1] 指定角色加入仙术 operand[0]；角色为 0 时沿用当前调用角色。
+			0x0055:
+				if session != null:
+					var role_index := _event_object_id if entry.operands[1] == 0 else entry.operands[1] - 1
+					session.add_magic(role_index, entry.operands[0])
 			# 切换到 1-based 的 operand[0] 场景，并在下一安全时机载入。
 			0x0059:
 				if session != null and entry.operands[0] > 0 and entry.operands[0] <= database.scenes.size():
@@ -523,6 +572,7 @@ func _finish(next_entry: int) -> int:
 	waiting_for_dialog = false
 	waiting_for_frames = false
 	waiting_for_party_walk = false
+	waiting_for_rng = false
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0

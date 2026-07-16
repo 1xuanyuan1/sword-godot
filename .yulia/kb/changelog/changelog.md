@@ -93,6 +93,29 @@ keywords:
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-024] [feat] 接通剧情 RNG 过场与角色仙术状态
+
+- **关联需求**: M3 场景流程、M5 音画能力
+- **关联 TODO**: TD-001、TD-006、TD-008（阶段性）
+- **功能描述**: 导入器从只转换首个 RNG 分块改为转换全部可解码动画并记录逐段清单；新增全屏 `PalRngPlayer`，由 `ScriptVM 0036/0037` 选择帧区间并阻塞剧情，播放完成或资源缺失后安全续跑。`GameSession` 增加角色已学仙术状态，VM 同步实现 `001D` 角色/全队 HP/MP 修改与 `0055` 习得仙术，使御剑教学等过场之后的数值指令不会提前或丢失。
+- **验证情况**: 247 项合成测试、中文文档检查和求药归来/山神庙早期主线回归通过；本地目标数据的 11 个脚本引用 RNG 动画共 1410 帧均可加载，HUD 两帧区间能按完成信号隐藏并解除 VM 等待。生成 PNG 继续只保存在被忽略的 `generated/pal/rng/`。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/game/script_vm.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/ui/pal_rng_player.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_rng_player_test.gd`
+  - `README.md`
+  - `docs/RNG_FORMAT.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

@@ -474,6 +474,8 @@ static func _generate_rng_preview(rng_path: String, palette_path: String, absolu
 	var palette_rgb := PaletteDecoder.decode_rgb(palette_archive.get_chunk(0), false)
 	if palette_rgb.is_empty():
 		return
+	var rendered_animations: Dictionary = {}
+	var total_frames := 0
 	for animation_index in range(rng_archive.chunk_count()):
 		var animation_chunk := rng_archive.get_chunk(animation_index)
 		if animation_chunk.is_empty():
@@ -504,16 +506,23 @@ static func _generate_rng_preview(rng_path: String, palette_path: String, absolu
 			rendered_frames += 1
 			last_preview_path = output_path
 		if rendered_frames > 0:
-			report.files["rng_preview"] = {
-				"animation": animation_index,
+			rendered_animations[str(animation_index)] = {
 				"frames": rendered_frames,
 				"frame_rate": 16,
 				"palette": 0,
 				"output": output_dir,
 				"path": last_preview_path,
 			}
-			report.preview_path = last_preview_path
-			return
+			total_frames += rendered_frames
+			if report.preview_path.is_empty():
+				report.preview_path = last_preview_path
+	if not rendered_animations.is_empty():
+		report.files["rng_preview"] = {
+			"animation_count": rendered_animations.size(),
+			"total_frames": total_frames,
+			"animations": rendered_animations,
+		}
+		return
 	report.warnings.append("未能从 rng.mkf 生成动画预览")
 
 
