@@ -238,6 +238,19 @@ keywords:
   - `docs/PROJECT_STRUCTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-030] [feat] 在敌人选择阶段显示目标生命条
+
+- **关联需求**: M4 经典战斗试玩辅助
+- **关联 TODO**: TD-005（阶段性）
+- **功能描述**: 敌人 Sprite 按原版调色板闪烁供玩家选择时，在左上角同步显示当前目标名称、血条和真实当前／最大 HP；切换目标会立即读取 `PalBattleController` 的本场敌人状态，确认或取消目标后面板自动隐藏。该辅助 UI 不改变伤害、敌人数据或战斗结算，并在文档中明确区别于原版常驻界面。
+- **验证情况**: 45 项经典战斗逻辑检查通过；真实敌队 18 / 战场 21 已生成 320×200 OpenGL 截图，确认苗人拳目标显示 360/360，退出目标阶段后数据接口返回空且面板隐藏。
+- **涉及文件**:
+  - `src/battle/pal_battle_ui.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `docs/BATTLE.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

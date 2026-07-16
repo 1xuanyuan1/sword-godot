@@ -38,6 +38,25 @@ func _run() -> void:
 	if image.save_png(output_path) != OK:
 		_fail("无法写入战斗样板截图")
 		return
+	preview._begin_enemy_target_selection()
+	await process_frame
+	var enemy_vitals := preview._battle_ui.selected_enemy_vitals()
+	if preview._input_mode != PalBattlePreview.InputMode.ENEMY_TARGET or enemy_vitals.is_empty():
+		_fail("选择敌人时没有进入闪烁目标阶段或显示敌人体力")
+		return
+	var selected_enemy := preview._controller.enemies[preview._selected_enemy_index]
+	if int(enemy_vitals.get("hp", -1)) != selected_enemy.hp or int(enemy_vitals.get("max_hp", -1)) != selected_enemy.max_hp:
+		_fail("左上角敌人体力没有读取控制器中的真实当前/最大值")
+		return
+	var enemy_target_image := viewport.get_texture().get_image()
+	var enemy_target_path := output_directory.path_join("battle_enemy_target_vitals.png")
+	if enemy_target_image == null or enemy_target_image.save_png(enemy_target_path) != OK:
+		_fail("无法写入敌人选择与体力条截图")
+		return
+	preview._cancel_or_leave()
+	if not preview._battle_ui.selected_enemy_vitals().is_empty():
+		_fail("退出敌人选择后左上角体力条没有隐藏")
+		return
 	preview._set_action_selection(1)
 	preview._confirm_current_selection()
 	await process_frame
@@ -196,7 +215,7 @@ func _run() -> void:
 	if level_image == null or level_image.save_png(level_path) != OK:
 		_fail("无法写入原版布局升级数值截图")
 		return
-	print("PASS: 经典指令、玩家/敌人仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人体力、玩家/敌人仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, enemy_target_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, reward_path, level_path])
 	quit(0)
 
 

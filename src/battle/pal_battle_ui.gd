@@ -1,7 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal uibattle.c, magicmenu.c and ui.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用 DATA.MKF #9 原版 UI Sprite 绘制经典战斗状态框、四向指令和仙术列表。
+## 使用 DATA.MKF #9 原版 UI Sprite 绘制经典战斗状态框、四向指令、目标生命和仙术列表。
 ## 本节点只读取战斗状态并绘图；输入状态和战斗结算仍由 `PalBattlePreview` 与控制器持有。
 class_name PalBattleUI
 extends Control
@@ -44,6 +44,8 @@ const COLOR_MENU_NORMAL := 0x4f
 const COLOR_MENU_INACTIVE := 0x18
 const COLOR_MENU_SELECTED_INACTIVE := 0x1c
 const COLOR_MENU_SELECTED_FIRST := 0xf9
+const ENEMY_VITALS_RECT := Rect2(8, 8, 148, 40)
+const ENEMY_VITALS_BAR_RECT := Rect2(14, 38, 136, 5)
 
 ## 战斗使用的只读内容数据库。
 var database: PalContentDatabase
@@ -105,10 +107,26 @@ func set_action_selection(action_index: int) -> void:
 	queue_redraw()
 
 
-## 更新敌人选择索引；索引只用于画面同步，不读取敌人 HP。
+## 更新敌人选择索引；目标模式会据此读取本场敌人的名称和当前体力。
 func set_enemy_selection(enemy_index: int) -> void:
 	selected_enemy = enemy_index
 	queue_redraw()
+
+
+## 返回当前目标选择阶段显示的敌人信息；其他阶段或索引无效时返回空字典。
+## 只读取控制器内的本场状态，不修改敌人体力或战斗进度。
+func selected_enemy_vitals() -> Dictionary:
+	if mode != Mode.ENEMY_TARGET or controller == null or database == null or selected_enemy < 0 or selected_enemy >= controller.enemies.size():
+		return {}
+	var enemy := controller.enemies[selected_enemy]
+	if enemy == null or not enemy.is_alive():
+		return {}
+	return {
+		"object_id": enemy.object_id,
+		"name": database.get_word(enemy.object_id),
+		"hp": enemy.hp,
+		"max_hp": enemy.max_hp,
+	}
 
 
 ## 根据指定角色的已学仙术重建经典 3×5 列表，并切换到仙术页面。
@@ -233,6 +251,8 @@ func _draw() -> void:
 			_draw_selected_player_arrow()
 	if mode == Mode.COMMAND:
 		_draw_action_icons()
+	elif mode == Mode.ENEMY_TARGET:
+		_draw_enemy_vitals()
 	elif mode == Mode.MAGIC_LIST:
 		_draw_magic_menu()
 	elif mode == Mode.REWARD:
@@ -280,6 +300,31 @@ func _draw_action_icons() -> void:
 			_draw_ui_frame(UI_FRAME_ACTION_FIRST + index, ACTION_POSITIONS[index], 0x00, -4)
 		else:
 			_draw_ui_frame(UI_FRAME_ACTION_FIRST + index, ACTION_POSITIONS[index], 0x10, -4)
+
+
+func _draw_enemy_vitals() -> void:
+	var vitals := selected_enemy_vitals()
+	if vitals.is_empty():
+		return
+	var hp := maxi(0, int(vitals.get("hp", 0)))
+	var max_hp := maxi(1, int(vitals.get("max_hp", 1)))
+	var ratio := clampf(float(hp) / float(max_hp), 0.0, 1.0)
+	# 原版不显示敌人体力；这里使用不依赖外部素材的像素面板，并限制在目标闪烁阶段，
+	# 避免覆盖行动动画或改变经典状态框的布局。
+	draw_rect(ENEMY_VITALS_RECT, Color(0.015, 0.025, 0.055, 0.9), true)
+	draw_rect(ENEMY_VITALS_RECT, _palette_color(COLOR_MENU_NORMAL), false, 1.0)
+	var enemy_name := str(vitals.get("name", ""))
+	_draw_pal_text(enemy_name if not enemy_name.is_empty() else "敌人", Vector2i(14, 13), _palette_color(COLOR_MENU_NORMAL), true)
+	_draw_pal_text("HP", Vector2i(14, 26), _palette_color(0xbb), true)
+	_draw_number(hp, 5, Vector2i(37, 28), UI_FRAME_NUMBER_YELLOW)
+	_draw_ui_frame(UI_FRAME_SLASH, Vector2i(68, 27))
+	_draw_number(max_hp, 5, Vector2i(76, 30), UI_FRAME_NUMBER_BLUE)
+	draw_rect(ENEMY_VITALS_BAR_RECT, Color(0, 0, 0, 0.92), true)
+	var inner := Rect2(ENEMY_VITALS_BAR_RECT.position + Vector2(1, 1), ENEMY_VITALS_BAR_RECT.size - Vector2(2, 2))
+	draw_rect(inner, Color(0.14, 0.14, 0.16, 1.0), true)
+	if hp > 0:
+		var health_color := Color8(88, 208, 96) if ratio > 0.5 else (Color8(232, 176, 48) if ratio > 0.25 else Color8(224, 72, 64))
+		draw_rect(Rect2(inner.position, Vector2(maxf(1.0, floorf(inner.size.x * ratio)), inner.size.y)), health_color, true)
 
 
 func _draw_magic_menu() -> void:
