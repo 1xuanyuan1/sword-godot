@@ -373,7 +373,13 @@ func _continue_execution() -> int:
 			# 将角色 operand[0] 的普通场景 Sprite 改为 operand[1]。
 			0x0065:
 				if database.player_roles != null and entry.operands[0] < database.player_roles.scene_sprite_numbers.size():
-					database.player_roles.scene_sprite_numbers[entry.operands[0]] = entry.operands[1]
+					var role_index := entry.operands[0]
+					database.player_roles.scene_sprite_numbers[role_index] = entry.operands[1]
+					# SDLPal 会在场景更新时按新 Sprite 恢复站立帧。Godot 版单独保存
+					# 剧情动作，因此必须在换装时丢弃旧造型的绝对帧；紧随其后的
+					# 0015 若需要新动作，会在同一段脚本中重新设置。
+					if session != null:
+						session.clear_party_gestures_for_role(role_index)
 					player_sprites_changed.emit()
 			# 让 operand[0] 事件移动 signed(operand[1]), signed(operand[2]) 并推进步态。
 			0x006c:

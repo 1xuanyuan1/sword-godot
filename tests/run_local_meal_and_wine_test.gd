@@ -62,6 +62,9 @@ func _init() -> void:
 	if session.item_count(272) != 1 or database.player_roles.scene_sprite_numbers[0] != 2:
 		_fail("端酒菜后没有正确收起桂花酒或恢复普通造型", vm)
 		return
+	if session.scripted_party_frame(0) != -1:
+		_fail("收起桂花酒后仍残留旧端盘动作帧，李逍遥会在移动前消失", vm)
+		return
 
 	messages.clear()
 	session.scene_index = 2

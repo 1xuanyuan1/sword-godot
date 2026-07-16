@@ -153,6 +153,14 @@ func scripted_party_frame(member_index: int) -> int:
 	return party_script_frames[member_index] if member_index >= 0 and member_index < party_script_frames.size() else -1
 
 
+## 清除指定角色在当前队伍中的脚本动作帧，未入队时不修改状态。
+## 场景 Sprite 切换后调用此方法，避免旧造型的绝对帧被错误套到新造型。
+func clear_party_gestures_for_role(role_index: int) -> void:
+	for member_index in range(party_roles.size()):
+		if party_roles[member_index] == role_index and member_index < party_script_frames.size():
+			party_script_frames[member_index] = -1
+
+
 ## 清空所有队员的脚本动作帧。
 func clear_party_gestures() -> void:
 	party_script_frames.resize(maxi(3, party_roles.size()))

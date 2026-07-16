@@ -889,6 +889,25 @@ func _test_script_vm_frame_delay_and_auto_walk() -> void:
 	gesture_vm.tick_frame()
 	_expect(gesture_session.scripted_party_frame(0) == 0 and not gesture_vm.running, "script VM advances to the next party gesture after its delay")
 	gesture_vm.free()
+	var sprite_database := PalContentDatabase.new()
+	var sprite_roles := PalPlayerRoles.new()
+	sprite_roles.scene_sprite_numbers = PackedInt32Array([208, 0, 0, 0, 0, 0])
+	sprite_database.player_roles = sprite_roles
+	sprite_database.scripts.append(PalScriptEntry.new())
+	for operation in [0x0015, 0x0065, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		sprite_database.scripts.append(entry)
+	sprite_database.scripts[1].operands = PackedInt32Array([0, 15, 0])
+	sprite_database.scripts[2].operands = PackedInt32Array([0, 2, 0xffff])
+	var sprite_session := GameSession.new()
+	var sprite_vm := ScriptVM.new()
+	sprite_vm.configure(sprite_database, sprite_session)
+	sprite_vm.run_trigger(1)
+	_expect(sprite_database.player_roles.scene_sprite_for(0) == 2, "opcode 0065 switches the normal scene sprite")
+	_expect(sprite_session.scripted_party_frame(0) == -1, "opcode 0065 clears a gesture frame that belonged to the previous sprite")
+	sprite_vm.free()
 	var step_database := PalContentDatabase.new()
 	step_database.scripts.append(PalScriptEntry.new())
 	for operation in [0x006e, 0x0000]:
