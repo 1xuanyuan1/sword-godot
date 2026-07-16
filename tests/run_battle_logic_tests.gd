@@ -67,6 +67,8 @@ func _test_damage_formula() -> void:
 	_expect(PalBattleController.calculate_base_damage(50, 60) == 14, "base damage uses attack-defense*0.6 in the middle band")
 	_expect(PalBattleController.calculate_base_damage(20, 50) == 0, "base damage becomes zero below sixty percent defense")
 	_expect(PalBattleController.calculate_physical_damage(100, 50, 3) == 40, "physical resistance divides base damage")
+	var wrapped_enemy := _enemy_definition(40, 0, 0, 0xfffa, 0, false)
+	_expect(PalBattleController.new()._effective_enemy_defense(wrapped_enemy) == 18, "enemy defense preserves SDLPal WORD wraparound after the level bonus")
 
 
 func _test_defend_and_dual_move_queue() -> void:

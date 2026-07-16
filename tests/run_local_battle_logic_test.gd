@@ -10,6 +10,25 @@ func _init() -> void:
 	if not database.load_generated():
 		_fail("本地生成内容不可用：%s" % database.error_message)
 		return
+	# 仙灵岛最低级绿叶小妖的基础防御是 0xFFFA；与等级修正相加后应按 WORD 回绕为 18。
+	var leaf_session := GameSession.new()
+	leaf_session.party_roles = PackedInt32Array([0])
+	var leaf_controller := PalBattleController.new()
+	if not leaf_controller.start_battle(database, leaf_session, 16, 0, 20260722):
+		_fail("仙灵岛绿叶小妖战斗无法初始化")
+		return
+	if leaf_controller.enemies.is_empty() or leaf_controller.enemies[0].object_id != 499 or leaf_controller.enemies[0].definition.defense != 0xfffa:
+		_fail("敌队 16 不再是预期的绿叶小妖数据")
+		return
+	leaf_session.role_dexterity[0] = 999
+	if not leaf_controller.submit_attack(0):
+		_fail("李逍遥无法攻击绿叶小妖")
+		return
+	var leaf_attack := leaf_controller.execute_next_action()
+	if leaf_attack == null or leaf_attack.actor_is_enemy or leaf_attack.hits.is_empty() or leaf_attack.hits[0].damage <= 1:
+		_fail("绿叶小妖防御符号位仍让李逍遥普攻退化为 1 点")
+		return
+	var leaf_damage := leaf_attack.hits[0].damage
 	var session := GameSession.new()
 	session.party_roles = PackedInt32Array([0, 1])
 	var controller := PalBattleController.new()
@@ -125,7 +144,7 @@ func _init() -> void:
 	if flee_result == null or not flee_result.flee_succeeded or flee_controller.battle_result != PalBattleController.BattleResult.FLED:
 		_fail("真实首战敌队没有按经典逃跑公式返回 FLED")
 		return
-	print("PASS: 首战普攻样板以结果 %d 结束，共执行 %d 次行动、%d 次有效伤害；胜利获得 %d 经验 / %d 文并触发升级；敌队 %d 的敌术 %d、止血草、梅花镖和逃跑均可真实结算" % [controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash, magic_team, magic_result.magic_object_id])
+	print("PASS: 李逍遥对绿叶小妖普攻 %d 点；首战样板结果 %d、%d 次行动/%d 次伤害；奖励 %d 经验/%d 文；敌术 %d、止血草、梅花镖和逃跑均可结算" % [leaf_damage, controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash, magic_result.magic_object_id])
 	quit(0)
 
 

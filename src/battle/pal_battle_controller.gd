@@ -793,7 +793,7 @@ func _calculate_player_magic_damage(role_index: int, target_index: int, definiti
 	var enemy := enemies[target_index].definition
 	var magic_strength := session.magic_strength_for(role_index)
 	magic_strength = int(magic_strength * _random.next_float(10.0, 11.0) / 10.0)
-	var defense := enemy.defense + (enemy.level + 6) * 4
+	var defense := _effective_enemy_defense(enemy)
 	var damage := calculate_base_damage(magic_strength, defense) / 4
 	damage += _signed_word(definition.base_damage)
 	if definition.elemental != 0:
@@ -1038,7 +1038,7 @@ func _execute_player_attack_all(player: PlayerState, result: ActionResult) -> vo
 		if enemy_index >= enemies.size() or not enemies[enemy_index].is_alive():
 			continue
 		var enemy := enemies[enemy_index]
-		var defense := enemy.definition.defense + (enemy.definition.level + 6) * 4
+		var defense := _effective_enemy_defense(enemy.definition)
 		var damage := calculate_physical_damage(
 			session.attack_strength_for(player.role_index),
 			defense,
@@ -1055,7 +1055,7 @@ func _execute_player_attack_all(player: PlayerState, result: ActionResult) -> vo
 
 func _player_single_hit(player: PlayerState, target_index: int) -> Hit:
 	var enemy := enemies[target_index]
-	var defense := enemy.definition.defense + (enemy.definition.level + 6) * 4
+	var defense := _effective_enemy_defense(enemy.definition)
 	var damage := calculate_physical_damage(
 		session.attack_strength_for(player.role_index),
 		defense,
@@ -1087,6 +1087,14 @@ func _apply_enemy_damage(target_index: int, damage: int, critical: bool) -> Hit:
 		experience_gained += enemy.definition.experience
 		cash_gained += enemy.definition.cash
 	return hit
+
+
+func _effective_enemy_defense(definition: PalEnemyDefinition) -> int:
+	if definition == null:
+		return 0
+	# fight.c 先把 16 位 WORD 防御加上等级修正，再以 WORD 保存结果；0xFFFA + 24 会回绕为 18。
+	# GDScript 整数不会自动回绕，若直接相加会把绿叶小妖等负基础防御误读成六万多。
+	return (definition.defense + (definition.level + 6) * 4) & 0xffff
 
 
 func _execute_enemy_action(entry: QueueEntry) -> ActionResult:
