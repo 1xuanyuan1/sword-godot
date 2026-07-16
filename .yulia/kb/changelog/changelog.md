@@ -71,6 +71,28 @@ keywords:
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-023] [feat] 接通经典普攻回合与首战操作样板
+
+- **关联需求**: M4 经典战斗提前实施
+- **关联 TODO**: TD-005（阶段性）
+- **功能描述**: 新增与场景解耦的 `PalBattleController` 和移植自 SDLPal `util.c` 的可固定种子随机序列；实现全队攻击/防御指令、经典身法行动队列、双动敌人、濒死减速、玩家单体/全体普攻、暴击、李逍遥额外判定、敌人物理 AI、自动防御、最低伤害、死亡目标重选和胜负。玩家 HP 写回 `GameSession`，敌人本场 HP 留在控制器。战斗样板升级为可操作入口，可选目标、攻击、防御、查看双方 HP 和逐项结算；未实现的敌人法术会显式报告，不会静默改成普攻。
+- **验证情况**: 247 项既有合成测试、19 项独立战斗逻辑检查和中文文档检查通过；固定随机序列与 SDLPal LCG 对齐。本地真实资源确认首战敌队 18 / 战场 21 可执行 41 次行动并在 30 回合内得到胜负，两个黑苗敌人不会触发尚未支持的法术分支；320×200 真实渲染仍包含双方四个 Sprite、目标光标和 HP 信息。
+- **涉及文件**:
+  - `src/battle/pal_battle_random.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/game/game_session.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_logic_test.gd`
+  - `.github/workflows/ci.yml`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

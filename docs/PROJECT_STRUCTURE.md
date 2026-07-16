@@ -29,7 +29,7 @@ sword/
 - `scenes/main.tscn`：工程主入口，提供数据目录选择、导入和实验室导航。
 - `scenes/map_explorer.tscn`：当前可玩探索场景，连接 `GameSession`、`ScriptVM`、地图世界、对话框和菜单。
 - `scenes/rng_preview.tscn`：RNG 增量动画浏览器。
-- `scenes/battle_preview.tscn`：敌队、战场和双方战斗 Sprite 的第一阶段可视化样板。
+- `scenes/battle_preview.tscn`：敌队、战场、双方战斗 Sprite 和首个经典普攻回合的可操作样板。
 - `scenes/story_test_lab.tscn`：只保留尚需人工验收的剧情检查点；完成项转为自动回归后移除。
 
 ## 源码模块
@@ -44,7 +44,7 @@ sword/
 
 ### `src/battle`
 
-当前 `PalBattlePreview` 根据内容数据库绘制战场背景、敌队和玩家战斗 Sprite，严格使用 SDLPal 的双方站位。后续 `BattleController` 会在本目录持有单场战斗状态；静态敌人属性仍属于 `src/content`，玩家跨战斗状态仍属于 `GameSession`。
+`PalBattleRandom` 复现 SDLPal 的固定随机序列；`PalBattleController` 持有单场敌人体力、指令和行动队列，并把玩家体力写回 `GameSession`；`PalBattlePreview` 只绘制战场、双方 Sprite、目标光标和动作结果。静态敌人属性仍属于 `src/content`，场景节点不直接计算伤害。
 
 ### `src/import`
 
@@ -73,6 +73,7 @@ sword/
 ## 测试与本地生成内容
 
 - `tests/run_tests.gd`：CI 使用合成字节运行，不依赖原版游戏。
+- `tests/run_battle_logic_tests.gd`：CI 使用合成敌我数据验证经典回合、伤害和胜负。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。
 - `generated/pal/audio/`：本机 RIX/OPL 与 VOC 转换结果。

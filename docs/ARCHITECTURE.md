@@ -11,7 +11,7 @@ flowchart LR
     D --> F[ScriptVM]
     E <--> F
     D --> G[MapExplorer]
-    D --> O[PalBattlePreview / BattleController]
+    D --> O[PalBattlePreview / PalBattleController]
     E --> O
     E --> G
     F --> G
@@ -29,13 +29,14 @@ flowchart LR
 | --- | --- | --- |
 | `PalDataImporter` | 一次导入的校验结果和生成路径 | 游戏运行、存档、剧情状态 |
 | `PalContentDatabase` | 场景、脚本、事件、物品、角色定义和资源缓存 | 玩家当前金钱、位置、背包 |
-| `GameSession` | 当前场景、队伍、位置、轨迹、背包、金钱、调色板 | 解码原版文件、绘制 UI |
+| `GameSession` | 当前场景、队伍、位置、轨迹、背包、金钱、角色等级与 HP/MP、调色板 | 解码原版文件、绘制 UI |
 | `ScriptVM` | 当前指令入口、等待原因、自动脚本调度 | 持久化内容、直接绘制画面 |
 | `MapExplorer` | 输入与各模块的编排、当前场景事件引用 | 重新解释资源格式 |
 | `PalMapCoordinates` | 世界像素到菱形 MAP half 的碰撞换算、玩家活动边界 | 读取地图内容、修改队伍位置 |
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
-| `PalBattlePreview` | 当前样板所选敌队、战场和显示节点 | 修改剧情、伪造战斗结果 |
+| `PalBattleController` | 单场敌人体力、指令、身法队列和胜负 | 读取原始文件、绘制 Sprite |
+| `PalBattlePreview` | 当前样板所选敌队、战场和显示节点 | 自行计算伤害、修改探索剧情 |
 | UI | 对话、Toast、菜单和资源实验室的显示状态 | 绕过 ScriptVM 修改剧情 |
 
 ## 启动与场景加载
@@ -99,6 +100,6 @@ CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileM
 
 ## 战斗资源与状态边界
 
-`PalContentDatabase` 读取敌人属性、敌队、战场、敌人位置和双方战斗 Sprite，这些都是只读内容。`PalBattlePreview` 当前只把它们按 SDLPal `battle.c` 的脚底锚点显示出来。后续单场敌人当前体力、状态、行动和目标由 `BattleController` 持有；角色跨战斗的体力、真气、等级和已学仙术继续由 `GameSession` 持有。
+`PalContentDatabase` 读取敌人属性、敌队、战场、敌人位置和双方战斗 Sprite，这些都是只读内容。`PalBattleController` 从这些定义创建单场敌人状态，收集全队攻击/防御指令，生成经典身法队列并返回与画面无关的 `ActionResult`。角色跨战斗的体力、真气和等级继续由 `GameSession` 持有；`PalBattlePreview` 只按结果更新 Sprite 与提示文字。
 
-脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时才暂停 ScriptVM、创建战斗并等待胜负结果。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗才使用 `operand[2]` 分支。该桥接属于下一阶段，当前样板不会提前让脚本越过战斗。
+脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时才暂停 ScriptVM、创建战斗并等待胜负结果。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗才使用 `operand[2]` 分支。`PalBattleController` 的普攻闭环已经可独立运行，但该 ScriptVM/场景路由桥接仍属于下一阶段，当前样板不会提前让剧情越过战斗。

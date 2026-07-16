@@ -1,6 +1,6 @@
 # 经典战斗系统
 
-Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `ENABLE_REVISIED_BATTLE` 蓄力模式。当前第一阶段已经接通静态战斗数据、战场背景、双方 Sprite 和官方站位；指令选择、行动队列和胜负结算仍在开发。
+Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `ENABLE_REVISIED_BATTLE` 蓄力模式。静态资源和首个普攻回合闭环已经接通；法术、物品、毒与状态、奖励结算、完整动画和剧情脚本桥接仍在开发。
 
 ## 原版资源映射
 
@@ -42,11 +42,47 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 资源实验室中的“战斗样板”默认加载敌队 18、战场 21 和李逍遥/赵灵儿：
 
-- 左/右方向键切换非空敌队；
-- 上/下方向键切换战场背景；
+- 左/右方向键选择仍存活的敌人；
+- 空格或回车为当前队员提交普通攻击；
+- `D` 为当前队员提交防御；
+- `[` / `]` 切换非空敌队，`PageUp` / `PageDown` 切换战场背景；
 - Esc 返回资源实验室。
 
-这个入口只验证原版背景、Sprite、人数和站位，不伪造回合结果。下一阶段会在同一资源层上加入 `BattleController`、经典指令 UI、身法行动队列、伤害与敌人 AI。
+样板使用新的临时 `GameSession`，不会污染探索进度。它已使用 `PalBattleController` 真实执行攻击、防御、敌人物理攻击、自动防御、体力扣减、死亡和胜负，不伪造结果；当前文字提示仍是开发期界面，最终经典战斗 UI 与逐帧动画会在后续阶段替换。
+
+## 当前回合逻辑
+
+`PalBattleController` 不依赖任何 Godot 场景节点。它持有敌人本场体力、玩家指令、防御状态和行动队列；玩家当前体力继续由 `GameSession` 持有。`PalBattlePreview` 只把 `ActionResult` 显示为 Sprite 隐藏、受击变色和文字提示。
+
+全队完成指令后，敌人与玩家统一进入行动队列：
+
+- 敌人身法为 `(等级 + 6) × 3 + signed(基础身法)`；
+- 双动敌人加入两次，身法较低的一项标记为第二动；
+- 防御指令将玩家身法乘 5；
+- 濒死角色身法减半；
+- 每项最终乘 `0.9–1.1`，再按身法从高到低执行。
+
+基础伤害忠于 `fight.c::PAL_CalcBaseDamage()`：
+
+```text
+攻击 > 防御       → 攻击 × 2 - 防御 × 1.6
+攻击 > 防御 × 0.6 → 攻击 - 防御 × 0.6
+否则              → 0
+```
+
+物理伤害再除以目标物理抗性。玩家单体普攻会加入 `1–2` 浮动、经典暴击和李逍遥额外一击判定；敌人物理攻击加入等级攻击、随机修正和 7/17 自动防御判定。最终有效普攻至少造成 1 点伤害。
+
+固定随机种子使用移植自 `util.c` 的 32 位 LCG。这样测试可以精确复现行动顺序和伤害，同时正式运行仍会使用当前时间生成种子。
+
+## 尚未完成
+
+- 敌我法术、合击、使用/投掷物品、逃跑和自动战斗；
+- 中毒、异常状态、装备加成、保护与替队员承伤；
+- 经验、金钱、升级、掉落和战后脚本；
+- 原版指令窗口、数字 Sprite、攻击/施法/受击/死亡动画和音效；
+- `ScriptVM 004A/0007` 暂停探索、进入战斗并按胜败分支恢复剧情。
+
+敌人本轮抽中法术时，控制器会明确返回“尚未接入”的动作，不会静默改成物理攻击。默认敌队 18 不触发该边界，已经可以完整验证当前普攻闭环。
 
 ## 测试
 
@@ -55,6 +91,9 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_tests.gd
+
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_battle_logic_tests.gd
 ```
 
 本地资源完整性与首战截图：
@@ -63,8 +102,11 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_local_battle_content_test.gd
 
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_battle_logic_test.gd
+
 /Applications/Godot.app/Contents/MacOS/Godot --path . \
   --script res://tests/run_local_battle_preview_test.gd
 ```
 
-截图只写入 `generated/pal/visual_tests/`。当前真实资源验收覆盖 154 条敌人属性、380 个敌队、65 个战场定义、43 个脚本引用战场、六名角色战斗 Sprite，以及敌队 18 / 战场 21 的 320×200 画面。
+截图只写入 `generated/pal/visual_tests/`。当前真实资源验收覆盖 154 条敌人属性、380 个敌队、65 个战场定义、43 个脚本引用战场、六名角色战斗 Sprite，以及敌队 18 / 战场 21 的 320×200 画面和自动普攻到胜负。

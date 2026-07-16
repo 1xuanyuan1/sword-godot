@@ -41,6 +41,16 @@ var party_roles: PackedInt32Array = PackedInt32Array([0])
 var party_script_frames: PackedInt32Array = PackedInt32Array([-1, -1, -1])
 ## 物品对象编号到数量的映射。
 var inventory: Dictionary = {}
+## 每名角色当前等级；索引与 PLAYERROLES 一致。
+var role_levels: PackedInt32Array = PackedInt32Array()
+## 每名角色最大体力。
+var role_max_hp: PackedInt32Array = PackedInt32Array()
+## 每名角色最大真气。
+var role_max_mp: PackedInt32Array = PackedInt32Array()
+## 每名角色当前体力。
+var role_hp: PackedInt32Array = PackedInt32Array()
+## 每名角色当前真气。
+var role_mp: PackedInt32Array = PackedInt32Array()
 ## SDLPal 五格队伍轨迹的世界位置。
 var trail_positions: Array[Vector2i] = []
 ## 与队伍轨迹位置对应的方向。
@@ -169,7 +179,34 @@ func clear_party_gestures() -> void:
 
 #endregion
 
-#region Inventory and lifecycle
+#region Role state, inventory and lifecycle
+
+## 从只读 PLAYERROLES 内容建立新游戏角色数值。
+## 已初始化的会话不会被重复覆盖；`reset_new_game()` 后可重新调用。
+func initialize_role_state(roles: PalPlayerRoles) -> bool:
+	if roles == null or not roles.is_valid():
+		return false
+	if role_hp.size() == PalPlayerRoles.ROLE_COUNT:
+		return true
+	role_levels = roles.levels.duplicate()
+	role_max_hp = roles.max_hp.duplicate()
+	role_max_mp = roles.max_mp.duplicate()
+	role_hp = roles.hp.duplicate()
+	role_mp = roles.mp.duplicate()
+	return true
+
+
+## 同时增减一名角色的体力和真气，并限制在 0 到最大值。
+## 角色状态尚未初始化或索引越界时返回 `false`。
+func increase_role_hp_mp(role_index: int, hp_delta: int, mp_delta: int) -> bool:
+	if role_index < 0 or role_index >= role_hp.size() or role_index >= role_mp.size():
+		return false
+	var old_hp := role_hp[role_index]
+	var old_mp := role_mp[role_index]
+	role_hp[role_index] = clampi(old_hp + hp_delta, 0, role_max_hp[role_index])
+	role_mp[role_index] = clampi(old_mp + mp_delta, 0, role_max_mp[role_index])
+	return role_hp[role_index] != old_hp or role_mp[role_index] != old_mp
+
 
 ## 返回指定物品数量，背包中不存在时为 0。
 func item_count(item_id: int) -> int:
@@ -208,6 +245,11 @@ func reset_new_game() -> void:
 	world_layer = 0
 	party_roles = PackedInt32Array([0])
 	inventory.clear()
+	role_levels = PackedInt32Array()
+	role_max_hp = PackedInt32Array()
+	role_max_mp = PackedInt32Array()
+	role_hp = PackedInt32Array()
+	role_mp = PackedInt32Array()
 	clear_party_gestures()
 	_initialize_trail(party_world_position())
 
