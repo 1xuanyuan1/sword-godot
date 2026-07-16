@@ -23,6 +23,8 @@
 
 第一次阅读代码请从[中文文档导航](docs/README.md)开始，再查看[项目目录结构](docs/PROJECT_STRUCTURE.md)和[整体架构](docs/ARCHITECTURE.md)。详细进度见[功能变更记录](.yulia/kb/changelog/changelog.md)，后续工作和优先级见[开发待办跟踪](.yulia/kb/changelog/todo.md)。功能完成并验证后，会从待办归档到变更记录。
 
+从新游戏到结局的原版主线、关键道具、谜题、主要 Boss 和 Godot 当前可玩范围见[完整游戏攻略](docs/GAME_WALKTHROUGH.md)。
+
 原版菜单还原范围与坐标基准见[经典菜单与物品页](docs/CLASSIC_UI.md)。
 音频导入、场景曲目关系和菜单音量见[音乐、音效与音量](docs/AUDIO.md)。
 
