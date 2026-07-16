@@ -30,6 +30,7 @@ func _init() -> void:
 	_test_explorer_touch_scan()
 	_test_item_definition()
 	_test_player_roles_structure()
+	_test_battle_content_structures()
 	_test_scene_draw_item_anchors()
 	_test_scene_y_sorting()
 	_test_pal_direction_mapping()
@@ -541,17 +542,81 @@ func _test_player_roles_structure() -> void:
 	var role_bytes := PackedByteArray()
 	role_bytes.resize(PalPlayerRoles.BYTE_SIZE)
 	role_bytes[PalPlayerRoles.AVATAR_WORD_OFFSET * 2] = 11
+	role_bytes[PalPlayerRoles.BATTLE_SPRITE_WORD_OFFSET * 2] = 5
 	var sprite_offset := PalPlayerRoles.SCENE_SPRITE_WORD_OFFSET * 2
 	role_bytes[sprite_offset] = 2
 	role_bytes[sprite_offset + 2] = 7
 	role_bytes[PalPlayerRoles.NAME_WORD_OFFSET * 2] = 36
+	role_bytes.encode_u16(PalPlayerRoles.LEVEL_WORD_OFFSET * 2, 5)
+	role_bytes.encode_u16(PalPlayerRoles.MAX_HP_WORD_OFFSET * 2, 120)
+	role_bytes.encode_u16(PalPlayerRoles.MAX_MP_WORD_OFFSET * 2, 60)
+	role_bytes.encode_u16(PalPlayerRoles.HP_WORD_OFFSET * 2, 90)
+	role_bytes.encode_u16(PalPlayerRoles.MP_WORD_OFFSET * 2, 40)
+	role_bytes.encode_u16(PalPlayerRoles.ATTACK_STRENGTH_WORD_OFFSET * 2, 33)
+	role_bytes.encode_u16(PalPlayerRoles.MAGIC_STRENGTH_WORD_OFFSET * 2, 44)
+	role_bytes.encode_u16(PalPlayerRoles.DEFENSE_WORD_OFFSET * 2, 22)
+	role_bytes.encode_u16(PalPlayerRoles.DEXTERITY_WORD_OFFSET * 2, 18)
+	role_bytes.encode_u16(PalPlayerRoles.FLEE_RATE_WORD_OFFSET * 2, 15)
+	role_bytes.encode_u16(PalPlayerRoles.MAGIC_WORD_OFFSET * 2, 345)
 	var walk_offset := PalPlayerRoles.WALK_FRAMES_WORD_OFFSET * 2
 	role_bytes[walk_offset] = 4
 	var roles := PalPlayerRoles.from_bytes(role_bytes)
 	_expect(roles.is_valid(), "PLAYERROLES structure length")
-	_expect(roles.avatar_for(0) == 11 and roles.name_word_for(0) == 36, "PLAYERROLES avatar and name word")
+	_expect(roles.avatar_for(0) == 11 and roles.battle_sprite_for(0) == 5 and roles.name_word_for(0) == 36, "PLAYERROLES avatar, battle sprite and name word")
 	_expect(roles.scene_sprite_for(0) == 2 and roles.scene_sprite_for(1) == 7, "PLAYERROLES scene sprite numbers")
+	_expect(roles.level_for(0) == 5 and roles.max_hp_for(0) == 120 and roles.max_mp_for(0) == 60, "PLAYERROLES level and maximum HP/MP")
+	_expect(roles.hp_for(0) == 90 and roles.mp_for(0) == 40 and roles.magics_for(0) == PackedInt32Array([345]), "PLAYERROLES current HP/MP and initial magic table")
+	_expect(roles.attack_strength_for(0) == 33 and roles.magic_strength_for(0) == 44 and roles.defense_for(0) == 22 and roles.dexterity_for(0) == 18 and roles.flee_rate_for(0) == 15, "PLAYERROLES classic battle stats")
 	_expect(roles.walk_frame_count_for(0) == 4 and roles.walk_frame_count_for(1) == 3, "PLAYERROLES walk frame fallback")
+
+
+func _test_battle_content_structures() -> void:
+	var object_bytes := PackedByteArray()
+	for value in [9, 7, 101, 102, 103, 0]:
+		PalBinary.append_u16_le(object_bytes, value)
+	var enemy_object := PalEnemyObjectDefinition.from_bytes(object_bytes, 0, 18)
+	_expect(enemy_object != null and enemy_object.object_id == 18 and enemy_object.enemy_id == 9 and enemy_object.resistance_to_sorcery == 7, "enemy object maps OBJECT id to DATA enemy id")
+	_expect(enemy_object.script_on_turn_start == 101 and enemy_object.script_on_battle_end == 102 and enemy_object.script_on_ready == 103, "enemy object battle scripts")
+
+	var enemy_bytes := PackedByteArray()
+	enemy_bytes.resize(PalEnemyDefinition.BYTE_SIZE)
+	enemy_bytes.encode_u16(0, 4)
+	enemy_bytes.encode_u16(5 * 2, 6)
+	enemy_bytes.encode_u16(6 * 2, 0xffff)
+	enemy_bytes.encode_u16(11 * 2, 120)
+	enemy_bytes.encode_u16(12 * 2, 35)
+	enemy_bytes.encode_u16(13 * 2, 17)
+	enemy_bytes.encode_u16(21 * 2, 28)
+	enemy_bytes.encode_u16(23 * 2, 12)
+	enemy_bytes.encode_u16(24 * 2, 19)
+	enemy_bytes.encode_u16(27 * 2, 3)
+	enemy_bytes.encode_u16(34 * 2, 8)
+	var enemy := PalEnemyDefinition.from_bytes(enemy_bytes, 0, 9)
+	_expect(enemy != null and enemy.enemy_id == 9 and enemy.idle_frames == 4 and enemy.y_position_offset == 6 and enemy.sounds[0] == -1, "enemy animation and signed sound fields")
+	_expect(enemy.health == 120 and enemy.experience == 35 and enemy.cash == 17 and enemy.attack_strength == 28 and enemy.defense == 12 and enemy.dexterity == 19, "enemy combat and reward fields")
+	_expect(enemy.elemental_resistances[0] == 3 and enemy.collect_value == 8, "enemy resistance and collection fields")
+
+	var team_bytes := PackedByteArray()
+	for value in [18, 0xffff, 20, 0, 0]:
+		PalBinary.append_u16_le(team_bytes, value)
+	var team := PalEnemyTeam.from_bytes(team_bytes, 0, 6)
+	_expect(team != null and team.team_id == 6 and team.object_ids.size() == PalEnemyTeam.MAX_ENEMIES, "enemy team preserves five raw slots")
+	_expect(team.active_object_ids() == PackedInt32Array([18, 20]), "enemy team compacts active object ids")
+
+	var battlefield_bytes := PackedByteArray()
+	for value in [4, 1, 0xffff, 2, 0xfffe, 0]:
+		PalBinary.append_u16_le(battlefield_bytes, value)
+	var battlefield := PalBattlefield.from_bytes(battlefield_bytes, 0, 21)
+	_expect(battlefield != null and battlefield.battlefield_id == 21 and battlefield.screen_wave == 4, "battlefield identity and wave")
+	_expect(battlefield.magic_effects == PackedInt32Array([1, -1, 2, -2, 0]), "battlefield signed elemental effects")
+
+	var position_bytes := PackedByteArray()
+	for index in range(PalEnemyTeam.MAX_ENEMIES * PalEnemyTeam.MAX_ENEMIES):
+		PalBinary.append_u16_le(position_bytes, index)
+		PalBinary.append_u16_le(position_bytes, 100 + index)
+	var positions := PalBattlefield.EnemyPositions.from_bytes(position_bytes)
+	_expect(positions.is_valid() and positions.position_for(2, 3) == Vector2i(12, 112), "enemy position matrix uses enemy index and count minus one")
+	_expect(positions.position_for(5, 3) == Vector2i.ZERO and not PalBattlefield.EnemyPositions.from_bytes(PackedByteArray()).is_valid(), "enemy position matrix rejects invalid ranges and lengths")
 
 
 func _test_scene_draw_item_anchors() -> void:

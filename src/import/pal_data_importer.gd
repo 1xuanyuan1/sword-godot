@@ -72,6 +72,9 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_generate_tileset_maps(absolute_output, report)
 	_convert_item_bitmaps(files_by_lowercase["ball.mkf"], absolute_output, report)
 	_convert_mgo_sprites(files_by_lowercase["mgo.mkf"], absolute_output, report)
+	_convert_battle_sprite_archive(files_by_lowercase["abc.mkf"], absolute_output.path_join("content/battle/sprites/enemies"), "enemy_battle_sprites", report)
+	_convert_battle_sprite_archive(files_by_lowercase["f.mkf"], absolute_output.path_join("content/battle/sprites/players"), "player_battle_sprites", report)
+	_convert_battle_backgrounds(files_by_lowercase["fbp.mkf"], absolute_output, report)
 	_convert_rgm_portraits(files_by_lowercase["rgm.mkf"], absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)
 	_generate_fbp_preview(files_by_lowercase["fbp.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
@@ -281,6 +284,69 @@ static func _convert_mgo_sprites(mgo_path: String, absolute_output: String, repo
 		report.warnings.append("mgo.mkf 中没有成功转换的场景 Sprite")
 	if not decode_failures.is_empty() or not invalid_sprites.is_empty():
 		report.errors.append("MGO 场景 Sprite 校验失败：%d 个解压失败，%d 个帧表无效" % [decode_failures.size(), invalid_sprites.size()])
+
+
+static func _convert_battle_sprite_archive(archive_path: String, output_dir: String, report_key: String, report: PalImportReport) -> void:
+	var archive := MkfArchive.load_file(archive_path)
+	if not archive.is_valid():
+		return
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	_clear_generated_resources(output_dir, ".spr")
+	var converted := 0
+	var failures: Array[Dictionary] = []
+	for sprite_index in range(archive.chunk_count()):
+		var compressed := archive.get_chunk(sprite_index)
+		if compressed.is_empty():
+			continue
+		var decoder := Yj1Decoder.new()
+		var sprite_bytes := decoder.decompress(compressed, 8 * 1024 * 1024)
+		var sprite := PalSprite.from_bytes(sprite_bytes)
+		if sprite_bytes.is_empty() or not sprite.is_valid():
+			failures.append({"index": sprite_index, "error": decoder.error_message if sprite_bytes.is_empty() else sprite.error_message})
+			continue
+		if _write_bytes(output_dir.path_join("%03d.spr" % sprite_index), sprite_bytes):
+			converted += 1
+		else:
+			failures.append({"index": sprite_index, "error": "无法写入生成文件"})
+	report.files[report_key] = {
+		"converted": converted,
+		"failures": failures,
+		"output": output_dir,
+	}
+	if converted == 0:
+		report.errors.append("%s 没有成功转换任何战斗 Sprite" % archive_path.get_file())
+	elif not failures.is_empty():
+		report.warnings.append("%s 有 %d 个非空战斗 Sprite 分块无法转换" % [archive_path.get_file(), failures.size()])
+
+
+static func _convert_battle_backgrounds(fbp_path: String, absolute_output: String, report: PalImportReport) -> void:
+	var archive := MkfArchive.load_file(fbp_path)
+	if not archive.is_valid():
+		return
+	var output_dir := absolute_output.path_join("content/battle/backgrounds")
+	DirAccess.make_dir_recursive_absolute(output_dir)
+	_clear_generated_resources(output_dir, ".idx")
+	var converted := 0
+	var failures: Array[int] = []
+	for battlefield_index in range(archive.chunk_count()):
+		var decoder := Yj1Decoder.new()
+		var indices := decoder.decompress(archive.get_chunk(battlefield_index), 320 * 200)
+		if indices.size() != 320 * 200:
+			failures.append(battlefield_index)
+			continue
+		if _write_bytes(output_dir.path_join("%03d.idx" % battlefield_index), indices):
+			converted += 1
+		else:
+			failures.append(battlefield_index)
+	report.files["battle_backgrounds"] = {
+		"converted": converted,
+		"failures": failures,
+		"output": output_dir,
+	}
+	if converted == 0:
+		report.errors.append("FBP.MKF 没有成功转换任何战场背景")
+	elif not failures.is_empty():
+		report.warnings.append("FBP.MKF 有 %d 个战场背景分块无法转换" % failures.size())
 
 
 static func _convert_item_bitmaps(ball_path: String, absolute_output: String, report: PalImportReport) -> void:

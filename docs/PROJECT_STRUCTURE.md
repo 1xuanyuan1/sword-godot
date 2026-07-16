@@ -8,6 +8,7 @@ sword/
 ├── scenes/                # 可直接切换的 Godot 场景
 ├── src/
 │   ├── audio/             # Godot 原生 BGM/音效播放与音量应用
+│   ├── battle/            # 经典战斗画面、回合状态与控制器
 │   ├── content/           # PAL 结构化数据模型和内容数据库
 │   ├── debug/             # 剧情检查点与开发验证入口
 │   ├── formats/           # MKF、YJ1、RLE、Sprite、地图等底层格式
@@ -28,6 +29,7 @@ sword/
 - `scenes/main.tscn`：工程主入口，提供数据目录选择、导入和实验室导航。
 - `scenes/map_explorer.tscn`：当前可玩探索场景，连接 `GameSession`、`ScriptVM`、地图世界、对话框和菜单。
 - `scenes/rng_preview.tscn`：RNG 增量动画浏览器。
+- `scenes/battle_preview.tscn`：敌队、战场和双方战斗 Sprite 的第一阶段可视化样板。
 - `scenes/story_test_lab.tscn`：只保留尚需人工验收的剧情检查点；完成项转为自动回归后移除。
 
 ## 源码模块
@@ -39,6 +41,10 @@ sword/
 ### `src/audio`
 
 `PalAudioPlayer` 加载本地转换的 RIX/VOC WAV，维护 BGM 声道、短音效声道池、循环、淡入淡出和即时音量；它不决定剧情应该播放哪个编号。
+
+### `src/battle`
+
+当前 `PalBattlePreview` 根据内容数据库绘制战场背景、敌队和玩家战斗 Sprite，严格使用 SDLPal 的双方站位。后续 `BattleController` 会在本目录持有单场战斗状态；静态敌人属性仍属于 `src/content`，玩家跨战斗状态仍属于 `GameSession`。
 
 ### `src/import`
 

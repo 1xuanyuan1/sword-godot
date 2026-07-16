@@ -11,6 +11,8 @@ flowchart LR
     D --> F[ScriptVM]
     E <--> F
     D --> G[MapExplorer]
+    D --> O[PalBattlePreview / BattleController]
+    E --> O
     E --> G
     F --> G
     G --> H[PalTileMapWorld]
@@ -33,6 +35,7 @@ flowchart LR
 | `PalMapCoordinates` | 世界像素到菱形 MAP half 的碰撞换算、玩家活动边界 | 读取地图内容、修改队伍位置 |
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
+| `PalBattlePreview` | 当前样板所选敌队、战场和显示节点 | 修改剧情、伪造战斗结果 |
 | UI | 对话、Toast、菜单和资源实验室的显示状态 | 绕过 ScriptVM 修改剧情 |
 
 ## 启动与场景加载
@@ -93,3 +96,9 @@ sequenceDiagram
 地图和人物纹理保存“颜色索引 + 透明度”，`indexed_palette.gdshader` 在 GPU 上映射到当前 PAL 调色板。这样日夜切换和后续淡入淡出只更新材质，不需要每次移动都重新生成 320×200 RGBA 图片。
 
 CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileMapLayer 已成为默认路径；CPU 路径保留一个里程碑用于排错和本地截图对照。
+
+## 战斗资源与状态边界
+
+`PalContentDatabase` 读取敌人属性、敌队、战场、敌人位置和双方战斗 Sprite，这些都是只读内容。`PalBattlePreview` 当前只把它们按 SDLPal `battle.c` 的脚底锚点显示出来。后续单场敌人当前体力、状态、行动和目标由 `BattleController` 持有；角色跨战斗的体力、真气、等级和已学仙术继续由 `GameSession` 持有。
+
+脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时才暂停 ScriptVM、创建战斗并等待胜负结果。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗才使用 `operand[2]` 分支。该桥接属于下一阶段，当前样板不会提前让脚本越过战斗。

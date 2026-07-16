@@ -12,6 +12,7 @@ var _import_button: Button
 var _explore_button: Button
 var _rng_button: Button
 var _story_test_button: Button
+var _battle_button: Button
 var _dialog: FileDialog
 
 
@@ -103,6 +104,14 @@ func _build_interface() -> void:
 	_story_test_button.pressed.connect(_open_story_test)
 	actions.add_child(_story_test_button)
 
+	_battle_button = Button.new()
+	_battle_button.text = "战斗样板"
+	_battle_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_battle_button.add_theme_font_size_override("font_size", 9)
+	_battle_button.disabled = true
+	_battle_button.pressed.connect(_open_battle_preview)
+	actions.add_child(_battle_button)
+
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	split.split_offset = 205
@@ -152,6 +161,7 @@ func _show_idle_state() -> void:
 	_explore_button.disabled = not has_generated_content
 	_story_test_button.disabled = not has_generated_content
 	_rng_button.disabled = not FileAccess.file_exists("res://generated/pal/rng/000/000.png")
+	_battle_button.disabled = not FileAccess.file_exists("res://generated/pal/content/battle/backgrounds/021.idx")
 	var state_text := "已发现本地生成内容，可以打开预览。" if has_generated_content else ("生成内容版本较旧，请重新导入 Data。" if has_core_content else "等待资源目录。")
 	_status.text = "[color=#93c5fd]%s[/color] 本仓库不会复制或上传原版数据。" % state_text
 	var root := _details.create_item()
@@ -184,7 +194,7 @@ func _show_report(report: PalImportReport) -> void:
 	_details.clear()
 	var root := _details.create_item()
 	for file_name: String in report.files.keys():
-		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "rng_preview", "voc_conversion", "rix_conversion", "mgo_conversion", "rgm_conversion", "content_database", "text_conversion"]:
+		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "rng_preview", "voc_conversion", "rix_conversion", "mgo_conversion", "rgm_conversion", "content_database", "text_conversion", "enemy_battle_sprites", "player_battle_sprites", "battle_backgrounds"]:
 			continue
 		var metadata: Dictionary = report.files[file_name]
 		var item := _details.create_item(root)
@@ -203,6 +213,7 @@ func _show_report(report: PalImportReport) -> void:
 		_explore_button.disabled = false
 		_story_test_button.disabled = false
 		_rng_button.disabled = not report.files.has("rng_preview")
+		_battle_button.disabled = not report.files.has("battle_backgrounds")
 	_status.text = "\n".join(lines)
 
 	_preview.texture = null
@@ -222,6 +233,10 @@ func _open_rng_preview() -> void:
 
 func _open_story_test() -> void:
 	get_tree().change_scene_to_file("res://scenes/story_test_lab.tscn")
+
+
+func _open_battle_preview() -> void:
+	get_tree().change_scene_to_file("res://scenes/battle_preview.tscn")
 
 
 func _format_size(bytes: int) -> String:

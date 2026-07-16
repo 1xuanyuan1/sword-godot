@@ -43,6 +43,34 @@ keywords:
   - `docs/README.md`
   - `README.md`
 
+---
+
+### [FT-022] [feat] 建立经典战斗资源与静态显示基础
+
+- **关联需求**: M4 经典战斗提前实施
+- **关联 TODO**: TD-005（阶段性）
+- **功能描述**: 解析 `DATA.MKF` 中 154 条敌人属性、380 个敌队、65 个战场定义、五种敌人数站位，以及 OBJECT 敌人映射和 PLAYERROLES 战斗 Sprite/基础数值；导入 `ABC.MKF`、`F.MKF` 与全部 FBP 320×200 索引背景到本地生成目录。新增战斗样板，按 SDLPal `battle.c` 的原始锚点绘制敌队 18、战场 21、两个黑苗敌人与李逍遥/赵灵儿，并可切换敌队和战场检查资源。
+- **验证情况**: 本阶段提交快照的 242 项合成测试通过；本地回归确认 380 个脚本敌队、43 个脚本战场及六名角色战斗 Sprite 可加载，敌队 18 / 战场 21 的 320×200 真实渲染截图包含双方四个 Sprite。指令选择、行动队列和胜负结算仍属于 TD-005 后续阶段。
+- **涉及文件**:
+  - `src/content/pal_enemy_object_definition.gd`
+  - `src/content/pal_enemy_definition.gd`
+  - `src/content/pal_enemy_team.gd`
+  - `src/content/pal_battlefield.gd`
+  - `src/content/pal_player_roles.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/ui/import_lab.gd`
+  - `scenes/battle_preview.tscn`
+  - `tests/run_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

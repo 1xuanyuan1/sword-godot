@@ -23,6 +23,16 @@ var event_objects: Array[PalEventObject] = []
 var scripts: Array[PalScriptEntry] = []
 ## DOS OBJECT 表中的物品定义。
 var items: Array[PalItemDefinition] = []
+## DOS OBJECT 表按敌人结构解释后的定义；索引与对象编号一致。
+var enemy_objects: Array[PalEnemyObjectDefinition] = []
+## `DATA.MKF #1` 中的敌人基础属性。
+var enemies: Array[PalEnemyDefinition] = []
+## `DATA.MKF #2` 中的敌队编组。
+var enemy_teams: Array[PalEnemyTeam] = []
+## `DATA.MKF #5` 中的战场效果表。
+var battlefields: Array[PalBattlefield] = []
+## `DATA.MKF #13` 中按敌人数排列的五槽站位矩阵。
+var enemy_positions: PalBattlefield.EnemyPositions
 ## 角色肖像、场景 Sprite、名字和步态字段。
 var player_roles: PalPlayerRoles
 ## WORD.DAT 解码后的词条。
@@ -34,6 +44,9 @@ var item_descriptions: Dictionary = {}
 ## 文本转换器实际识别的源编码。
 var source_encoding: String = ""
 var _mgo_sprites: Dictionary = {}
+var _enemy_battle_sprites: Dictionary = {}
+var _player_battle_sprites: Dictionary = {}
+var _battle_backgrounds: Dictionary = {}
 var _rgm_portraits: Dictionary = {}
 var _item_bitmaps: Dictionary = {}
 var _ui_sprite: PalSprite
@@ -52,11 +65,19 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	event_objects.clear()
 	scripts.clear()
 	items.clear()
+	enemy_objects.clear()
+	enemies.clear()
+	enemy_teams.clear()
+	battlefields.clear()
+	enemy_positions = null
 	player_roles = null
 	words.clear()
 	messages.clear()
 	item_descriptions.clear()
 	_mgo_sprites.clear()
+	_enemy_battle_sprites.clear()
+	_player_battle_sprites.clear()
+	_battle_backgrounds.clear()
 	_rgm_portraits.clear()
 	_item_bitmaps.clear()
 	_ui_sprite = null
@@ -69,9 +90,13 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
 	var script_bytes := _read_file(core.path_join("scripts.bin"))
 	var object_bytes := _read_file(core.path_join("objects_dos.bin"))
+	var enemy_bytes := _read_file(root_path.path_join("data/01.bin"))
+	var enemy_team_bytes := _read_file(root_path.path_join("data/02.bin"))
+	var battlefield_bytes := _read_file(root_path.path_join("data/05.bin"))
+	var enemy_position_bytes := _read_file(root_path.path_join("data/13.bin"))
 	if not error_message.is_empty():
 		return false
-	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0:
+	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0 or enemy_bytes.size() % PalEnemyDefinition.BYTE_SIZE != 0 or enemy_team_bytes.size() % PalEnemyTeam.BYTE_SIZE != 0 or battlefield_bytes.size() % PalBattlefield.BYTE_SIZE != 0:
 		error_message = "生成数据库的结构长度不匹配"
 		return false
 	for offset in range(0, event_bytes.size(), PalEventObject.BYTE_SIZE):
@@ -83,7 +108,19 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	for offset in range(0, script_bytes.size(), PalScriptEntry.BYTE_SIZE):
 		scripts.append(PalScriptEntry.from_bytes(script_bytes, offset))
 	for offset in range(0, object_bytes.size(), PalItemDefinition.BYTE_SIZE):
-		items.append(PalItemDefinition.from_bytes(object_bytes, offset, items.size()))
+		var object_id := items.size()
+		items.append(PalItemDefinition.from_bytes(object_bytes, offset, object_id))
+		enemy_objects.append(PalEnemyObjectDefinition.from_bytes(object_bytes, offset, object_id))
+	for offset in range(0, enemy_bytes.size(), PalEnemyDefinition.BYTE_SIZE):
+		enemies.append(PalEnemyDefinition.from_bytes(enemy_bytes, offset, enemies.size()))
+	for offset in range(0, enemy_team_bytes.size(), PalEnemyTeam.BYTE_SIZE):
+		enemy_teams.append(PalEnemyTeam.from_bytes(enemy_team_bytes, offset, enemy_teams.size()))
+	for offset in range(0, battlefield_bytes.size(), PalBattlefield.BYTE_SIZE):
+		battlefields.append(PalBattlefield.from_bytes(battlefield_bytes, offset, battlefields.size()))
+	enemy_positions = PalBattlefield.EnemyPositions.from_bytes(enemy_position_bytes)
+	if not enemy_positions.is_valid():
+		error_message = enemy_positions.error_message
+		return false
 	player_roles = PalPlayerRoles.from_bytes(_read_file(root_path.path_join("data/03.bin")))
 	if player_roles == null or not player_roles.is_valid():
 		error_message = player_roles.error_message if player_roles != null else "PLAYERROLES 数据缺失"
@@ -138,6 +175,46 @@ func load_mgo_sprite(sprite_number: int) -> PalSprite:
 	var sprite := PalSprite.from_bytes(file.get_buffer(file.get_length()) if file != null else PackedByteArray())
 	_mgo_sprites[sprite_number] = sprite
 	return sprite
+
+
+## 按敌人属性编号读取并缓存 `ABC.MKF` 战斗 Sprite；缺失时返回无效对象。
+func load_enemy_battle_sprite(enemy_id: int) -> PalSprite:
+	if _enemy_battle_sprites.has(enemy_id):
+		return _enemy_battle_sprites[enemy_id]
+	var sprite := _load_generated_sprite(root_path.path_join("battle/sprites/enemies/%03d.spr" % enemy_id))
+	_enemy_battle_sprites[enemy_id] = sprite
+	return sprite
+
+
+## 按 Sprite 编号读取并缓存 `F.MKF` 玩家战斗 Sprite；缺失时返回无效对象。
+func load_player_battle_sprite(sprite_number: int) -> PalSprite:
+	if _player_battle_sprites.has(sprite_number):
+		return _player_battle_sprites[sprite_number]
+	var sprite := _load_generated_sprite(root_path.path_join("battle/sprites/players/%03d.spr" % sprite_number))
+	_player_battle_sprites[sprite_number] = sprite
+	return sprite
+
+
+## 读取 320×200 战场索引背景；未重新导入或编号越界时返回无效图像。
+func load_battle_background(battlefield_id: int) -> PalIndexedImage:
+	if _battle_backgrounds.has(battlefield_id):
+		return _battle_backgrounds[battlefield_id]
+	var result := PalIndexedImage.new()
+	var path := root_path.path_join("battle/backgrounds/%03d.idx" % battlefield_id)
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		result.error_message = "缺少战场背景 %d，请重新导入 Data" % battlefield_id
+	else:
+		result.indices = file.get_buffer(file.get_length())
+		if result.indices.size() != 320 * 200:
+			result.error_message = "战场背景 %d 长度错误" % battlefield_id
+		else:
+			result.width = 320
+			result.height = 200
+			result.opacity.resize(result.indices.size())
+			result.opacity.fill(255)
+	_battle_backgrounds[battlefield_id] = result
+	return result
 
 
 ## 按编号读取并缓存 RGM 对话肖像；缺失时返回无效索引图像。
@@ -208,6 +285,27 @@ func item_definition(object_id: int) -> PalItemDefinition:
 	return items[object_id] if object_id >= 0 and object_id < items.size() else null
 
 
+## 返回指定敌队定义，编号越界时返回 `null`。
+func enemy_team_definition(team_id: int) -> PalEnemyTeam:
+	return enemy_teams[team_id] if team_id >= 0 and team_id < enemy_teams.size() else null
+
+
+## 返回 OBJECT 表中的敌人视图，编号越界时返回 `null`。
+func enemy_object_definition(object_id: int) -> PalEnemyObjectDefinition:
+	return enemy_objects[object_id] if object_id >= 0 and object_id < enemy_objects.size() else null
+
+
+## 通过 OBJECT 敌人对象编号返回对应基础属性；映射无效时返回 `null`。
+func enemy_definition_for_object(object_id: int) -> PalEnemyDefinition:
+	var object := enemy_object_definition(object_id)
+	return enemies[object.enemy_id] if object != null and object.enemy_id >= 0 and object.enemy_id < enemies.size() else null
+
+
+## 返回指定战场效果定义，编号越界时返回 `null`。
+func battlefield_definition(battlefield_id: int) -> PalBattlefield:
+	return battlefields[battlefield_id] if battlefield_id >= 0 and battlefield_id < battlefields.size() else null
+
+
 ## 返回经人工剧情确认的无标题消息说话角色，未知时为 -1。
 static func speaker_role_for_message(index: int) -> int:
 	return int(MESSAGE_SPEAKER_ROLE_OVERRIDES.get(index, -1))
@@ -230,6 +328,11 @@ func _load_text_database() -> void:
 	words = parsed.get("words", [])
 	messages = parsed.get("messages", [])
 	item_descriptions = parsed.get("object_descriptions", {})
+
+
+func _load_generated_sprite(path: String) -> PalSprite:
+	var file := FileAccess.open(path, FileAccess.READ)
+	return PalSprite.from_bytes(file.get_buffer(file.get_length()) if file != null else PackedByteArray())
 
 
 func _build_speaker_portrait_defaults() -> void:
