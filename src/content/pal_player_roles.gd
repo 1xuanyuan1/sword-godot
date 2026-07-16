@@ -18,6 +18,8 @@ const MAX_HP_WORD_OFFSET := 42
 const MAX_MP_WORD_OFFSET := 48
 const HP_WORD_OFFSET := 54
 const MP_WORD_OFFSET := 60
+const EQUIPMENT_WORD_OFFSET := 66
+const EQUIPMENT_SLOT_COUNT := 6
 const ATTACK_STRENGTH_WORD_OFFSET := 102
 const MAGIC_STRENGTH_WORD_OFFSET := 108
 const DEFENSE_WORD_OFFSET := 114
@@ -71,6 +73,8 @@ var max_mp: PackedInt32Array = PackedInt32Array()
 var hp: PackedInt32Array = PackedInt32Array()
 ## 每名角色的新游戏当前真气。
 var mp: PackedInt32Array = PackedInt32Array()
+## 每名角色六个部位的新游戏初始装备对象编号。
+var equipments_by_role: Array[PackedInt32Array] = []
 ## 每名角色是否用普通攻击命中全体敌人。
 var attack_all: PackedInt32Array = PackedInt32Array()
 ## 每名角色的基础攻击力。
@@ -110,6 +114,10 @@ static func from_bytes(data: PackedByteArray) -> PalPlayerRoles:
 		roles.max_mp.append(PalBinary.u16_le(data, (MAX_MP_WORD_OFFSET + role_index) * 2))
 		roles.hp.append(PalBinary.u16_le(data, (HP_WORD_OFFSET + role_index) * 2))
 		roles.mp.append(PalBinary.u16_le(data, (MP_WORD_OFFSET + role_index) * 2))
+		var role_equipments := PackedInt32Array()
+		for slot_index in range(EQUIPMENT_SLOT_COUNT):
+			role_equipments.append(PalBinary.u16_le(data, (EQUIPMENT_WORD_OFFSET + slot_index * ROLE_COUNT + role_index) * 2))
+		roles.equipments_by_role.append(role_equipments)
 		roles.attack_strengths.append(PalBinary.u16_le(data, (ATTACK_STRENGTH_WORD_OFFSET + role_index) * 2))
 		roles.magic_strengths.append(PalBinary.u16_le(data, (MAGIC_STRENGTH_WORD_OFFSET + role_index) * 2))
 		roles.defenses.append(PalBinary.u16_le(data, (DEFENSE_WORD_OFFSET + role_index) * 2))
@@ -139,7 +147,13 @@ static func from_bytes(data: PackedByteArray) -> PalPlayerRoles:
 
 ## 返回结构是否通过长度和字段校验。
 func is_valid() -> bool:
-	return error_message.is_empty() and avatar_numbers.size() == ROLE_COUNT and battle_sprite_numbers.size() == ROLE_COUNT and scene_sprite_numbers.size() == ROLE_COUNT and name_word_indices.size() == ROLE_COUNT and attack_all.size() == ROLE_COUNT and levels.size() == ROLE_COUNT and max_hp.size() == ROLE_COUNT and max_mp.size() == ROLE_COUNT and hp.size() == ROLE_COUNT and mp.size() == ROLE_COUNT and attack_strengths.size() == ROLE_COUNT and magic_strengths.size() == ROLE_COUNT and defenses.size() == ROLE_COUNT and dexterities.size() == ROLE_COUNT and flee_rates.size() == ROLE_COUNT and poison_resistances.size() == ROLE_COUNT and elemental_resistances_by_role.size() == ROLE_COUNT and magics_by_role.size() == ROLE_COUNT and walk_frames.size() == ROLE_COUNT and attack_sounds.size() == ROLE_COUNT and weapon_sounds.size() == ROLE_COUNT and critical_sounds.size() == ROLE_COUNT and cover_sounds.size() == ROLE_COUNT and death_sounds.size() == ROLE_COUNT
+	var fields_are_valid := error_message.is_empty() and avatar_numbers.size() == ROLE_COUNT and battle_sprite_numbers.size() == ROLE_COUNT and scene_sprite_numbers.size() == ROLE_COUNT and name_word_indices.size() == ROLE_COUNT and attack_all.size() == ROLE_COUNT and levels.size() == ROLE_COUNT and max_hp.size() == ROLE_COUNT and max_mp.size() == ROLE_COUNT and hp.size() == ROLE_COUNT and mp.size() == ROLE_COUNT and equipments_by_role.size() == ROLE_COUNT and attack_strengths.size() == ROLE_COUNT and magic_strengths.size() == ROLE_COUNT and defenses.size() == ROLE_COUNT and dexterities.size() == ROLE_COUNT and flee_rates.size() == ROLE_COUNT and poison_resistances.size() == ROLE_COUNT and elemental_resistances_by_role.size() == ROLE_COUNT and magics_by_role.size() == ROLE_COUNT and walk_frames.size() == ROLE_COUNT and attack_sounds.size() == ROLE_COUNT and weapon_sounds.size() == ROLE_COUNT and critical_sounds.size() == ROLE_COUNT and cover_sounds.size() == ROLE_COUNT and death_sounds.size() == ROLE_COUNT
+	if not fields_are_valid:
+		return false
+	for equipments in equipments_by_role:
+		if equipments.size() != EQUIPMENT_SLOT_COUNT:
+			return false
+	return true
 
 
 ## 返回角色的默认 RGM 肖像编号，越界时返回 0。
@@ -170,6 +184,11 @@ func level_for(role_index: int) -> int:
 ## 返回角色最大体力，越界时返回 0。
 func max_hp_for(role_index: int) -> int:
 	return max_hp[role_index] if role_index >= 0 and role_index < max_hp.size() else 0
+
+
+## 返回角色六个初始装备对象编号的副本；角色越界时返回空数组。
+func equipments_for(role_index: int) -> PackedInt32Array:
+	return equipments_by_role[role_index].duplicate() if role_index >= 0 and role_index < equipments_by_role.size() else PackedInt32Array()
 
 
 ## 返回角色最大真气，越界时返回 0。

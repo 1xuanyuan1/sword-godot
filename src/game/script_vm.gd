@@ -86,6 +86,7 @@ var _reported_auto_instructions: Dictionary = {}
 var _current_rng_animation: int = 0
 var _battle_defeat_entry: int = 0
 var _battle_flee_entry: int = 0
+var _equipment_manager := PalEquipmentManager.new()
 
 const BATTLE_RESULT_VICTORY := 1
 const BATTLE_RESULT_DEFEAT := 2
@@ -100,6 +101,8 @@ func configure(content_database: PalContentDatabase, game_session: GameSession =
 	session = game_session
 	if session != null and database != null:
 		session.initialize_role_state(database.player_roles)
+	_equipment_manager.database = database
+	_equipment_manager.session = session
 	_reported_auto_instructions.clear()
 
 
@@ -366,10 +369,20 @@ func _continue_execution() -> int:
 			0x0020:
 				if session != null:
 					var amount := entry.operands[1] if entry.operands[1] > 0 else 1
-					if session.item_count(entry.operands[0]) < amount and entry.operands[2] > 0:
+					var total_amount := session.item_count(entry.operands[0]) + session.equipped_item_count(entry.operands[0])
+					if total_amount < amount and entry.operands[2] > 0:
 						_cursor = entry.operands[2]
 						continue
-					session.change_item_count(entry.operands[0], -amount)
+					if not session.equipment_effects_ready:
+						_equipment_manager.rebuild_all_effects()
+					_equipment_manager.remove_item_including_equipment(entry.operands[0], amount)
+			# 卸下指定角色装备；operand[1] 为 0 时清空六槽，否则使用 1–6 的部位编号。
+			0x0023:
+				if session != null:
+					if not session.equipment_effects_ready and not _equipment_manager.rebuild_all_effects():
+						script_success = false
+					else:
+						_equipment_manager.remove_equipment_from_script(entry.operands[0], entry.operands[1])
 			# 把 operand[0] 事件的自动脚本入口改为 operand[1]。
 			0x0024:
 				var event := _resolve_event(entry.operands[0])

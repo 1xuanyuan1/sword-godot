@@ -454,6 +454,7 @@ func _synthetic_roles() -> PalPlayerRoles:
 		roles.max_mp.append(50)
 		roles.hp.append(100)
 		roles.mp.append(50)
+		roles.equipments_by_role.append(PackedInt32Array([0, 0, 0, 0, 0, 0]))
 		roles.attack_strengths.append(40)
 		roles.magic_strengths.append(20)
 		roles.defenses.append(20)

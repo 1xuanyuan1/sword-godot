@@ -8,6 +8,8 @@ extends Control
 
 ## 玩家确认使用物品时发出；接收方负责运行脚本并决定是否消耗。
 signal item_use_requested(item_id: int)
+## 玩家在装备页确认角色时发出；接收方负责运行装备脚本和交换背包物品。
+signal item_equip_requested(item_id: int, role_index: int)
 ## 玩家在系统页调整音乐或音效音量时发出；播放层应立即应用两个百分比。
 signal audio_settings_changed(music_volume: int, sound_volume: int)
 
@@ -15,6 +17,7 @@ enum Page {
 	MAIN,
 	INVENTORY_ACTION,
 	INVENTORY,
+	EQUIPMENT,
 	SYSTEM,
 }
 
@@ -29,6 +32,16 @@ const INVENTORY_COLUMNS := 3
 const INVENTORY_ROWS := 7
 const INVENTORY_ITEM_WIDTH := 100
 const INVENTORY_ROW_HEIGHT := 18
+const EQUIPMENT_IMAGE_POSITION := Vector2i(16, 16)
+const EQUIPMENT_ROLE_LIST_POSITION := Vector2i(2, 95)
+const EQUIPMENT_ITEM_NAME_POSITION := Vector2i(5, 70)
+const EQUIPMENT_ITEM_AMOUNT_POSITION := Vector2i(51, 57)
+const EQUIPMENT_LABEL_POSITIONS := [Vector2i(92, 11), Vector2i(92, 33), Vector2i(92, 55), Vector2i(92, 77), Vector2i(92, 99), Vector2i(92, 121)]
+const EQUIPMENT_NAME_POSITIONS := [Vector2i(130, 11), Vector2i(130, 33), Vector2i(130, 55), Vector2i(130, 77), Vector2i(130, 99), Vector2i(130, 121)]
+const EQUIPMENT_STATUS_LABEL_POSITIONS := [Vector2i(226, 10), Vector2i(226, 32), Vector2i(226, 54), Vector2i(226, 76), Vector2i(226, 98)]
+const EQUIPMENT_STATUS_VALUE_POSITIONS := [Vector2i(260, 14), Vector2i(260, 36), Vector2i(260, 58), Vector2i(260, 80), Vector2i(260, 102)]
+const EQUIPMENT_LABEL_WORDS := [600, 602, 601, 603, 604, 605]
+const EQUIPMENT_STATUS_WORDS := [51, 52, 53, 54, 55]
 const COLOR_NORMAL := 0x4f
 const COLOR_INACTIVE := 0x18
 const COLOR_CONFIRMED := 0x2c
@@ -51,6 +64,9 @@ var _system_selection: int = 2
 var _inventory_selection: int = 0
 var _inventory_return_page: Page = Page.MAIN
 var _inventory_ids: Array[int] = []
+var _inventory_for_equipment: bool = false
+var _equipment_item_id: int = 0
+var _equipment_party_selection: int = 0
 var _last_feedback: String = ""
 var _ui_sprite: PalSprite
 var _palette: PackedByteArray = PackedByteArray()
@@ -58,6 +74,7 @@ var _ui_textures: Dictionary = {}
 var _item_textures: Dictionary = {}
 var _font_texture: Texture2D
 var _font_glyphs: Dictionary = {}
+var _equipment_background_texture: Texture2D
 
 
 func _ready() -> void:
@@ -87,7 +104,23 @@ func open_inventory() -> void:
 	if database == null or session == null:
 		return
 	_inventory_return_page = Page.MAIN
+	_inventory_for_equipment = false
 	_open_item_selection()
+
+
+## 把装备脚本执行结果回传给菜单。
+## `next_item_id` 是刚换下、可继续装备给其他角色的物品；为 0 时返回装备物品列表。
+func notify_equipment_result(success: bool, next_item_id: int, feedback: String = "") -> void:
+	_last_feedback = feedback
+	if not success:
+		queue_redraw()
+		return
+	if next_item_id > 0 and session.item_count(next_item_id) > 0:
+		_equipment_item_id = next_item_id
+	else:
+		_refresh_inventory()
+		current_page = Page.INVENTORY
+	queue_redraw()
 
 
 ## 关闭整个菜单，返回地图输入。
@@ -100,6 +133,10 @@ func go_back() -> void:
 	match current_page:
 		Page.INVENTORY:
 			current_page = _inventory_return_page
+			queue_redraw()
+		Page.EQUIPMENT:
+			_refresh_inventory()
+			current_page = Page.INVENTORY
 			queue_redraw()
 		Page.INVENTORY_ACTION:
 			current_page = Page.MAIN
@@ -159,6 +196,12 @@ func _gui_input(event: InputEvent) -> void:
 					_inventory_selection = start + slot
 					_confirm_selection()
 					break
+		Page.EQUIPMENT:
+			for party_index in range(session.party_roles.size()):
+				if Rect2i(EQUIPMENT_ROLE_LIST_POSITION + Vector2i(10, 10 + party_index * 18), Vector2i(72, 18)).has_point(point):
+					_equipment_party_selection = party_index
+					_confirm_selection()
+					break
 		Page.SYSTEM:
 			for index in range(SYSTEM_ITEM_POSITIONS.size()):
 				if Rect2i(SYSTEM_ITEM_POSITIONS[index] - Vector2i(3, 2), Vector2i(140, 18)).has_point(point):
@@ -185,6 +228,8 @@ func _draw() -> void:
 			_draw_inventory_action()
 		Page.INVENTORY:
 			_draw_inventory_page()
+		Page.EQUIPMENT:
+			_draw_equipment_page()
 		Page.SYSTEM:
 			_draw_main_menu()
 			_draw_system_menu()
@@ -206,7 +251,7 @@ func _draw_main_menu() -> void:
 func _draw_inventory_action() -> void:
 	_draw_classic_box(INVENTORY_ACTION_POSITION, 1, 1, 0, 6)
 	for index in range(2):
-		var enabled := index == 1
+		var enabled := true
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _action_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
@@ -225,7 +270,7 @@ func _draw_inventory_page() -> void:
 		var column := slot % INVENTORY_COLUMNS
 		var row := slot / INVENTORY_COLUMNS
 		var item := database.item_definition(item_id)
-		var enabled := item != null and item.is_usable() and item.applies_to_all()
+		var enabled := item != null and (item.is_equipable() if _inventory_for_equipment else (item.is_usable() and item.applies_to_all()))
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if inventory_index == _inventory_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
@@ -246,6 +291,54 @@ func _draw_inventory_page() -> void:
 		for line in description.split("*", false):
 			_draw_pal_text(line, Vector2i(75, description_y), _palette_color(0x3c), true)
 			description_y += 16
+
+
+func _draw_equipment_page() -> void:
+	if _equipment_background_texture != null:
+		draw_texture(_equipment_background_texture, Vector2.ZERO)
+	else:
+		draw_rect(Rect2(Vector2.ZERO, Vector2(320, 200)), Color(0.025, 0.035, 0.08, 1.0))
+		for index in range(EQUIPMENT_LABEL_WORDS.size()):
+			_draw_pal_text(database.get_word(EQUIPMENT_LABEL_WORDS[index]), EQUIPMENT_LABEL_POSITIONS[index], _palette_color(COLOR_NORMAL), true)
+		for index in range(EQUIPMENT_STATUS_WORDS.size()):
+			_draw_pal_text(database.get_word(EQUIPMENT_STATUS_WORDS[index]), EQUIPMENT_STATUS_LABEL_POSITIONS[index], _palette_color(COLOR_NORMAL), true)
+	if _equipment_item_id <= 0:
+		return
+	var item := database.item_definition(_equipment_item_id)
+	if item != null:
+		_draw_item_bitmap(item.bitmap, EQUIPMENT_IMAGE_POSITION)
+	_draw_pal_text(database.get_word(_equipment_item_id), EQUIPMENT_ITEM_NAME_POSITION, _palette_color(COLOR_CONFIRMED), true)
+	_draw_number(session.item_count(_equipment_item_id), 2, EQUIPMENT_ITEM_AMOUNT_POSITION, 56)
+	if session.party_roles.is_empty():
+		return
+	_equipment_party_selection = clampi(_equipment_party_selection, 0, session.party_roles.size() - 1)
+	var role_index := session.party_roles[_equipment_party_selection]
+	var equipments := session.equipment_for_role(role_index)
+	for slot_index in range(mini(equipments.size(), EQUIPMENT_NAME_POSITIONS.size())):
+		if equipments[slot_index] > 0:
+			_draw_pal_text(database.get_word(equipments[slot_index]), EQUIPMENT_NAME_POSITIONS[slot_index], _palette_color(COLOR_NORMAL), true)
+	var stats := [
+		session.attack_strength_for(role_index),
+		session.magic_strength_for(role_index),
+		session.defense_for(role_index),
+		session.dexterity_for(role_index),
+		session.flee_rate_for(role_index),
+	]
+	for stat_index in range(stats.size()):
+		_draw_number(stats[stat_index], 4, EQUIPMENT_STATUS_VALUE_POSITIONS[stat_index], 19)
+	_draw_classic_box(EQUIPMENT_ROLE_LIST_POSITION, maxi(0, session.party_roles.size() - 1), 3, 0, 0)
+	for party_index in range(session.party_roles.size()):
+		var candidate_role := session.party_roles[party_index]
+		var can_equip := item != null and item.can_equip_by_role(candidate_role)
+		var color_index := COLOR_NORMAL if can_equip else COLOR_INACTIVE
+		if party_index == _equipment_party_selection:
+			color_index = _selected_color_index() if can_equip else COLOR_SELECTED_INACTIVE
+		_draw_pal_text(
+			database.get_word(database.player_roles.name_word_for(candidate_role)),
+			EQUIPMENT_ROLE_LIST_POSITION + Vector2i(13, 13 + 18 * party_index),
+			_palette_color(color_index),
+			true
+		)
 
 
 func _draw_system_menu() -> void:
@@ -273,6 +366,10 @@ func _move_selection(direction: Vector2i) -> void:
 				return
 			var delta := direction.x if direction.x != 0 else direction.y * INVENTORY_COLUMNS
 			_inventory_selection = clampi(_inventory_selection + delta, 0, _inventory_ids.size() - 1)
+		Page.EQUIPMENT:
+			if not session.party_roles.is_empty():
+				var delta := direction.y if direction.y != 0 else direction.x
+				_equipment_party_selection = posmod(_equipment_party_selection + delta, session.party_roles.size())
 		Page.SYSTEM:
 			if direction.x != 0 and _system_selection in [2, 3]:
 				_change_selected_volume(direction.x * VOLUME_STEP)
@@ -291,13 +388,18 @@ func _confirm_selection() -> void:
 				current_page = Page.SYSTEM
 				_system_selection = 2
 		Page.INVENTORY_ACTION:
-			if _action_selection == 1:
-				_inventory_return_page = Page.INVENTORY_ACTION
-				_open_item_selection()
+			_inventory_for_equipment = _action_selection == 0
+			_inventory_return_page = Page.INVENTORY_ACTION
+			_open_item_selection()
 		Page.INVENTORY:
 			if not _inventory_ids.is_empty():
 				var item_id := _inventory_ids[_inventory_selection]
-				_request_item_use(item_id, database.item_definition(item_id))
+				if _inventory_for_equipment:
+					_open_equipment_page(item_id)
+				else:
+					_request_item_use(item_id, database.item_definition(item_id))
+		Page.EQUIPMENT:
+			_request_item_equip()
 		Page.SYSTEM:
 			if _system_selection == 2:
 				session.set_music_volume(GameSession.AUDIO_VOLUME_MAX if session.music_volume == 0 else 0)
@@ -329,7 +431,9 @@ func _refresh_inventory() -> void:
 	_inventory_ids.clear()
 	for raw_id in session.inventory:
 		var item_id := int(raw_id)
-		if session.item_count(item_id) > 0:
+		var item := database.item_definition(item_id)
+		var matches_mode := item != null and (item.is_equipable() if _inventory_for_equipment else true)
+		if session.item_count(item_id) > 0 and matches_mode:
 			_inventory_ids.append(item_id)
 	_inventory_ids.sort()
 	_inventory_selection = clampi(_inventory_selection, 0, maxi(0, _inventory_ids.size() - 1))
@@ -350,11 +454,33 @@ func _request_item_use(item_id: int, item: PalItemDefinition) -> void:
 	item_use_requested.emit(item_id)
 
 
+func _open_equipment_page(item_id: int) -> void:
+	var item := database.item_definition(item_id)
+	if item == null or not item.is_equipable() or session.item_count(item_id) <= 0:
+		_last_feedback = "这个物品目前不能装备。"
+		return
+	_equipment_item_id = item_id
+	_equipment_party_selection = clampi(_equipment_party_selection, 0, maxi(0, session.party_roles.size() - 1))
+	current_page = Page.EQUIPMENT
+
+
+func _request_item_equip() -> void:
+	if _equipment_item_id <= 0 or session.party_roles.is_empty():
+		return
+	var role_index := session.party_roles[_equipment_party_selection]
+	var item := database.item_definition(_equipment_item_id)
+	if item == null or not item.can_equip_by_role(role_index):
+		_last_feedback = "%s不能装备%s" % [database.get_word(database.player_roles.name_word_for(role_index)), database.get_word(_equipment_item_id)]
+		return
+	item_equip_requested.emit(_equipment_item_id, role_index)
+
+
 func _load_classic_resources() -> void:
 	_ui_sprite = database.load_ui_sprite()
 	_palette = database.load_palette(session.palette_index, session.night_palette)
 	_ui_textures.clear()
 	_item_textures.clear()
+	_equipment_background_texture = null
 	_font_glyphs.clear()
 	var metadata_path := database.root_path.path_join("text/font_glyphs.json")
 	var metadata_file := FileAccess.open(metadata_path, FileAccess.READ)
@@ -366,6 +492,9 @@ func _load_classic_resources() -> void:
 	var atlas_image := Image.load_from_file(atlas_path)
 	if not atlas_image.is_empty():
 		_font_texture = ImageTexture.create_from_image(atlas_image)
+	var equipment_background := database.load_battle_background(1)
+	if equipment_background.is_valid() and not _palette.is_empty():
+		_equipment_background_texture = ImageTexture.create_from_image(equipment_background.to_rgba_image(_palette))
 
 
 ## 返回原版 UI Sprite、字库和调色板是否已成功载入。

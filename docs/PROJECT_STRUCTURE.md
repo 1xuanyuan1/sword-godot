@@ -56,7 +56,7 @@ sword/
 
 ### `src/game`
 
-`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、主经验、等级、成长属性、仙术、调色板和场景索引。`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
+`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、主经验、等级、成长属性、六槽装备、装备效果、仙术、调色板和场景索引。`PalEquipmentManager` 解释装备脚本并维护背包交换与加成；`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
 
 ### `src/world`
 
@@ -74,6 +74,7 @@ sword/
 
 - `tests/run_tests.gd`：CI 使用合成字节运行，不依赖原版游戏。
 - `tests/run_battle_logic_tests.gd`：CI 使用合成敌我数据验证经典回合、伤害和胜负。
+- `tests/run_equipment_tests.gd`：CI 使用合成物品和脚本验证六槽装备、属性效果与背包交换。
 - `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。

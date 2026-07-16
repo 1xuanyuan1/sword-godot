@@ -195,6 +195,11 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	if not session.initialize_role_state(database.player_roles):
 		error_message = "玩家角色状态无法初始化"
 		return false
+	if not session.equipment_effects_ready:
+		var equipment_manager := PalEquipmentManager.new()
+		if not equipment_manager.configure(database, session):
+			error_message = equipment_manager.error_message
+			return false
 	# PAL_StartBattle 会让体力为零的入队角色以 1 点体力参战，避免战斗在载入时直接失败。
 	for role_index in session.party_roles:
 		if role_index >= 0 and role_index < session.role_hp.size() and session.role_hp[role_index] == 0:
@@ -273,7 +278,7 @@ func submit_attack(target_index: int) -> bool:
 	if party_index < 0:
 		return false
 	var player := players[party_index]
-	if database.player_roles.attack_all[player.role_index] != 0:
+	if session.can_attack_all(player.role_index, database.player_roles):
 		target_index = -1
 	elif target_index < 0 or target_index >= enemies.size() or not enemies[target_index].is_alive():
 		return false
@@ -650,7 +655,7 @@ func _assign_repeated_throw_item(player: PlayerState) -> void:
 func _assign_attack(player: PlayerState, preferred_target: int) -> void:
 	player.action_type = ActionType.ATTACK
 	player.action_id = 0
-	player.target_index = -1 if database.player_roles.attack_all[player.role_index] != 0 else _find_alive_enemy_from(preferred_target)
+	player.target_index = -1 if session.can_attack_all(player.role_index, database.player_roles) else _find_alive_enemy_from(preferred_target)
 
 
 func _assign_defend(player: PlayerState, party_index: int) -> void:
@@ -740,7 +745,7 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 		result.skipped = true
 		result.summary = "未支持的玩家指令"
 		return result
-	if database.player_roles.attack_all[player.role_index] != 0:
+	if session.can_attack_all(player.role_index, database.player_roles):
 		_execute_player_attack_all(player, result)
 	else:
 		var target_index := _find_alive_enemy_from(player.target_index)
@@ -1169,7 +1174,7 @@ func _calculate_enemy_magic_damage(enemy_index: int, party_index: int, definitio
 	var damage := calculate_base_damage(magic_strength, session.defense_for(role_index)) / 4
 	damage += _signed_word(definition.base_damage)
 	if definition.elemental != 0:
-		var resistance := database.player_roles.poison_resistances[role_index] if definition.elemental > PalBattlefield.ELEMENT_COUNT else database.player_roles.elemental_resistances_by_role[role_index][definition.elemental - 1]
+		var resistance := session.poison_resistance_for(role_index) if definition.elemental > PalBattlefield.ELEMENT_COUNT else session.elemental_resistance_for(role_index, definition.elemental - 1)
 		# 敌方法术调用 PAL_CalcMagicDamage 时传入 100 + 玩家抗性，并使用倍率 20。
 		damage = int(damage * (10.0 - float(100 + resistance) / 20.0))
 		damage /= 5

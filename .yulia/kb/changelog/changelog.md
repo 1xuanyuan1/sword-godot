@@ -318,6 +318,34 @@ keywords:
   - `docs/DEVELOPMENT_WORKFLOW.md`
   - `.yulia/kb/changelog/todo.md`
 
+---
+
+### [FT-035] [feat] 接通六槽装备、原版装备页与战斗属性
+
+- **关联需求**: M3 装备系统、M4 经典战斗数值
+- **关联 TODO**: TD-003、TD-005（阶段性）
+- **功能描述**: 解析 `PLAYERROLES` 六槽初始装备，新增 `PalEquipmentManager` 对齐 SDLPal `0017/0018/001A/0023/002D` 的装备、换装、属性和卸装语义；装备与背包交换、角色许可、攻击/灵力/防御/身法/逃跑、毒抗、五灵抗性、攻击全体和战斗 Sprite 覆盖统一保存到 `GameSession`。经典“物品 → 装备”已启用，使用 `FBP.MKF #1` 原版背景显示物品图标、队员、六件当前装备和实时属性，并保留换下物品继续选择的 `wLastUnequippedItem` 行为。战斗开始前自动重建装备效果，修复李逍遥初始六件装备未生效造成的最低伤害问题；剧情 `0020` 也会按原版在背包不足时移除已装备物品。
+- **验证情况**: 273 项基础合成检查、20 项装备系统检查、65 项经典战斗逻辑、10 项剧情战斗桥接和中文文档检查通过；真实资源确认李逍遥初始装备为头巾、披风、布袍、木剑、草鞋、护腕，属性为攻 35／灵 20／防 41／身 31／逃 32，对绿叶小妖固定回归普攻为 40 点；原版装备页 OpenGL 快照已生成到被忽略的 `generated/`。
+- **涉及文件**:
+  - `src/content/pal_player_roles.gd`
+  - `src/content/pal_item_definition.gd`
+  - `src/game/game_session.gd`
+  - `src/game/pal_equipment_manager.gd`
+  - `src/game/script_vm.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_equipment_tests.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `.github/workflows/ci.yml`
+  - `README.md`
+  - `docs/EQUIPMENT.md`
+  - `docs/CLASSIC_UI.md`
+  - `docs/BATTLE.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

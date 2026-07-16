@@ -556,6 +556,7 @@ func _test_player_roles_structure() -> void:
 	role_bytes.encode_u16(PalPlayerRoles.MAX_MP_WORD_OFFSET * 2, 60)
 	role_bytes.encode_u16(PalPlayerRoles.HP_WORD_OFFSET * 2, 90)
 	role_bytes.encode_u16(PalPlayerRoles.MP_WORD_OFFSET * 2, 40)
+	role_bytes.encode_u16(PalPlayerRoles.EQUIPMENT_WORD_OFFSET * 2, 166)
 	role_bytes.encode_u16(PalPlayerRoles.ATTACK_STRENGTH_WORD_OFFSET * 2, 33)
 	role_bytes.encode_u16(PalPlayerRoles.MAGIC_STRENGTH_WORD_OFFSET * 2, 44)
 	role_bytes.encode_u16(PalPlayerRoles.DEFENSE_WORD_OFFSET * 2, 22)
@@ -575,6 +576,7 @@ func _test_player_roles_structure() -> void:
 	_expect(roles.scene_sprite_for(0) == 2 and roles.scene_sprite_for(1) == 7, "PLAYERROLES scene sprite numbers")
 	_expect(roles.level_for(0) == 5 and roles.max_hp_for(0) == 120 and roles.max_mp_for(0) == 60, "PLAYERROLES level and maximum HP/MP")
 	_expect(roles.hp_for(0) == 90 and roles.mp_for(0) == 40 and roles.magics_for(0) == PackedInt32Array([345]), "PLAYERROLES current HP/MP and initial magic table")
+	_expect(roles.equipments_for(0) == PackedInt32Array([166, 0, 0, 0, 0, 0]), "PLAYERROLES six initial equipment slots")
 	_expect(roles.attack_strength_for(0) == 33 and roles.magic_strength_for(0) == 44 and roles.defense_for(0) == 22 and roles.dexterity_for(0) == 18 and roles.flee_rate_for(0) == 15, "PLAYERROLES classic battle stats")
 	_expect(roles.attack_sound_for(0) == 10 and roles.weapon_sound_for(0) == 11 and roles.critical_sound_for(0) == 12 and roles.cover_sound_for(0) == 13 and roles.death_sound_for(0) == 14, "PLAYERROLES classic battle sound fields")
 	_expect(roles.walk_frame_count_for(0) == 4 and roles.walk_frame_count_for(1) == 3, "PLAYERROLES walk frame fallback")
@@ -836,6 +838,7 @@ func _test_script_vm_rng_and_role_state() -> void:
 		roles.max_mp.append(50 + role_index)
 		roles.hp.append(10)
 		roles.mp.append(5)
+		roles.equipments_by_role.append(PackedInt32Array([0, 0, 0, 0, 0, 0]))
 		roles.attack_strengths.append(20)
 		roles.magic_strengths.append(20)
 		roles.defenses.append(20)
@@ -1467,14 +1470,22 @@ func _test_debug_checkpoints() -> void:
 func _test_game_menu_inventory() -> void:
 	var database := PalContentDatabase.new()
 	database.words.resize(273)
+	database.words[0] = "李逍遥"
+	database.words[201] = "皮帽"
 	database.words[272] = "桂花酒"
 	database.items.resize(273)
+	var cap := PalItemDefinition.new()
+	cap.object_id = 201
+	cap.script_on_equip = 1
+	cap.flags = PalItemDefinition.FLAG_EQUIPABLE | PalItemDefinition.FLAG_EQUIPABLE_BY_ROLE_FIRST
+	database.items[201] = cap
 	var wine := PalItemDefinition.new()
 	wine.object_id = 272
 	wine.script_on_use = 39660
 	wine.flags = PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_APPLY_TO_ALL
 	database.items[272] = wine
 	var session := GameSession.new()
+	session.set_item_count(201, 1)
 	session.set_item_count(272, 1)
 	var menu := PalGameMenu.new()
 	menu._ready()
@@ -1484,12 +1495,22 @@ func _test_game_menu_inventory() -> void:
 	menu._confirm_selection()
 	_expect(menu.current_page == PalGameMenu.Page.INVENTORY_ACTION, "classic inventory command submenu opens from the main menu")
 	menu._confirm_selection()
-	_expect(menu.current_page == PalGameMenu.Page.INVENTORY and menu._inventory_ids == [272], "classic item grid contains the current inventory")
+	_expect(menu.current_page == PalGameMenu.Page.INVENTORY and menu._inventory_ids == [201, 272], "classic item grid contains the current inventory")
 	var requested: Array[int] = []
 	menu.item_use_requested.connect(func(item_id: int) -> void: requested.append(item_id))
 	_expect(menu.visible and menu.current_page == PalGameMenu.Page.INVENTORY, "game menu opens the inventory page")
 	menu._request_item_use(272, wine)
 	_expect(requested == [272], "usable story item can be selected from the inventory menu")
+	menu.current_page = PalGameMenu.Page.INVENTORY_ACTION
+	menu._action_selection = 0
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.INVENTORY and menu._inventory_ids == [201], "classic equipment inventory filters out non-equipment items")
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.EQUIPMENT and menu._equipment_item_id == 201, "selecting equipment opens the classic equipment page")
+	var equip_requests: Array = []
+	menu.item_equip_requested.connect(func(item_id: int, role_index: int) -> void: equip_requests.append([item_id, role_index]))
+	menu._confirm_selection()
+	_expect(equip_requests == [[201, 0]], "equipment page emits the selected item and PLAYERROLES role")
 	menu.open_main()
 	menu._main_selection = 3
 	menu._confirm_selection()

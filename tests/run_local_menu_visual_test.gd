@@ -30,7 +30,17 @@ func _init() -> void:
 	await process_frame
 	var session := GameSession.new()
 	session.cash = 550
+	var equipment_manager := PalEquipmentManager.new()
+	if not equipment_manager.configure(database, session):
+		printerr("FAIL: 初始装备脚本无法重建：%s" % equipment_manager.error_message)
+		quit(1)
+		return
+	if session.equipment_for_role(0) != PackedInt32Array([196, 225, 208, 166, 235, 249]):
+		printerr("FAIL: 李逍遥六件初始装备解析错误：%s" % session.equipment_for_role(0))
+		quit(1)
+		return
 	session.set_item_count(272, 2)
+	session.set_item_count(201, 1)
 	menu.configure(database, session)
 	if not menu.has_classic_resources():
 		printerr("FAIL: 原版 UI 拼片或点阵字库加载失败")
@@ -47,11 +57,22 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_inventory.png"))
+	menu._inventory_for_equipment = true
+	menu._open_equipment_page(201)
+	await process_frame
+	await process_frame
+	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_equipment.png"))
 	menu.open_main()
 	menu._main_selection = 3
 	menu._confirm_selection()
 	await process_frame
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_system_audio.png"))
-	print("PASS: 原版主菜单、物品页与系统音量页视觉快照已生成")
+	print("PASS: 原版主菜单、物品页、装备页与系统音量页视觉快照已生成；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+		session.attack_strength_for(0),
+		session.magic_strength_for(0),
+		session.defense_for(0),
+		session.dexterity_for(0),
+		session.flee_rate_for(0),
+	])
 	quit(0)

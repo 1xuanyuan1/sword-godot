@@ -8,6 +8,18 @@ extends RefCounted
 const PARTY_OFFSET := Vector2i(160, 112)
 const TRAIL_SIZE := 5
 const AUDIO_VOLUME_MAX := 100
+const EQUIPMENT_SLOT_COUNT := PalPlayerRoles.EQUIPMENT_SLOT_COUNT
+const EQUIPMENT_EFFECT_SLOT_COUNT := EQUIPMENT_SLOT_COUNT + 1
+const EQUIPMENT_EFFECT_BATTLE_SPRITE := 1
+const EQUIPMENT_EFFECT_ATTACK_ALL := 4
+const EQUIPMENT_EFFECT_ATTACK := 17
+const EQUIPMENT_EFFECT_MAGIC := 18
+const EQUIPMENT_EFFECT_DEFENSE := 19
+const EQUIPMENT_EFFECT_DEXTERITY := 20
+const EQUIPMENT_EFFECT_FLEE := 21
+const EQUIPMENT_EFFECT_POISON_RESISTANCE := 22
+const EQUIPMENT_EFFECT_ELEMENT_FIRST := 23
+const EQUIPMENT_EFFECT_COOPERATIVE_MAGIC := 65
 const DIR_SOUTH := 0
 const DIR_WEST := 1
 const DIR_NORTH := 2
@@ -65,6 +77,19 @@ var role_defense: PackedInt32Array = PackedInt32Array()
 var role_dexterity: PackedInt32Array = PackedInt32Array()
 ## 每名角色当前基础逃跑值。
 var role_flee_rate: PackedInt32Array = PackedInt32Array()
+## 每名角色六个装备槽中的物品对象编号；外层索引与 PLAYERROLES 一致。
+var role_equipments_by_role: Array[PackedInt32Array] = []
+## 七个官方装备效果槽（六个部位加临时槽）的稀疏属性表。
+## 每个字典以 PLAYERROLES 字段组编号为键，以六名角色的 16 位 WORD 值为值。
+var equipment_effects_by_slot: Array[Dictionary] = []
+## 装备脚本 `002D` 写入的持久状态；当前主要用于武器双击效果。
+var equipment_statuses_by_slot: Array[Dictionary] = []
+## 装备管理器是否已按当前装备完整重建脚本效果。
+var equipment_effects_ready: bool = false
+## 每名角色的基础毒抗性。
+var role_poison_resistance: PackedInt32Array = PackedInt32Array()
+## 每名角色的基础五灵抗性；装备加成另存于效果槽。
+var role_elemental_resistances_by_role: Array[PackedInt32Array] = []
 ## 每名角色已学会的仙术对象编号。
 var learned_magics_by_role: Array[PackedInt32Array] = []
 ## SDLPal 五格队伍轨迹的世界位置。
@@ -202,7 +227,7 @@ func clear_party_gestures() -> void:
 func initialize_role_state(roles: PalPlayerRoles) -> bool:
 	if roles == null or not roles.is_valid():
 		return false
-	if role_hp.size() == PalPlayerRoles.ROLE_COUNT and role_experience.size() == PalPlayerRoles.ROLE_COUNT and role_attack_strength.size() == PalPlayerRoles.ROLE_COUNT and learned_magics_by_role.size() == PalPlayerRoles.ROLE_COUNT:
+	if role_hp.size() == PalPlayerRoles.ROLE_COUNT and role_experience.size() == PalPlayerRoles.ROLE_COUNT and role_attack_strength.size() == PalPlayerRoles.ROLE_COUNT and role_equipments_by_role.size() == PalPlayerRoles.ROLE_COUNT and learned_magics_by_role.size() == PalPlayerRoles.ROLE_COUNT:
 		return true
 	role_levels = roles.levels.duplicate()
 	role_max_hp = roles.max_hp.duplicate()
@@ -216,6 +241,14 @@ func initialize_role_state(roles: PalPlayerRoles) -> bool:
 	role_defense = roles.defenses.duplicate()
 	role_dexterity = roles.dexterities.duplicate()
 	role_flee_rate = roles.flee_rates.duplicate()
+	role_equipments_by_role.clear()
+	for role_index in range(PalPlayerRoles.ROLE_COUNT):
+		role_equipments_by_role.append(roles.equipments_for(role_index))
+	role_poison_resistance = roles.poison_resistances.duplicate()
+	role_elemental_resistances_by_role.clear()
+	for elemental_resistances in roles.elemental_resistances_by_role:
+		role_elemental_resistances_by_role.append(elemental_resistances.duplicate())
+	_reset_equipment_effect_storage()
 	learned_magics_by_role.clear()
 	for role_index in range(PalPlayerRoles.ROLE_COUNT):
 		learned_magics_by_role.append(roles.magics_for(role_index))
@@ -253,27 +286,179 @@ func has_magic(role_index: int, magic_id: int) -> bool:
 
 ## 返回角色当前攻击力；状态未初始化或编号越界时返回 0。
 func attack_strength_for(role_index: int) -> int:
-	return role_attack_strength[role_index] if role_index >= 0 and role_index < role_attack_strength.size() else 0
+	return _stat_with_equipment(role_attack_strength, role_index, EQUIPMENT_EFFECT_ATTACK)
 
 
 ## 返回角色当前灵力；状态未初始化或编号越界时返回 0。
 func magic_strength_for(role_index: int) -> int:
-	return role_magic_strength[role_index] if role_index >= 0 and role_index < role_magic_strength.size() else 0
+	return _stat_with_equipment(role_magic_strength, role_index, EQUIPMENT_EFFECT_MAGIC)
 
 
 ## 返回角色当前防御；状态未初始化或编号越界时返回 0。
 func defense_for(role_index: int) -> int:
-	return role_defense[role_index] if role_index >= 0 and role_index < role_defense.size() else 0
+	return _stat_with_equipment(role_defense, role_index, EQUIPMENT_EFFECT_DEFENSE)
 
 
 ## 返回角色当前身法；状态未初始化或编号越界时返回 0。
 func dexterity_for(role_index: int) -> int:
-	return role_dexterity[role_index] if role_index >= 0 and role_index < role_dexterity.size() else 0
+	return _stat_with_equipment(role_dexterity, role_index, EQUIPMENT_EFFECT_DEXTERITY)
 
 
 ## 返回角色当前逃跑值；状态未初始化或编号越界时返回 0。
 func flee_rate_for(role_index: int) -> int:
-	return role_flee_rate[role_index] if role_index >= 0 and role_index < role_flee_rate.size() else 0
+	return _stat_with_equipment(role_flee_rate, role_index, EQUIPMENT_EFFECT_FLEE)
+
+
+## 返回角色六个当前装备对象编号的副本；角色越界时返回空数组。
+func equipment_for_role(role_index: int) -> PackedInt32Array:
+	return role_equipments_by_role[role_index].duplicate() if role_index >= 0 and role_index < role_equipments_by_role.size() else PackedInt32Array()
+
+
+## 返回指定角色和部位的装备对象编号；任一索引越界时返回 0。
+func equipped_item(role_index: int, slot_index: int) -> int:
+	if role_index < 0 or role_index >= role_equipments_by_role.size():
+		return 0
+	var equipments := role_equipments_by_role[role_index]
+	return equipments[slot_index] if slot_index >= 0 and slot_index < equipments.size() else 0
+
+
+## 统计当前队伍装备槽中指定对象的数量；只用于原版会把已装备物品也计入的剧情移除操作。
+func equipped_item_count(item_id: int) -> int:
+	if item_id <= 0:
+		return 0
+	var count := 0
+	for role_index in party_roles:
+		if role_index < 0 or role_index >= role_equipments_by_role.size():
+			continue
+		for equipped_id in role_equipments_by_role[role_index]:
+			if equipped_id == item_id:
+				count += 1
+	return count
+
+
+## 替换指定装备槽并返回旧对象编号；索引无效时不修改状态并返回 0。
+func replace_equipped_item(role_index: int, slot_index: int, item_id: int) -> int:
+	if role_index < 0 or role_index >= role_equipments_by_role.size():
+		return 0
+	var equipments := role_equipments_by_role[role_index]
+	if slot_index < 0 or slot_index >= equipments.size():
+		return 0
+	var previous := equipments[slot_index]
+	equipments[slot_index] = maxi(0, item_id)
+	role_equipments_by_role[role_index] = equipments
+	return previous
+
+
+## 清除一个角色在指定装备效果槽中的全部属性和装备状态。
+func clear_equipment_effects(role_index: int, slot_index: int) -> void:
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT or slot_index < 0 or slot_index >= equipment_effects_by_slot.size():
+		return
+	var effects := equipment_effects_by_slot[slot_index]
+	for group_key in effects.keys():
+		var values: PackedInt32Array = effects[group_key]
+		if role_index < values.size():
+			values[role_index] = 0
+			effects[group_key] = values
+	equipment_effects_by_slot[slot_index] = effects
+	var statuses := equipment_statuses_by_slot[slot_index]
+	for status_key in statuses.keys():
+		var durations: PackedInt32Array = statuses[status_key]
+		if role_index < durations.size():
+			durations[role_index] = 0
+			statuses[status_key] = durations
+	equipment_statuses_by_slot[slot_index] = statuses
+
+
+## 清空全部装备脚本效果，但保留六名角色当前穿戴的对象编号。
+func clear_all_equipment_effects() -> void:
+	_reset_equipment_effect_storage()
+
+
+## 将装备效果写入指定槽、属性组和角色；值按 SDLPal 的无符号 16 位 WORD 保存。
+func set_equipment_effect(slot_index: int, group_index: int, role_index: int, value: int) -> bool:
+	if slot_index < 0 or slot_index >= equipment_effects_by_slot.size() or group_index < 0 or role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return false
+	var effects := equipment_effects_by_slot[slot_index]
+	var values: PackedInt32Array = effects.get(group_index, PackedInt32Array())
+	if values.size() != PalPlayerRoles.ROLE_COUNT:
+		values.resize(PalPlayerRoles.ROLE_COUNT)
+		values.fill(0)
+	values[role_index] = value & 0xffff
+	effects[group_index] = values
+	equipment_effects_by_slot[slot_index] = effects
+	return true
+
+
+## 返回指定角色在全部装备效果槽中的某一属性总和，结果保留 WORD 回绕语义。
+func equipment_effect_total(role_index: int, group_index: int) -> int:
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return 0
+	var total := 0
+	for effects in equipment_effects_by_slot:
+		var values: PackedInt32Array = effects.get(group_index, PackedInt32Array())
+		if role_index < values.size():
+			total = (total + values[role_index]) & 0xffff
+	return total
+
+
+## 将装备脚本状态写入指定槽；持续值为零时表示该状态无效。
+func set_equipment_status(slot_index: int, status_index: int, role_index: int, duration: int) -> bool:
+	if slot_index < 0 or slot_index >= equipment_statuses_by_slot.size() or status_index < 0 or role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return false
+	var statuses := equipment_statuses_by_slot[slot_index]
+	var durations: PackedInt32Array = statuses.get(status_index, PackedInt32Array())
+	if durations.size() != PalPlayerRoles.ROLE_COUNT:
+		durations.resize(PalPlayerRoles.ROLE_COUNT)
+		durations.fill(0)
+	durations[role_index] = duration & 0xffff
+	statuses[status_index] = durations
+	equipment_statuses_by_slot[slot_index] = statuses
+	return true
+
+
+## 返回角色是否由任一装备槽维持指定状态。
+func has_equipment_status(role_index: int, status_index: int) -> bool:
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return false
+	for statuses in equipment_statuses_by_slot:
+		var durations: PackedInt32Array = statuses.get(status_index, PackedInt32Array())
+		if role_index < durations.size() and durations[role_index] != 0:
+			return true
+	return false
+
+
+## 返回角色是否因基础字段或装备效果能够普通攻击全体敌人。
+func can_attack_all(role_index: int, roles: PalPlayerRoles) -> bool:
+	var base_attack_all := roles != null and role_index >= 0 and role_index < roles.attack_all.size() and roles.attack_all[role_index] != 0
+	return base_attack_all or equipment_effect_total(role_index, EQUIPMENT_EFFECT_ATTACK_ALL) != 0
+
+
+## 返回应用装备覆盖后的战斗 Sprite 编号；没有覆盖时保留 `base_sprite`。
+func battle_sprite_for(role_index: int, base_sprite: int) -> int:
+	var result := base_sprite
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return result
+	for effects in equipment_effects_by_slot:
+		var values: PackedInt32Array = effects.get(EQUIPMENT_EFFECT_BATTLE_SPRITE, PackedInt32Array())
+		if role_index < values.size() and values[role_index] != 0:
+			result = values[role_index]
+	return result
+
+
+## 返回装备后的毒抗性，按官方规则最高限制为 100。
+func poison_resistance_for(role_index: int) -> int:
+	return mini(100, _stat_with_equipment(role_poison_resistance, role_index, EQUIPMENT_EFFECT_POISON_RESISTANCE))
+
+
+## 返回装备后的指定五灵抗性，角色或属性越界时返回 0，最高限制为 100。
+func elemental_resistance_for(role_index: int, element_index: int) -> int:
+	if role_index < 0 or role_index >= role_elemental_resistances_by_role.size():
+		return 0
+	var resistances := role_elemental_resistances_by_role[role_index]
+	if element_index < 0 or element_index >= resistances.size():
+		return 0
+	var total := (resistances[element_index] + equipment_effect_total(role_index, EQUIPMENT_EFFECT_ELEMENT_FIRST + element_index)) & 0xffff
+	return mini(100, total)
 
 ## 返回指定物品数量，背包中不存在时为 0。
 func item_count(item_id: int) -> int:
@@ -324,6 +509,12 @@ func reset_new_game() -> void:
 	role_defense = PackedInt32Array()
 	role_dexterity = PackedInt32Array()
 	role_flee_rate = PackedInt32Array()
+	role_equipments_by_role.clear()
+	equipment_effects_by_slot.clear()
+	equipment_statuses_by_slot.clear()
+	equipment_effects_ready = false
+	role_poison_resistance = PackedInt32Array()
+	role_elemental_resistances_by_role.clear()
 	learned_magics_by_role.clear()
 	clear_party_gestures()
 	_initialize_trail(party_world_position())
@@ -370,3 +561,19 @@ func _initialize_trail(world_position: Vector2i) -> void:
 	for index in range(TRAIL_SIZE):
 		trail_positions[index] = world_position + backward * index
 		trail_directions[index] = party_direction
+
+
+func _reset_equipment_effect_storage() -> void:
+	equipment_effects_by_slot.clear()
+	equipment_statuses_by_slot.clear()
+	for _slot_index in range(EQUIPMENT_EFFECT_SLOT_COUNT):
+		equipment_effects_by_slot.append({})
+		equipment_statuses_by_slot.append({})
+	equipment_effects_ready = false
+
+
+func _stat_with_equipment(base_values: PackedInt32Array, role_index: int, group_index: int) -> int:
+	if role_index < 0 or role_index >= base_values.size():
+		return 0
+	# SDLPal 在 WORD 上逐槽相加；负数效果以二补码保存，因此这里必须逐次回绕。
+	return (base_values[role_index] + equipment_effect_total(role_index, group_index)) & 0xffff

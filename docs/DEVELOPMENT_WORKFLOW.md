@@ -26,9 +26,12 @@
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_tests.gd
+
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_equipment_tests.gd
 ```
 
-这些测试只使用代码构造的字节和状态，可以在 GitHub CI 执行，必须覆盖格式边界、ScriptVM 基础行为、TileSet 坐标和自定义数据。
+这些测试只使用代码构造的字节和状态，可以在 GitHub CI 执行，必须覆盖格式边界、ScriptVM 基础行为、TileSet 坐标、自定义数据，以及装备六槽、背包交换和脚本效果。
 
 地图阻挡改动必须覆盖 32×16 菱形的北部、half 1、东部、南部和东南部区域，以及玩家左上视口边界；禁止在世界层、TileMap 层和 ScriptVM 中复制三份 half 推断公式。
 

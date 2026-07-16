@@ -23,6 +23,7 @@ var _ui_layer: CanvasLayer
 var _status: Label
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
+var _equipment_manager := PalEquipmentManager.new()
 var _rng_player: PalRngPlayer
 var _battle_view: PalBattlePreview
 var _audio_player: Node
@@ -54,6 +55,9 @@ func _ready() -> void:
 		_set_error(_database.error_message + "。请返回资源实验室重新导入。")
 		return
 	_session.reset_new_game()
+	if not _equipment_manager.configure(_database, _session):
+		_set_error(_equipment_manager.error_message)
+		return
 	_game_menu.configure(_database, _session)
 	_game_menu.audio_settings_changed.connect(_on_audio_settings_changed)
 	_rng_player.configure(_database)
@@ -138,6 +142,7 @@ func _build_interface() -> void:
 	_game_menu.name = "GameMenu"
 	_game_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_game_menu.item_use_requested.connect(_on_item_use_requested)
+	_game_menu.item_equip_requested.connect(_on_item_equip_requested)
 	_ui_layer.add_child(_game_menu)
 
 	_rng_player = PalRngPlayer.new()
@@ -858,6 +863,14 @@ func _on_item_use_requested(item_id: int) -> void:
 	_pending_used_item_id = item_id
 	_status.text = "使用：%s" % _database.get_word(item_id)
 	_script_vm.run_trigger(item.script_on_use, 0xffff)
+
+
+func _on_item_equip_requested(item_id: int, role_index: int) -> void:
+	var success := _equipment_manager.equip_item(item_id, role_index)
+	var item_name := _database.get_word(item_id)
+	var feedback := "装备：%s" % item_name if success else _equipment_manager.error_message
+	_status.text = feedback
+	_game_menu.notify_equipment_result(success, _equipment_manager.last_unequipped_item, feedback)
 
 
 func _set_error(message: String) -> void:

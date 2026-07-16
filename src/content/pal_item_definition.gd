@@ -13,6 +13,7 @@ const FLAG_THROWABLE := 1 << 2
 const FLAG_CONSUMING := 1 << 3
 const FLAG_APPLY_TO_ALL := 1 << 4
 const FLAG_SELLABLE := 1 << 5
+const FLAG_EQUIPABLE_BY_ROLE_FIRST := 1 << 6
 
 ## 在 OBJECT 表和背包中使用的对象编号。
 var object_id: int = 0
@@ -58,6 +59,16 @@ func is_throwable() -> bool:
 ## 使用成功后是否消耗一个物品。
 func is_consuming() -> bool:
 	return (flags & FLAG_CONSUMING) != 0
+
+
+## 是否是具有有效装备脚本的装备物品。
+func is_equipable() -> bool:
+	return (flags & FLAG_EQUIPABLE) != 0 and script_on_equip > 0
+
+
+## 返回指定 PLAYERROLES 角色是否允许装备该物品。
+func can_equip_by_role(role_index: int) -> bool:
+	return is_equipable() and role_index >= 0 and role_index < PalPlayerRoles.ROLE_COUNT and (flags & (FLAG_EQUIPABLE_BY_ROLE_FIRST << role_index)) != 0
 
 
 ## 使用目标是否为全体队员。

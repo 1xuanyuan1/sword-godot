@@ -159,6 +159,11 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 	_battlefield_id = battlefield_id
 	_is_boss = is_boss
 	_party_roles = party_roles.slice(0, mini(3, party_roles.size()))
+	if not _session.equipment_effects_ready:
+		var equipment_manager := PalEquipmentManager.new()
+		if not equipment_manager.configure(_database, _session):
+			_show_error("装备效果无法载入：%s" % equipment_manager.error_message)
+			return false
 	_clear_fighters()
 	_palette = _database.load_palette(_session.palette_index, _session.night_palette)
 	_fighter_texture_cache.clear()
@@ -178,7 +183,7 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 	var configured_positions: Array = PLAYER_POSITIONS[_party_roles.size() - 1]
 	for party_index in range(_party_roles.size()):
 		var role_index := _party_roles[party_index]
-		var sprite_number := _database.player_roles.battle_sprite_for(role_index)
+		var sprite_number := _session.battle_sprite_for(role_index, _database.player_roles.battle_sprite_for(role_index))
 		var sprite := _database.load_player_battle_sprite(sprite_number)
 		var foot: Vector2i = configured_positions[party_index]
 		_player_sprites.append(sprite)
