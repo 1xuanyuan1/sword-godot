@@ -21,6 +21,13 @@ func _run() -> void:
 	await process_frame
 	# 本测试逐项手动执行行动并截取确定帧，关闭样板自己的自动行动调度，避免异步动画互相覆盖。
 	preview.set_process(false)
+	# SubViewport 不会驱动真实音频设备；这里验证样板已选择并装载循环曲目，
+	# 实际 AudioStreamPlayer.playing 状态由 run_local_audio_test.gd 在 SceneTree 根节点验证。
+	var battle_music_stream := preview._audio_player._music_player.stream as AudioStreamWAV if preview._audio_player != null else null
+	if preview._audio_player == null or preview._audio_player.current_music_number != PalBattlePreview.DEFAULT_LAB_BATTLE_MUSIC or battle_music_stream == null or battle_music_stream.loop_mode != AudioStreamWAV.LOOP_FORWARD:
+		var current_music := preview._audio_player.current_music_number if preview._audio_player != null else -999
+		_fail("独立战斗样板没有装载循环战斗 BGM 37：编号 %d" % current_music)
+		return
 	if preview._fighter_root.get_child_count() != 4:
 		_fail("首战应绘制两个敌人与两名队员，实际为 %d" % preview._fighter_root.get_child_count())
 		return

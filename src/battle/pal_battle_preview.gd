@@ -28,6 +28,7 @@ const PLAYER_POSITIONS: Array = [
 	[Vector2i(180, 180), Vector2i(234, 170), Vector2i(270, 146)],
 ]
 const BATTLE_FRAME_SECONDS := 0.04
+const DEFAULT_LAB_BATTLE_MUSIC := 37
 
 ## 为真时作为资源实验室独立样板运行；剧情覆盖层应在加入场景树前设为 `false`。
 @export var lab_mode: bool = true
@@ -111,9 +112,11 @@ func load_battle(enemy_team_id: int, battlefield_id: int, party_roles: PackedInt
 		for item_id in [99, 104, 153, 162]:
 			if _database.item_definition(item_id) != null:
 				preview_session.set_item_count(item_id, 3 if item_id in [99, 104] else 2)
+	preview_session.battle_music_number = DEFAULT_LAB_BATTLE_MUSIC
 	var started := _start_battle_view(_database, preview_session, enemy_team_id, battlefield_id, false)
 	if started and lab_mode and _audio_player != null:
 		_audio_player.configure(_database, _session)
+		_audio_player.play_music(_session.battle_music_number, true, 0.0)
 	return started
 
 

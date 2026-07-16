@@ -40,6 +40,20 @@ func _init() -> void:
 		printerr("FAIL: 同曲请求应该只更新循环标记，不能从头替换 BGM")
 		quit(1)
 		return
+	if not audio.has_music_resource(37):
+		printerr("FAIL: 标准战斗 RIX 37 尚未生成，请重新导入 Data")
+		quit(1)
+		return
+	if not audio.play_music(37, true):
+		printerr("FAIL: 标准战斗 BGM 37 无法载入 Godot 声道：%s" % audio.error_message)
+		quit(1)
+		return
+	await process_frame
+	var battle_stream := audio._music_player.stream as AudioStreamWAV
+	if audio.current_music_number != 37 or battle_stream == null or not audio._music_player.playing or battle_stream.loop_mode != AudioStreamWAV.LOOP_FORWARD:
+		printerr("FAIL: 战斗 BGM 37 没有真正进入循环播放状态")
+		quit(1)
+		return
 	session.set_music_volume(40)
 	session.set_sound_volume(30)
 	audio.apply_session_volumes()
@@ -48,5 +62,5 @@ func _init() -> void:
 		quit(1)
 		return
 	audio.stop_all()
-	print("PASS: 第一个场景 BGM 31 正在播放，剧情音效 98 和独立音量均可由 Godot 加载")
+	print("PASS: 开场 BGM 31、战斗 BGM 37、剧情音效 98 和独立音量均可由 Godot 加载")
 	quit(0)
