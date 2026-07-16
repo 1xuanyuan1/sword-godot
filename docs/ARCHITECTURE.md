@@ -103,4 +103,4 @@ CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileM
 
 `PalContentDatabase` 读取敌人属性、敌队、战场、敌人位置和双方战斗 Sprite，这些都是只读内容。`PalBattleController` 从这些定义创建单场敌人状态，收集全队攻击/防御指令，生成经典身法队列并返回与画面无关的 `ActionResult`。角色跨战斗的体力、真气和等级继续由 `GameSession` 持有；`PalBattlePreview` 只按结果更新 Sprite 与提示文字。
 
-脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时才暂停 ScriptVM、创建战斗并等待胜负结果。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗才使用 `operand[2]` 分支。`PalBattleController` 的普攻闭环已经可独立运行，但该 ScriptVM/场景路由桥接仍属于下一阶段，当前样板不会提前让剧情越过战斗。
+脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时暂停 ScriptVM，并由 `MapExplorer` 在 HUD 上覆盖创建复用同一 `GameSession` 的战斗。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗使用 `operand[2]` 分支。进入战斗时播放 `0045` 保存的 BGM，确认结果后恢复场景 BGM，再解除 `waiting_for_battle`；地图输入和自动事件不会在战斗背后继续运行。

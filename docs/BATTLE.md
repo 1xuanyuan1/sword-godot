@@ -1,6 +1,6 @@
 # 经典战斗系统
 
-Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `ENABLE_REVISIED_BATTLE` 蓄力模式。静态资源和首个普攻回合闭环已经接通；法术、物品、毒与状态、奖励结算、完整动画和剧情脚本桥接仍在开发。
+Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `ENABLE_REVISIED_BATTLE` 蓄力模式。静态资源、首个普攻回合闭环和 `ScriptVM 004A/0007` 剧情桥接已经接通；法术、物品、毒与状态、奖励结算和完整动画仍在开发。
 
 ## 原版资源映射
 
@@ -74,13 +74,26 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 固定随机种子使用移植自 `util.c` 的 32 位 LCG。这样测试可以精确复现行动顺序和伤害，同时正式运行仍会使用当前时间生成种子。
 
+## 剧情战斗桥接
+
+`004A` 把战场编号写入 `GameSession.battlefield_number`。执行 `0007` 时，VM 保存战败和逃跑分支，进入 `waiting_for_battle` 并向 `MapExplorer` 请求敌队、战场和 Boss 标志。探索输入、菜单、接触事件和 10 FPS 自动脚本在等待期间全部暂停。
+
+`MapExplorer` 在同一个 HUD CanvasLayer 上覆盖剧情模式的 `PalBattlePreview`，直接复用探索的内容数据库与 `GameSession`，因此战斗扣除的 HP 不会在返回地图后丢失。进入时切换 `0045` 指定的战斗 BGM，确认胜负后恢复场景 BGM，再按以下规则调用 `complete_battle()`：
+
+- 胜利继续 `0007` 的下一条指令；
+- 战败且 `operand[1]` 非零时跳到该入口；
+- 逃跑且 `operand[2]` 非零时跳到该入口；
+- `operand[2] == 0` 同时表示 Boss 战、不允许逃跑。
+
+当前 UI 尚无逃跑指令，但 VM 分支已按官方语义实现。若战斗资源缺失，探索层会显示具体原因并延后按战败分支恢复，避免在信号回调中重入脚本解释循环。
+
 ## 尚未完成
 
 - 敌我法术、合击、使用/投掷物品、逃跑和自动战斗；
 - 中毒、异常状态、装备加成、保护与替队员承伤；
 - 经验、金钱、升级、掉落和战后脚本；
 - 原版指令窗口、数字 Sprite、攻击/施法/受击/死亡动画和音效；
-- `ScriptVM 004A/0007` 暂停探索、进入战斗并按胜败分支恢复剧情。
+- 逃跑、自动战斗和战斗中脚本事件的完整执行。
 
 敌人本轮抽中法术时，控制器会明确返回“尚未接入”的动作，不会静默改成物理攻击。默认敌队 18 不触发该边界，已经可以完整验证当前普攻闭环。
 
@@ -94,6 +107,9 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_battle_logic_tests.gd
+
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_battle_bridge_tests.gd
 ```
 
 本地资源完整性与首战截图：
@@ -104,6 +120,9 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_local_battle_logic_test.gd
+
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_battle_bridge_test.gd
 
 /Applications/Godot.app/Contents/MacOS/Godot --path . \
   --script res://tests/run_local_battle_preview_test.gd

@@ -126,6 +126,10 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	if not session.initialize_role_state(database.player_roles):
 		error_message = "玩家角色状态无法初始化"
 		return false
+	# PAL_StartBattle 会让体力为零的入队角色以 1 点体力参战，避免战斗在载入时直接失败。
+	for role_index in session.party_roles:
+		if role_index >= 0 and role_index < session.role_hp.size() and session.role_hp[role_index] == 0:
+			session.increase_role_hp_mp(role_index, 1, 0)
 	var active_objects := team.active_object_ids()
 	for slot_index in range(active_objects.size()):
 		var object_id := active_objects[slot_index]

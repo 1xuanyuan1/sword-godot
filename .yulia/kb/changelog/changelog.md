@@ -116,6 +116,31 @@ keywords:
   - `docs/ARCHITECTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-025] [feat] 将经典战斗接入剧情脚本与探索 HUD
+
+- **关联需求**: M3 场景流程、M4 经典战斗
+- **关联 TODO**: TD-001、TD-005、TD-008（阶段性）
+- **功能描述**: 实现 `ScriptVM 004A/0007`：保存战场编号，阻塞发出敌队/战场/Boss 请求，并在胜利、战败或逃跑后按原版入口恢复。`MapExplorer` 在 HUD CanvasLayer 上创建剧情模式战斗覆盖层，暂停地图输入、菜单、触发和自动脚本，复用探索 `GameSession` 保留战斗 HP，进入/退出时切换战斗与场景 BGM。战斗视图区分实验室重开和剧情回传；`PAL_StartBattle` 的倒地队员 1 HP 入场行为也已补齐。
+- **验证情况**: 247 项既有合成测试、21 项回合逻辑检查、10 项战斗桥接检查和中文文档检查通过；真实脚本 6964/6965 确认请求敌队 18、战场 21、不可逃跑并进入等待，剧情覆盖层可使用同一个探索会话启动。首战真实资源自动普攻与 320×200 渲染回归继续通过。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/game/script_vm.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_battle_bridge_tests.gd`
+  - `tests/run_local_battle_bridge_test.gd`
+  - `.github/workflows/ci.yml`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

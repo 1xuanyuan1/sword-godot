@@ -24,6 +24,7 @@ var _status: Label
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
 var _rng_player: PalRngPlayer
+var _battle_view: PalBattlePreview
 var _audio_player: Node
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
@@ -72,6 +73,7 @@ func _ready() -> void:
 	_script_vm.music_requested.connect(_on_music_requested)
 	_script_vm.sound_requested.connect(_on_sound_requested)
 	_script_vm.rng_animation_requested.connect(_on_rng_animation_requested)
+	_script_vm.battle_requested.connect(_on_battle_requested)
 	add_child(_script_vm)
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
 	if checkpoint.is_empty():
@@ -136,9 +138,18 @@ func _build_interface() -> void:
 	_rng_player.playback_finished.connect(_on_rng_playback_finished)
 	_ui_layer.add_child(_rng_player)
 
+	_battle_view = PalBattlePreview.new()
+	_battle_view.name = "BattleView"
+	_battle_view.lab_mode = false
+	_battle_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_battle_view.battle_finished.connect(_on_battle_finished)
+	_ui_layer.add_child(_battle_view)
+
 
 func _process(delta: float) -> void:
 	if _map_data == null or not _map_data.is_valid():
+		return
+	if _battle_view != null and _battle_view.visible:
 		return
 	if _game_menu != null and _game_menu.visible:
 		return
@@ -152,9 +163,9 @@ func _process(delta: float) -> void:
 		_displace_party_from_blockers()
 		_refresh_world()
 		# 自动脚本可能让 NPC 主动走入接触范围；官方会在同一游戏更新周期检查触发。
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle:
 			_trigger_touch_event()
-	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng):
+	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle):
 		return
 	# 同一轮接触扫描中的同步短脚本会在帧末续跑；期间不能夹入一次玩家移动。
 	if _touch_scan_active:
@@ -195,13 +206,15 @@ func _process(delta: float) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
+	if _battle_view != null and _battle_view.visible:
+		return
 	if _game_menu != null and _game_menu.visible:
 		if event is InputEventKey and event.keycode in [KEY_ESCAPE, KEY_M, KEY_TAB]:
 			_game_menu.go_back()
 			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.keycode in MENU_KEYCODES:
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng and not _touch_scan_active:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle and not _touch_scan_active:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
 			else:
@@ -218,6 +231,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if _script_vm != null and _script_vm.running:
 			return
 		if _script_vm != null and _script_vm.waiting_for_rng:
+			return
+		if _script_vm != null and _script_vm.waiting_for_battle:
 			return
 		if _touch_scan_active:
 			return
@@ -345,7 +360,7 @@ func _prepare_search_event(event: PalEventObject) -> bool:
 
 
 func _trigger_touch_event() -> bool:
-	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng:
+	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
 		return false
 	_touch_scan_active = true
 	_touch_scan_next_index = 0
@@ -353,7 +368,7 @@ func _trigger_touch_event() -> bool:
 
 
 func _continue_touch_scan() -> bool:
-	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng:
+	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
 		return false
 	if _pending_scene_index >= 0:
 		_reset_touch_scan()
@@ -437,7 +452,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 
 
 func _run_scene_enter_script(scene_index: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
 		return
 	if scene_index < 0 or scene_index >= _database.scenes.size():
 		return
@@ -611,6 +626,27 @@ func _on_rng_playback_finished() -> void:
 		_script_vm.complete_rng_animation()
 
 
+func _on_battle_requested(enemy_team_id: int, battlefield_id: int, _is_boss: bool) -> void:
+	_game_menu.close_menu()
+	_dialog_box.hide_dialog()
+	if _audio_player != null and _session.battle_music_number > 0:
+		_audio_player.play_music(_session.battle_music_number, true, 0.0)
+	if _battle_view == null or not _battle_view.begin_battle(_database, _session, enemy_team_id, battlefield_id):
+		var reason := _battle_view.error_message if _battle_view != null and not _battle_view.error_message.is_empty() else "战斗覆盖层不可用"
+		_status.text = "敌队 %d / 战场 %d 无法开始：%s" % [enemy_team_id, battlefield_id, reason]
+		if _battle_view != null:
+			_battle_view.hide()
+		# 信号由 VM 的指令循环同步发出；失败分支延后恢复，避免重入同一个解释循环。
+		_script_vm.call_deferred("complete_battle", ScriptVM.BATTLE_RESULT_DEFEAT)
+
+
+func _on_battle_finished(result: int) -> void:
+	if _audio_player != null:
+		_audio_player.play_music(_session.music_number, true, 0.0)
+	if _script_vm != null:
+		_script_vm.complete_battle(result)
+
+
 func _on_audio_settings_changed(_music_volume: int, _sound_volume: int) -> void:
 	if _audio_player != null:
 		_audio_player.apply_session_volumes()
@@ -727,7 +763,7 @@ func _on_script_party_walk_finished() -> void:
 
 
 func _on_item_use_requested(item_id: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _session.item_count(item_id) <= 0:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _session.item_count(item_id) <= 0:
 		return
 	var item := _database.item_definition(item_id)
 	if item == null or not item.is_usable():

@@ -13,6 +13,7 @@ func _init() -> void:
 	_test_damage_formula()
 	_test_defend_and_dual_move_queue()
 	_test_minimum_damage()
+	_test_dead_party_member_revives_for_battle()
 	_test_dead_target_reselection_and_victory()
 	_test_defeat()
 	if _failures.is_empty():
@@ -87,6 +88,15 @@ func _test_minimum_damage() -> void:
 	controller.submit_attack(0)
 	var result := controller.execute_next_action()
 	_expect(result != null and not result.hits.is_empty() and result.hits[0].damage >= 1, "player physical attack always deals at least one damage")
+
+
+func _test_dead_party_member_revives_for_battle() -> void:
+	var database := _synthetic_database([_enemy_definition(10, 1, 1, 0, 0, false)])
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.role_hp[0] = 0
+	var controller := PalBattleController.new()
+	_expect(controller.start_battle(database, session, 0, 0, 13), "battle can start when every party member was down")
+	_expect(session.role_hp[0] == 1, "PAL_StartBattle behavior revives a down party member to one HP")
 
 
 func _test_dead_target_reselection_and_victory() -> void:

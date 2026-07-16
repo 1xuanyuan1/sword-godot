@@ -6,12 +6,19 @@
 class_name PalBattlePreview
 extends Control
 
+## 剧情模式下玩家确认胜负结果时发出；值使用 `PalBattleController.BattleResult`。
+signal battle_finished(result: int)
+
 const PLAYER_POSITIONS: Array = [
 	[Vector2i(240, 170)],
 	[Vector2i(200, 176), Vector2i(256, 152)],
 	[Vector2i(180, 180), Vector2i(234, 170), Vector2i(270, 146)],
 ]
 
+## 为真时作为资源实验室独立样板运行；剧情覆盖层应在加入场景树前设为 `false`。
+@export var lab_mode: bool = true
+## 最近一次载入或启动战斗失败原因。
+var error_message: String = ""
 var _database: PalContentDatabase
 var _session: GameSession
 var _controller: PalBattleController
@@ -33,6 +40,9 @@ var _last_action_text: String = ""
 
 func _ready() -> void:
 	_build_interface()
+	if not lab_mode:
+		hide()
+		return
 	_database = PalContentDatabase.new()
 	if not _database.load_generated():
 		_status.text = "战斗资源不可用：%s｜Esc 返回" % _database.error_message
@@ -41,7 +51,7 @@ func _ready() -> void:
 
 
 func _process(delta: float) -> void:
-	if _controller == null or _controller.battle_result != PalBattleController.BattleResult.ONGOING or _controller.is_accepting_commands():
+	if not visible or _controller == null or _controller.battle_result != PalBattleController.BattleResult.ONGOING or _controller.is_accepting_commands():
 		return
 	_action_timer -= delta
 	if _action_timer <= 0.0:
@@ -51,17 +61,39 @@ func _process(delta: float) -> void:
 ## 加载一个敌队、战场和最多三人的队伍，创建全新的临时会话并立即重绘。
 ## 任一核心资源缺失时返回 `false`；样板会话不会修改探索场景的正式进度。
 func load_battle(enemy_team_id: int, battlefield_id: int, party_roles: PackedInt32Array) -> bool:
+	var preview_session := GameSession.new()
+	preview_session.party_roles = party_roles.slice(0, mini(3, party_roles.size()))
+	return _start_battle_view(_database, preview_session, enemy_team_id, battlefield_id)
+
+
+## 使用探索场景现有数据库和会话打开剧情战斗；玩家 HP 会由控制器直接写回该会话。
+## 失败时返回 `false` 并把原因显示在顶部状态栏，不自行伪造胜负。
+func begin_battle(content_database: PalContentDatabase, game_session: GameSession, enemy_team_id: int, battlefield_id: int) -> bool:
+	_database = content_database
+	_session = game_session
+	show()
+	return _start_battle_view(content_database, game_session, enemy_team_id, battlefield_id)
+
+
+func _start_battle_view(content_database: PalContentDatabase, game_session: GameSession, enemy_team_id: int, battlefield_id: int) -> bool:
+	_database = content_database
+	_session = game_session
+	error_message = ""
+	var party_roles := game_session.party_roles if game_session != null else PackedInt32Array()
 	if _database == null or party_roles.is_empty():
+		error_message = "战斗缺少内容数据库、会话或队伍"
 		return false
 	var team := _database.enemy_team_definition(enemy_team_id)
 	var battlefield := _database.battlefield_definition(battlefield_id)
 	var background := _database.load_battle_background(battlefield_id)
 	if team == null or battlefield == null or not background.is_valid():
-		_status.text = "敌队 %d 或战场 %d 不可用，请重新导入 Data｜Esc 返回" % [enemy_team_id, battlefield_id]
+		error_message = "敌队 %d 或战场 %d 不可用，请重新导入 Data" % [enemy_team_id, battlefield_id]
+		_status.text = error_message + "｜Esc 返回"
 		return false
 	var active_enemies := team.active_object_ids()
 	if active_enemies.is_empty():
-		_status.text = "敌队 %d 没有有效敌人｜方向键切换｜Esc 返回" % enemy_team_id
+		error_message = "敌队 %d 没有有效敌人" % enemy_team_id
+		_status.text = error_message + "｜方向键切换｜Esc 返回"
 		return false
 	_enemy_team_id = enemy_team_id
 	_battlefield_id = battlefield_id
@@ -87,11 +119,10 @@ func load_battle(enemy_team_id: int, battlefield_id: int, party_roles: PackedInt
 		var role_index := _party_roles[party_index]
 		var sprite_number := _database.player_roles.battle_sprite_for(role_index)
 		_player_nodes.append(_add_fighter(_database.load_player_battle_sprite(sprite_number), player_positions[party_index], palette, "Player%d" % party_index))
-	_session = GameSession.new()
-	_session.party_roles = _party_roles.duplicate()
 	_controller = PalBattleController.new()
 	if not _controller.start_battle(_database, _session, enemy_team_id, battlefield_id):
-		_status.text = "无法开始战斗：%s｜Esc 返回" % _controller.error_message
+		error_message = _controller.error_message
+		_status.text = "无法开始战斗：%s｜Esc 返回" % error_message
 		return false
 	_selected_enemy_index = _controller.living_enemy_indices()[0]
 	_action_timer = 0.0
@@ -101,11 +132,12 @@ func load_battle(enemy_team_id: int, battlefield_id: int, party_roles: PackedInt
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if not (event is InputEventKey) or not event.pressed or event.echo:
+	if not visible or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
 	match event.keycode:
 		KEY_ESCAPE:
-			get_tree().change_scene_to_file("res://scenes/main.tscn")
+			if lab_mode:
+				get_tree().change_scene_to_file("res://scenes/main.tscn")
 		KEY_LEFT:
 			_select_enemy(-1)
 		KEY_RIGHT:
@@ -115,13 +147,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_D:
 			_submit_defend()
 		KEY_BRACKETLEFT:
-			_load_nearest_team(-1)
+			if lab_mode:
+				_load_nearest_team(-1)
 		KEY_BRACKETRIGHT:
-			_load_nearest_team(1)
+			if lab_mode:
+				_load_nearest_team(1)
 		KEY_PAGEUP:
-			_load_nearest_battlefield(1)
+			if lab_mode:
+				_load_nearest_battlefield(1)
 		KEY_PAGEDOWN:
-			_load_nearest_battlefield(-1)
+			if lab_mode:
+				_load_nearest_battlefield(-1)
 
 
 func _build_interface() -> void:
@@ -206,7 +242,12 @@ func _confirm_attack_or_restart() -> void:
 	if _controller == null:
 		return
 	if _controller.battle_result != PalBattleController.BattleResult.ONGOING:
-		load_battle(_enemy_team_id, _battlefield_id, _party_roles)
+		if lab_mode:
+			load_battle(_enemy_team_id, _battlefield_id, _party_roles)
+		else:
+			var result := _controller.battle_result
+			hide()
+			battle_finished.emit(result)
 		return
 	if not _controller.is_accepting_commands() or not _controller.submit_attack(_selected_enemy_index):
 		return

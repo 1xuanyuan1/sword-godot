@@ -28,6 +28,8 @@ signal music_requested(music_number: int, loop: bool, fade_seconds: float)
 signal sound_requested(sound_number: int)
 ## 请求播放阻塞剧情的 RNG 过场；`end_frame == -1` 表示播放到动画结束。
 signal rng_animation_requested(animation_number: int, start_frame: int, end_frame: int, frames_per_second: int)
+## 请求打开一场阻塞剧情的经典战斗；`is_boss` 为真时不允许逃跑。
+signal battle_requested(enemy_team_id: int, battlefield_id: int, is_boss: bool)
 ## 请求探索控制器切换到从 0 开始的场景索引。
 signal scene_change_requested(scene_index: int)
 ## PLAYERROLES 场景 Sprite 或队伍成员发生变化。
@@ -53,6 +55,8 @@ var waiting_for_frames: bool = false
 var waiting_for_party_walk: bool = false
 ## 是否正在等待剧情 RNG 动画播放完成。
 var waiting_for_rng: bool = false
+## 是否正在等待战斗覆盖层返回胜负。
+var waiting_for_battle: bool = false
 ## 最近一次条件指令是否成功，供后续分支判断。
 var script_success: bool = true
 
@@ -71,6 +75,12 @@ var _party_walk_speed: int = 0
 var _scene_map_data: PalMapData
 var _reported_auto_instructions: Dictionary = {}
 var _current_rng_animation: int = 0
+var _battle_defeat_entry: int = 0
+var _battle_flee_entry: int = 0
+
+const BATTLE_RESULT_VICTORY := 1
+const BATTLE_RESULT_DEFEAT := 2
+const BATTLE_RESULT_FLED := 3
 
 
 #region Public lifecycle
@@ -93,7 +103,7 @@ func set_scene_map(map_data: PalMapData) -> void:
 ## 从指定脚本入口执行一个触发事件。
 ## VM 忙碌或入口无效时不修改状态并返回原入口；暂停或结束时返回未来入口。
 func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
-	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog or waiting_for_rng:
+	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog or waiting_for_rng or waiting_for_battle:
 		return entry_index
 	if event_object_id == 0xffff:
 		event_object_id = _last_event_object_id
@@ -105,6 +115,9 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	waiting_for_frames = false
 	waiting_for_party_walk = false
 	waiting_for_rng = false
+	waiting_for_battle = false
+	_battle_defeat_entry = 0
+	_battle_flee_entry = 0
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
 	_cursor = entry_index
@@ -134,6 +147,22 @@ func complete_rng_animation() -> void:
 	_continue_execution()
 
 
+## 通知 VM 剧情战斗已经结束，并按 `0007` 的战败或逃跑入口恢复脚本。
+## 胜利和未配置分支的其他结果继续执行 `0007` 的下一条指令。
+func complete_battle(result: int) -> void:
+	if not waiting_for_battle:
+		return
+	waiting_for_battle = false
+	if result == BATTLE_RESULT_DEFEAT and _battle_defeat_entry > 0:
+		_cursor = _battle_defeat_entry
+	elif result == BATTLE_RESULT_FLED and _battle_flee_entry > 0:
+		_cursor = _battle_flee_entry
+	_battle_defeat_entry = 0
+	_battle_flee_entry = 0
+	running = true
+	_continue_execution()
+
+
 ## 立即清空所有等待、调用栈和对话状态，并发出 `dialog_ended`。
 func stop() -> void:
 	running = false
@@ -141,6 +170,9 @@ func stop() -> void:
 	waiting_for_frames = false
 	waiting_for_party_walk = false
 	waiting_for_rng = false
+	waiting_for_battle = false
+	_battle_defeat_entry = 0
+	_battle_flee_entry = 0
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0
@@ -153,7 +185,7 @@ func stop() -> void:
 ## 返回本帧是否可能改变世界画面。
 func tick_frame() -> bool:
 	_auto_frame_number += 1
-	if waiting_for_rng:
+	if waiting_for_rng or waiting_for_battle:
 		return false
 	# SDLPal pauses scene updates while waiting for a dialog key.
 	var world_changed := false if waiting_for_dialog or _close_dialog_after_frame_wait else _tick_auto_scripts()
@@ -223,6 +255,17 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				redraw_requested.emit(entry.operands[1])
+			# 启动敌队 operand[0]；战败跳 operand[1]，operand[2] 非零时允许逃跑并作为逃跑入口。
+			0x0007:
+				if _dialog_has_body:
+					return _pause_at_dialog_boundary()
+				_cursor = next_cursor
+				_battle_defeat_entry = entry.operands[1]
+				_battle_flee_entry = entry.operands[2]
+				running = false
+				waiting_for_battle = true
+				battle_requested.emit(entry.operands[0], session.battlefield_number if session != null else 0, entry.operands[2] == 0)
+				return _cursor
 			# 将下一条指令设为事件未来入口，但继续执行当前脚本。
 			0x0008:
 				# Keep running, but make the next instruction the event's future trigger entry.
@@ -390,6 +433,10 @@ func _continue_execution() -> int:
 				var event := _resolve_event(entry.operands[0])
 				if event != null and entry.operands[0] != 0:
 					event.state = _signed_word(entry.operands[1])
+			# 设置下一场战斗使用的战场背景与五灵修正编号。
+			0x004a:
+				if session != null:
+					session.battlefield_number = entry.operands[0]
 			# 屏幕淡出；当前先请求重绘，完整调色板渐变仍待实现。
 			0x0050:
 				# 场景淡出效果尚未实现；先安全刷新并继续场景切换脚本。
@@ -573,6 +620,9 @@ func _finish(next_entry: int) -> int:
 	waiting_for_frames = false
 	waiting_for_party_walk = false
 	waiting_for_rng = false
+	waiting_for_battle = false
+	_battle_defeat_entry = 0
+	_battle_flee_entry = 0
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0

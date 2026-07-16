@@ -60,7 +60,7 @@ sword/
 
 ### `src/world`
 
-`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
+`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排，也负责在 ScriptVM 等待时覆盖打开剧情战斗、切换 BGM 并回传胜负。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
 
 ### `src/ui`
 
@@ -74,6 +74,7 @@ sword/
 
 - `tests/run_tests.gd`：CI 使用合成字节运行，不依赖原版游戏。
 - `tests/run_battle_logic_tests.gd`：CI 使用合成敌我数据验证经典回合、伤害和胜负。
+- `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。
 - `generated/pal/audio/`：本机 RIX/OPL 与 VOC 转换结果。

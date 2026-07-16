@@ -29,6 +29,8 @@ var night_palette: bool = false
 var music_number: int = 0
 ## 下一场战斗使用的音乐编号。
 var battle_music_number: int = 0
+## `004A` 设置的当前战场背景与五灵修正编号。
+var battlefield_number: int = 0
 ## 背景音乐音量百分比，范围 0–100；新游戏默认 100。
 var music_volume: int = AUDIO_VOLUME_MAX
 ## 音效音量百分比，范围 0–100；新游戏默认 100。
@@ -263,6 +265,7 @@ func reset_new_game() -> void:
 	night_palette = false
 	music_number = 0
 	battle_music_number = 0
+	battlefield_number = 0
 	world_layer = 0
 	party_roles = PackedInt32Array([0])
 	inventory.clear()

@@ -95,16 +95,22 @@ RNG 剧情动画引用、导入完整性和 HUD 播放回归：
   --script res://tests/run_battle_logic_tests.gd
 
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_battle_bridge_tests.gd
+
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_local_battle_content_test.gd
 
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_local_battle_logic_test.gd
 
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_battle_bridge_test.gd
+
 /Applications/Godot.app/Contents/MacOS/Godot --path . \
   --script res://tests/run_local_battle_preview_test.gd
 ```
 
-合成测试验证固定随机序列、行动排序、双动、防御、最低伤害、死亡目标重选和胜负；两个本地 headless 测试分别验证真实敌队/Sprite 和首战普攻闭环；最后一个测试必须使用真实渲染器，把敌队 18 / 战场 21 的 320×200 截图写入被忽略的 `generated/pal/visual_tests/`。
+合成测试验证固定随机序列、行动排序、双动、防御、最低伤害、死亡目标重选、胜负和 `004A/0007` 三种结果分支；本地 headless 测试验证真实敌队/Sprite、首战普攻闭环及脚本 6964/6965 的阻塞请求；最后一个测试必须使用真实渲染器，把敌队 18 / 战场 21 的 320×200 截图写入被忽略的 `generated/pal/visual_tests/`。
 
 ### 人工剧情检查点
 
