@@ -1,8 +1,8 @@
 # Copyright (C) 2026 sword-godot contributors
-# Adapted from SDLPal fight.c classic action queue and physical attack paths.
+# Adapted from SDLPal fight.c classic action queue, physical attack and magic paths.
 # SPDX-License-Identifier: GPL-3.0-or-later
 ## 单场经典回合制战斗的纯逻辑控制器。
-## 静态定义来自 `PalContentDatabase`，敌人临时体力由本对象持有，玩家体力写回 `GameSession`。
+## 静态定义来自 `PalContentDatabase`，敌人临时体力由本对象持有，玩家体力和成长写回 `GameSession`。
 class_name PalBattleController
 extends RefCounted
 
@@ -762,11 +762,8 @@ func _execute_enemy_action(entry: QueueEntry) -> ActionResult:
 		result.skipped = true
 		result.summary = "敌人没有可攻击目标"
 		return result
-	# 敌人会在选定目标后再判断施法。第一闭环尚未移植法术脚本，明确暂停该次动作，
-	# 避免把本应施法的敌人静默改成物理攻击而造成难以发现的数值偏差。
 	if enemy.definition.magic != 0 and _random.next_int(0, 9) < enemy.definition.magic_rate:
-		result.unsupported = true
-		result.summary = "敌人法术行动尚未接入"
+		_execute_enemy_magic(entry.combatant_index, target_index, result)
 		return result
 	var hit := _enemy_physical_hit(entry.combatant_index, target_index)
 	result.hits.append(hit)
@@ -775,6 +772,74 @@ func _execute_enemy_action(entry: QueueEntry) -> ActionResult:
 		"自动防御" if hit.auto_defended else "%d点伤害" % hit.damage,
 	]
 	return result
+
+
+func _execute_enemy_magic(enemy_index: int, selected_target_index: int, result: ActionResult) -> void:
+	var enemy := enemies[enemy_index]
+	var magic_object_id := enemy.definition.magic
+	var object := database.magic_object_definition(magic_object_id)
+	var definition := database.magic_definition_for_object(magic_object_id)
+	result.action_type = ActionType.MAGIC
+	result.magic_object_id = magic_object_id
+	if magic_object_id == 0xffff:
+		result.skipped = true
+		result.summary = "敌人本轮法术为空"
+		return
+	if object == null or definition == null or not _enemy_magic_effect_is_supported(object, definition):
+		result.unsupported = true
+		result.summary = "该敌人仙术的状态或脚本效果尚未接入"
+		return
+	var target_all := definition.magic_type != PalMagicDefinition.TYPE_NORMAL
+	result.target_index = -1 if target_all else selected_target_index
+	var target_indices := PackedInt32Array()
+	if target_all:
+		for party_index in range(players.size()):
+			if _role_hp(players[party_index].role_index) > 0:
+				target_indices.append(party_index)
+	elif selected_target_index >= 0:
+		target_indices.append(selected_target_index)
+	for party_index in target_indices:
+		var auto_defended := _random.next_int(0, 2) == 0
+		var damage := _calculate_enemy_magic_damage(enemy_index, party_index, definition)
+		var divisor := (2 if players[party_index].defending else 1) + (1 if auto_defended else 0)
+		damage = maxi(0, int(damage / maxi(1, divisor)))
+		result.hits.append(_apply_player_magic_damage(party_index, damage, auto_defended))
+	result.summary = "敌人施展%s" % database.get_word(magic_object_id)
+
+
+func _enemy_magic_effect_is_supported(object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> bool:
+	return _signed_word(definition.base_damage) > 0 and object.script_on_use == 0 and object.script_on_success == 0 and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]
+
+
+func _calculate_enemy_magic_damage(enemy_index: int, party_index: int, definition: PalMagicDefinition) -> int:
+	var enemy := enemies[enemy_index].definition
+	var role_index := players[party_index].role_index
+	var magic_strength := _signed_word(enemy.magic_strength) + (enemy.level + 6) * 6
+	magic_strength = maxi(0, int(magic_strength * _random.next_float(10.0, 11.0) / 10.0))
+	var damage := calculate_base_damage(magic_strength, session.defense_for(role_index)) / 4
+	damage += _signed_word(definition.base_damage)
+	if definition.elemental != 0:
+		var resistance := database.player_roles.poison_resistances[role_index] if definition.elemental > PalBattlefield.ELEMENT_COUNT else database.player_roles.elemental_resistances_by_role[role_index][definition.elemental - 1]
+		# 敌方法术调用 PAL_CalcMagicDamage 时传入 100 + 玩家抗性，并使用倍率 20。
+		damage = int(damage * (10.0 - float(100 + resistance) / 20.0))
+		damage /= 5
+		if definition.elemental <= PalBattlefield.ELEMENT_COUNT:
+			var battlefield := database.battlefield_definition(battlefield_id)
+			var field_effect := battlefield.magic_effects[definition.elemental - 1] if battlefield != null and battlefield.magic_effects.size() >= definition.elemental else 0
+			damage = int(damage * (10.0 + field_effect) / 10.0)
+	return damage
+
+
+func _apply_player_magic_damage(party_index: int, damage: int, auto_defended: bool) -> Hit:
+	var hit := Hit.new()
+	hit.target_index = party_index
+	hit.auto_defended = auto_defended
+	var role_index := players[party_index].role_index
+	var current_hp := _role_hp(role_index)
+	hit.damage = mini(current_hp, maxi(0, damage))
+	session.increase_role_hp_mp(role_index, -hit.damage, 0)
+	hit.defeated = _role_hp(role_index) == 0
+	return hit
 
 
 func _enemy_physical_hit(enemy_index: int, target_index: int) -> Hit:

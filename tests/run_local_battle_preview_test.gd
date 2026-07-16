@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 用真实 Godot 渲染器截取敌队 18、战场 21 的经典指令和仙术列表，验证官方 UI 与双方 Sprite。
+## 用真实 Godot 渲染器截取敌我仙术、经典指令、普攻和战后结算，验证官方 UI 与双方 Sprite。
 ## 截图只写入被 Git 忽略的 `generated/pal/visual_tests/`。
 extends SceneTree
 
@@ -137,6 +137,39 @@ func _run() -> void:
 		_fail("玩家普攻动画结束后没有回到原始战位")
 		return
 
+	preview.load_battle(17, 21, PackedInt32Array([0, 1]))
+	var enemy_magic_actor := -1
+	for enemy_index in range(preview._controller.enemies.size()):
+		if preview._controller.enemies[enemy_index].definition.magic == 312:
+			enemy_magic_actor = enemy_index
+			break
+	if enemy_magic_actor < 0:
+		_fail("敌队 17 中找不到真实敌术 312")
+		return
+	var enemy_magic_result := PalBattleController.ActionResult.new()
+	enemy_magic_result.actor_is_enemy = true
+	enemy_magic_result.actor_index = enemy_magic_actor
+	preview._controller._execute_enemy_magic(enemy_magic_actor, 0, enemy_magic_result)
+	if enemy_magic_result.unsupported or enemy_magic_result.hits.is_empty() or enemy_magic_result.hits[0].damage <= 0:
+		_fail("真实敌术 312 没有生成可播放的玩家伤害结果")
+		return
+	preview._play_enemy_magic(enemy_magic_result)
+	var enemy_magic_image: Image
+	for _step in range(120):
+		await create_timer(0.03).timeout
+		if preview._magic_root.get_child_count() > 0:
+			enemy_magic_image = viewport.get_texture().get_image()
+			break
+	var enemy_magic_path := output_directory.path_join("battle_enemy_magic.png")
+	if enemy_magic_image == null or enemy_magic_image.save_png(enemy_magic_path) != OK:
+		_fail("敌人仙术播放期间没有绘制 FIRE.MKF 特效")
+		return
+	for _step in range(160):
+		await create_timer(0.03).timeout
+		if preview._magic_root.get_child_count() == 0:
+			break
+	await create_timer(0.6).timeout
+
 	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
 	preview._session.role_hp[0] = 100
 	for enemy_index in range(preview._controller.enemies.size()):
@@ -163,7 +196,7 @@ func _run() -> void:
 	if level_image == null or level_image.save_png(level_path) != OK:
 		_fail("无法写入原版布局升级数值截图")
 		return
-	print("PASS: 敌队 18 / 战场 21 的经典指令、仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s" % [output_path, magic_path, healing_path, offensive_path, attack_path, reward_path, level_path])
+	print("PASS: 经典指令、玩家/敌人仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, reward_path, level_path])
 	quit(0)
 
 

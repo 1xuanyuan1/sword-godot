@@ -44,7 +44,7 @@ sword/
 
 ### `src/battle`
 
-`PalBattleRandom` 复现 SDLPal 的固定随机序列；`PalBattleController` 持有单场敌人体力、指令和行动队列，并把玩家 HP/MP、经验、金钱与升级写回 `GameSession`；`PalBattlePreview` 编排双方 Sprite、敌我目标、物理攻击和 FIRE 仙术动画；`PalBattleUI` 使用原版 UI Sprite 绘制角色状态框、四向指令、仙术列表、上浮数字和战后成长页。静态敌人、仙术与成长规则仍属于 `src/content`，场景节点不直接计算伤害。
+`PalBattleRandom` 复现 SDLPal 的固定随机序列；`PalBattleController` 持有单场敌人体力、指令、敌人施法 AI 和行动队列，并把玩家 HP/MP、经验、金钱与升级写回 `GameSession`；`PalBattlePreview` 编排双方 Sprite、敌我目标、物理攻击和 FIRE 仙术动画；`PalBattleUI` 使用原版 UI Sprite 绘制角色状态框、四向指令、仙术列表、上浮数字和战后成长页。静态敌人、仙术与成长规则仍属于 `src/content`，场景节点不直接计算伤害。
 
 ### `src/import`
 

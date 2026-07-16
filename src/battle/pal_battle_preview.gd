@@ -1,8 +1,8 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal battle.c, fight.c and uibattle.c classic paths.
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 经典战斗的 Godot 画面与输入编排器，绘制原版战场并播放双方物理攻击动画。
-## 回合数值由 `PalBattleController` 持有，经典状态框、指令和仙术列表由 `PalBattleUI` 绘制。
+## 经典战斗的 Godot 画面与输入编排器，绘制原版战场并播放双方物理和仙术动画。
+## 回合/成长数值由 `PalBattleController` 持有，经典状态框、指令、仙术和结算页由 `PalBattleUI` 绘制。
 class_name PalBattlePreview
 extends Control
 
@@ -562,6 +562,9 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 	if result.action_type == PalBattleController.ActionType.MAGIC and not result.actor_is_enemy:
 		await _play_player_magic(result)
 		return
+	if result.action_type == PalBattleController.ActionType.MAGIC and result.actor_is_enemy:
+		await _play_enemy_magic(result)
+		return
 	if result.actor_is_enemy:
 		await _play_enemy_attack(result)
 	else:
@@ -766,6 +769,132 @@ func _play_enemy_attack(result: PalBattleController.ActionResult) -> void:
 	_set_enemy_frame(actor_index, 0, 0, original_foot)
 	_set_player_frame(hit.target_index, _resting_player_frame(hit.target_index), target_foot)
 	await _wait_frames(4)
+
+
+func _play_enemy_magic(result: PalBattleController.ActionResult) -> void:
+	if result.actor_index < 0 or result.actor_index >= _enemy_nodes.size():
+		return
+	var definition := _database.magic_definition_for_object(result.magic_object_id)
+	if definition == null:
+		return
+	var actor_index := result.actor_index
+	var enemy := _controller.enemies[actor_index].definition
+	var original_foot := _enemy_foot_positions[actor_index]
+	var casting_foot := original_foot + Vector2i(12, 6)
+	_set_enemy_frame(actor_index, _enemy_current_frames[actor_index], 0, casting_foot)
+	await _wait_frames(1)
+	casting_foot += Vector2i(4, 2)
+	_set_enemy_frame(actor_index, _enemy_current_frames[actor_index], 0, casting_foot)
+	await _wait_frames(1)
+	if _audio_player != null and enemy.sounds.size() > 1 and enemy.sounds[1] >= 0:
+		_audio_player.play_sound(enemy.sounds[1])
+	for frame_offset in range(enemy.magic_frames):
+		_set_enemy_frame(actor_index, enemy.idle_frames + frame_offset, 0, casting_foot)
+		await _wait_frames(maxi(1, enemy.action_wait_frames))
+	if enemy.magic_frames == 0:
+		await _wait_frames(1)
+	if definition.fire_delay == 0:
+		for frame_offset in range(enemy.attack_frames + 1):
+			var attack_frame := frame_offset - 1 + enemy.idle_frames + enemy.magic_frames
+			_set_enemy_frame(actor_index, attack_frame, 0, casting_foot)
+			await _wait_frames(maxi(1, enemy.action_wait_frames))
+	var effect_sprite := _database.load_magic_effect_sprite(definition.effect_sprite)
+	if effect_sprite != null and effect_sprite.is_valid():
+		await _play_enemy_magic_effect_sprite(effect_sprite, definition, result, casting_foot)
+	else:
+		_battle_ui.show_message("敌人仙术特效资源缺失，请重新导入 Data", 1000)
+		if _audio_player != null:
+			_audio_player.play_sound(definition.sound)
+		await _wait_frames(4)
+	await _show_enemy_magic_result(result)
+	_set_enemy_frame(actor_index, 0, 0, original_foot)
+	await _wait_frames(8)
+
+
+func _play_enemy_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition, result: PalBattleController.ActionResult, casting_foot: Vector2i) -> void:
+	var effect_positions := _enemy_magic_effect_positions(definition, result)
+	if effect_positions.is_empty():
+		return
+	var effect_nodes: Array[Sprite2D] = []
+	for index in range(effect_positions.size()):
+		var node := Sprite2D.new()
+		node.name = "EnemyMagic%02d" % index
+		node.centered = false
+		node.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		_magic_root.add_child(node)
+		effect_nodes.append(node)
+	var frame_count := sprite.frame_count()
+	var repeat_start := clampi(definition.fire_delay, 0, maxi(0, frame_count - 1))
+	var repeated_frames := maxi(0, frame_count - repeat_start) * definition.effect_times
+	var total_frames := mini(512, frame_count + repeated_frames + definition.shake)
+	var delay_seconds := clampf((definition.speed + 5) * 0.01, 0.01, 0.2)
+	var casting_enemy := _controller.enemies[result.actor_index].definition
+	for animation_index in range(total_frames):
+		var frame_index := animation_index if animation_index < frame_count else repeat_start + posmod(animation_index - repeat_start, maxi(1, frame_count - repeat_start))
+		if animation_index == repeat_start:
+			var attack_frame := maxi(0, casting_enemy.idle_frames + casting_enemy.magic_frames - 1)
+			_set_enemy_frame(result.actor_index, attack_frame, 0, casting_foot)
+			if _audio_player != null:
+				_audio_player.play_sound(definition.sound)
+		if definition.fire_delay > 0 and animation_index >= definition.fire_delay:
+			if animation_index < definition.fire_delay + casting_enemy.attack_frames:
+				var attack_frame := animation_index - definition.fire_delay + casting_enemy.idle_frames + casting_enemy.magic_frames
+				_set_enemy_frame(result.actor_index, attack_frame, 0, casting_foot)
+		var frame := RleDecoder.decode(sprite.get_frame(frame_index))
+		if not frame.is_valid():
+			continue
+		for node_index in range(effect_nodes.size()):
+			var foot := effect_positions[node_index]
+			var node := effect_nodes[node_index]
+			node.texture = _texture_for_sprite_frame(sprite, frame_index, 0)
+			node.position = Vector2(foot.x - frame.width / 2.0, foot.y - frame.height)
+			node.z_index = foot.y + definition.specific
+		await get_tree().create_timer(delay_seconds).timeout
+	for node in effect_nodes:
+		node.free()
+
+
+func _enemy_magic_effect_positions(definition: PalMagicDefinition, result: PalBattleController.ActionResult) -> Array[Vector2i]:
+	var positions: Array[Vector2i] = []
+	match definition.magic_type:
+		PalMagicDefinition.TYPE_NORMAL:
+			if result.target_index >= 0 and result.target_index < _player_foot_positions.size():
+				positions.append(_player_foot_positions[result.target_index])
+		PalMagicDefinition.TYPE_ATTACK_ALL:
+			# fight.c::PAL_BattleShowEnemyMagicAnim 固定使用三名队员的原版脚底坐标。
+			positions = [Vector2i(180, 180), Vector2i(234, 170), Vector2i(270, 146)]
+		PalMagicDefinition.TYPE_ATTACK_WHOLE:
+			positions.append(Vector2i(240, 150))
+		PalMagicDefinition.TYPE_ATTACK_FIELD:
+			positions.append(Vector2i(160, 200))
+	for index in range(positions.size()):
+		positions[index] += Vector2i(definition.x_offset, definition.y_offset)
+	return positions
+
+
+func _show_enemy_magic_result(result: PalBattleController.ActionResult) -> void:
+	var affected := PackedInt32Array()
+	for hit in result.hits:
+		if hit.target_index < 0 or hit.target_index >= _player_foot_positions.size():
+			continue
+		affected.append(hit.target_index)
+		var foot := _player_foot_positions[hit.target_index]
+		_set_player_frame(hit.target_index, 3 if hit.auto_defended else 4, foot, 6)
+		if hit.damage > 0:
+			_battle_ui.show_number(hit.damage, Vector2i(foot.x - 9, maxi(10, foot.y - 75)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
+	var offsets: Array[Vector2i] = [Vector2i.ZERO, Vector2i(4, 2), Vector2i(6, 3), Vector2i(7, 3), Vector2i(7, 3)]
+	for frame_index in range(offsets.size()):
+		for party_index in affected:
+			var hit: PalBattleController.Hit
+			for candidate in result.hits:
+				if candidate.target_index == party_index:
+					hit = candidate
+					break
+			var target_frame := 3 if hit != null and hit.auto_defended else 4
+			_set_player_frame(party_index, target_frame, _player_foot_positions[party_index] + offsets[frame_index], 6 if frame_index < 3 else 0)
+		await _wait_frames(1)
+	for party_index in affected:
+		_set_player_frame(party_index, _resting_player_frame(party_index), _player_foot_positions[party_index])
 
 
 func _move_player(player_index: int, target_foot: Vector2i, frame_index: int, duration: float) -> void:

@@ -217,6 +217,27 @@ keywords:
   - `docs/PROJECT_STRUCTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-029] [feat] 接通敌人基础攻击仙术与原版动画
+
+- **关联需求**: M4 经典战斗
+- **关联 TODO**: TD-005（阶段性）
+- **功能描述**: 敌人 AI 按 `magic_rate` 决定施法，支持普通单体、攻击全体、攻击整体和攻击战场四类纯伤害仙术；结算复用 SDLPal 敌方灵力、角色防御、`100 + 五灵/毒抗`、倍率 20、战场修正、主动防御和 1/3 魔法自动防御公式。画面按 `PAL_BattleShowEnemyMagicAnim()` 播放敌人右下蓄势、施法帧、敌人/仙术音效、FIRE 特效、蓝色伤害、角色变色与后退。依赖毒、异常状态、召唤或脚本的敌术保持显式不支持，不退化为普攻或伪造伤害。
+- **验证情况**: 254 项合成格式测试、45 项经典战斗逻辑检查和 10 项剧情战斗桥接检查通过；本地资源确认 85 个带敌术的敌人中有 58 个基础攻击敌术可准确结算，敌队 17 的敌术对象 312 已通过真实扣血和 OpenGL 动画截图，首战敌队 18 的普攻/奖励回归保持通过。
+- **涉及文件**:
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_logic_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

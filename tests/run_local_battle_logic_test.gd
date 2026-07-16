@@ -65,8 +65,43 @@ func _init() -> void:
 	if reward_session.role_levels[0] <= old_level or reward.level_ups.is_empty():
 		_fail("李逍遥没有按真实 DATA.MKF #14 阈值在首战后升级")
 		return
-	print("PASS: 首战普攻样板以结果 %d 结束，共执行 %d 次行动、%d 次有效伤害；胜利获得 %d 经验 / %d 文并触发升级" % [controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash])
+	var enemy_magic_sample := _find_enemy_magic_sample(database)
+	if enemy_magic_sample.is_empty():
+		_fail("找不到可准确结算的真实敌人攻击仙术")
+		return
+	var magic_session := GameSession.new()
+	magic_session.party_roles = PackedInt32Array([0, 1])
+	var magic_controller := PalBattleController.new()
+	var magic_team := int(enemy_magic_sample.get("team", -1))
+	if not magic_controller.start_battle(database, magic_session, magic_team, 21, 20260718):
+		_fail("真实敌人仙术样板无法初始化")
+		return
+	var magic_result := PalBattleController.ActionResult.new()
+	magic_result.actor_is_enemy = true
+	magic_result.actor_index = int(enemy_magic_sample.get("enemy_index", -1))
+	magic_controller._execute_enemy_magic(magic_result.actor_index, 0, magic_result)
+	if magic_result.unsupported or magic_result.action_type != PalBattleController.ActionType.MAGIC or magic_result.hits.is_empty() or magic_result.hits[0].damage <= 0:
+		_fail("真实敌人基础攻击仙术没有产生玩家伤害")
+		return
+	print("PASS: 首战普攻样板以结果 %d 结束，共执行 %d 次行动、%d 次有效伤害；胜利获得 %d 经验 / %d 文并触发升级；敌队 %d 的敌术 %d 可真实结算" % [controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash, magic_team, magic_result.magic_object_id])
 	quit(0)
+
+
+func _find_enemy_magic_sample(database: PalContentDatabase) -> Dictionary:
+	for team_id in range(database.enemy_teams.size()):
+		var team := database.enemy_team_definition(team_id)
+		if team == null:
+			continue
+		var objects := team.active_object_ids()
+		for enemy_index in range(objects.size()):
+			var enemy := database.enemy_definition_for_object(objects[enemy_index])
+			if enemy == null or enemy.magic <= 0 or enemy.magic == 0xffff:
+				continue
+			var object := database.magic_object_definition(enemy.magic)
+			var definition := database.magic_definition_for_object(enemy.magic)
+			if object != null and definition != null and object.script_on_use == 0 and object.script_on_success == 0 and definition.base_damage > 0 and definition.base_damage < 0x8000 and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+				return {"team": team_id, "enemy_index": enemy_index, "magic": enemy.magic}
+	return {}
 
 
 func _fail(message: String) -> void:

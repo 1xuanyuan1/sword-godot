@@ -19,6 +19,9 @@ func _init() -> void:
 	_test_single_target_healing_magic()
 	_test_offensive_magic_damage()
 	_test_unsupported_status_magic_is_disabled()
+	_test_enemy_offensive_magic()
+	_test_enemy_attack_all_magic()
+	_test_unsupported_enemy_status_magic()
 	_test_defeat()
 	if _failures.is_empty():
 		print("PASS: %d classic battle logic checks" % _checks)
@@ -212,6 +215,58 @@ func _test_unsupported_status_magic_is_disabled() -> void:
 	controller.start_battle(database, session, 0, 0, 31)
 	_expect(not controller.can_pending_player_use_magic(102) and not controller.submit_magic(102, 0), "status magic stays disabled until its success opcode is implemented")
 	_expect(session.role_mp[0] == 50, "rejecting an unsupported status magic does not consume MP")
+
+
+func _test_enemy_offensive_magic() -> void:
+	var enemy := _enemy_definition(999, 5, 1, 0, 999, false)
+	enemy.magic = 101
+	enemy.magic_rate = 10
+	enemy.magic_strength = 80
+	var database := _synthetic_database([enemy])
+	database.player_roles.dexterities[0] = 0
+	_add_magic(database, 101, PalMagicDefinition.TYPE_NORMAL, 0, 60, PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	var session := _session_for(database, PackedInt32Array([0]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 41)
+	controller.submit_attack(0)
+	var result := controller.execute_next_action()
+	_expect(result != null and result.actor_is_enemy and result.action_type == PalBattleController.ActionType.MAGIC and result.magic_object_id == 101 and result.target_index == 0, "enemy selects and reports a supported single-target offensive magic")
+	_expect(result != null and result.hits.size() == 1 and result.hits[0].damage > 0 and session.role_hp[0] == 100 - result.hits[0].damage, "enemy magic applies defense, resistance and HP damage to its selected player")
+
+
+func _test_enemy_attack_all_magic() -> void:
+	var enemy := _enemy_definition(999, 5, 1, 0, 999, false)
+	enemy.magic = 102
+	enemy.magic_rate = 10
+	enemy.magic_strength = 80
+	var database := _synthetic_database([enemy])
+	for role_index in [0, 1]:
+		database.player_roles.dexterities[role_index] = 0
+	_add_magic(database, 102, PalMagicDefinition.TYPE_ATTACK_ALL, 0, 50, PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY | PalMagicObjectDefinition.FLAG_APPLY_TO_ALL, 0)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 43)
+	controller.submit_defend()
+	controller.submit_attack(0)
+	var result := controller.execute_next_action()
+	_expect(result != null and result.action_type == PalBattleController.ActionType.MAGIC and result.target_index == -1 and result.hits.size() == 2, "non-normal enemy magic targets every living party member")
+	_expect(result != null and result.hits.all(func(hit: PalBattleController.Hit) -> bool: return hit.damage > 0), "enemy attack-all magic exposes one positive damage hit per living player")
+
+
+func _test_unsupported_enemy_status_magic() -> void:
+	var enemy := _enemy_definition(999, 5, 1, 0, 999, false)
+	enemy.magic = 103
+	enemy.magic_rate = 10
+	var database := _synthetic_database([enemy])
+	database.player_roles.dexterities[0] = 0
+	_add_magic(database, 103, PalMagicDefinition.TYPE_APPLY_TO_PLAYER, 0, 0, 0, 0)
+	var session := _session_for(database, PackedInt32Array([0]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 47)
+	controller.submit_attack(0)
+	var result := controller.execute_next_action()
+	_expect(result != null and result.unsupported and result.action_type == PalBattleController.ActionType.MAGIC, "enemy status magic remains explicit until its battle script effects are implemented")
+	_expect(session.role_hp[0] == 100, "unsupported enemy status magic does not fabricate damage")
 
 
 func _test_defeat() -> void:

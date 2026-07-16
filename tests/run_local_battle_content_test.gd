@@ -59,11 +59,24 @@ func _init() -> void:
 		if not database.load_magic_effect_sprite(effect_number).is_valid():
 			_fail("仙术属性引用的 FIRE.MKF 特效 %d 缺失" % effect_number)
 			return
+	var enemy_magic_count := 0
+	var supported_enemy_magic_count := 0
+	for enemy in database.enemies:
+		if enemy.magic <= 0 or enemy.magic == 0xffff:
+			continue
+		enemy_magic_count += 1
+		var object := database.magic_object_definition(enemy.magic)
+		var definition := database.magic_definition_for_object(enemy.magic)
+		if object != null and definition != null and object.script_on_use == 0 and object.script_on_success == 0 and definition.base_damage > 0 and definition.base_damage < 0x8000 and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+			supported_enemy_magic_count += 1
+	if enemy_magic_count == 0 or supported_enemy_magic_count == 0:
+		_fail("本地敌人仙术表没有可验证的基础攻击仙术")
+		return
 	var first_team := database.enemy_team_definition(18)
 	if first_team == null or first_team.active_object_ids() != PackedInt32Array([495, 495]) or not database.load_battle_background(21).is_valid():
 		_fail("前期首场强制战斗没有解析为战场 21、敌队 18 的两个敌人")
 		return
-	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、升级规则及 %d 组 FIRE 仙术特效均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size()])
+	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、升级规则、%d 组 FIRE 特效及 %d/%d 个基础/全部敌术均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size(), supported_enemy_magic_count, enemy_magic_count])
 	quit(0)
 
 
