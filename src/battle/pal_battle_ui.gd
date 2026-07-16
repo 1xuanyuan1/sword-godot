@@ -12,6 +12,9 @@ enum Mode {
 	ENEMY_TARGET,
 	PLAYER_TARGET,
 	MAGIC_LIST,
+	MISC_MENU,
+	ITEM_ACTION,
+	ITEM_LIST,
 	REWARD,
 	RESULT,
 }
@@ -28,6 +31,7 @@ const UI_FRAME_CURRENT_ARROW := 69
 const UI_FRAME_SELECTED_ARROW_RED := 66
 const UI_FRAME_SELECTED_ARROW := 67
 const UI_FRAME_MAGIC_CURSOR := 69
+const UI_FRAME_ITEM_BOX := 70
 const ACTION_POSITIONS: Array[Vector2i] = [
 	Vector2i(27, 140),
 	Vector2i(0, 155),
@@ -40,8 +44,21 @@ const MAGIC_COLUMNS := 3
 const MAGIC_ROWS := 5
 const MAGIC_COLUMN_WIDTH := 87
 const MAGIC_ROW_HEIGHT := 18
+const MISC_ITEM_POSITIONS: Array[Vector2i] = [
+	Vector2i(16, 32),
+	Vector2i(16, 50),
+	Vector2i(16, 68),
+	Vector2i(16, 86),
+	Vector2i(16, 104),
+]
+const ITEM_ACTION_POSITIONS: Array[Vector2i] = [Vector2i(44, 62), Vector2i(44, 80)]
+const ITEM_COLUMNS := 3
+const ITEM_ROWS := 7
+const ITEM_COLUMN_WIDTH := 100
+const ITEM_ROW_HEIGHT := 18
 const COLOR_MENU_NORMAL := 0x4f
 const COLOR_MENU_INACTIVE := 0x18
+const COLOR_MENU_CONFIRMED := 0x2c
 const COLOR_MENU_SELECTED_INACTIVE := 0x1c
 const COLOR_MENU_SELECTED_FIRST := 0xf9
 const ENEMY_VITALS_RECT := Rect2(8, 8, 82, 40)
@@ -63,6 +80,12 @@ var selected_enemy: int = -1
 var selected_party_index: int = 0
 ## 当前仙术列表的选择索引。
 var selected_magic_index: int = 0
+## “其他”菜单当前选择：自动、物品、防御、逃跑、状态。
+var selected_misc_index: int = 1
+## 物品子菜单当前选择：使用或投掷。
+var selected_item_action: int = 0
+## 战斗物品列表当前选择索引。
+var selected_item_index: int = 0
 ## 玩家战斗 Sprite 的脚底坐标，用来绘制当前角色箭头。
 var player_foot_positions: Array[Vector2i] = []
 
@@ -72,6 +95,9 @@ var _ui_textures: Dictionary = {}
 var _font_texture: Texture2D
 var _font_glyphs: Dictionary = {}
 var _magic_entries: Array[Dictionary] = []
+var _battle_item_ids: Array[int] = []
+var _item_list_throwable: bool = false
+var _item_textures: Dictionary = {}
 var _floating_numbers: Array[Dictionary] = []
 var _message: String = ""
 var _message_until: int = 0
@@ -172,6 +198,62 @@ func selected_magic_enabled() -> bool:
 	return bool(_magic_entries[selected_magic_index].get("enabled", false)) if selected_magic_index >= 0 and selected_magic_index < _magic_entries.size() else false
 
 
+## 打开经典“其他”菜单，保留上一次选择位置。
+func open_misc_menu() -> void:
+	selected_misc_index = clampi(selected_misc_index, 0, MISC_ITEM_POSITIONS.size() - 1)
+	mode = Mode.MISC_MENU
+	queue_redraw()
+
+
+## 循环移动“其他”菜单光标。
+func move_misc_selection(step: int) -> void:
+	selected_misc_index = posmod(selected_misc_index + step, MISC_ITEM_POSITIONS.size())
+	queue_redraw()
+
+
+## 打开“使用／投掷”物品子菜单。
+func open_item_action_menu() -> void:
+	selected_item_action = clampi(selected_item_action, 0, 1)
+	mode = Mode.ITEM_ACTION
+	queue_redraw()
+
+
+## 在“使用／投掷”之间移动选择。
+func move_item_action_selection(step: int) -> void:
+	selected_item_action = posmod(selected_item_action + step, 2)
+	queue_redraw()
+
+
+## 打开战斗物品列表；`throwable` 为真时按投掷脚本判断可用状态。
+func open_item_list(throwable: bool) -> void:
+	_item_list_throwable = throwable
+	_refresh_battle_items()
+	mode = Mode.ITEM_LIST
+	queue_redraw()
+
+
+## 按经典 3×7 网格移动战斗物品光标。
+func move_item_selection(column_delta: int, row_delta: int) -> void:
+	if _battle_item_ids.is_empty():
+		selected_item_index = 0
+		return
+	selected_item_index = clampi(selected_item_index + column_delta + row_delta * ITEM_COLUMNS, 0, _battle_item_ids.size() - 1)
+	queue_redraw()
+
+
+## 返回当前战斗物品对象编号；列表为空时返回 0。
+func selected_item_object() -> int:
+	return _battle_item_ids[selected_item_index] if selected_item_index >= 0 and selected_item_index < _battle_item_ids.size() else 0
+
+
+## 返回当前物品在本回合剩余数量与已支持脚本下是否可提交。
+func selected_item_enabled() -> bool:
+	var item_id := selected_item_object()
+	if item_id <= 0 or controller == null:
+		return false
+	return controller.can_pending_player_throw_item(item_id) if _item_list_throwable else controller.can_pending_player_use_item(item_id)
+
+
 ## 更新我方单体目标的队伍位置，并重绘选中箭头。
 func set_player_selection(party_index: int) -> void:
 	selected_party_index = clampi(party_index, 0, maxi(0, player_foot_positions.size() - 1))
@@ -227,7 +309,7 @@ func advance_reward_page() -> bool:
 
 ## 返回官方 UI Sprite、点阵字和调色板是否全部成功载入。
 func has_classic_resources() -> bool:
-	return _ui_sprite != null and _ui_sprite.is_valid() and _ui_sprite.frame_count() > UI_FRAME_MAGIC_CURSOR and _font_texture != null and not _font_glyphs.is_empty()
+	return _ui_sprite != null and _ui_sprite.is_valid() and _ui_sprite.frame_count() > UI_FRAME_ITEM_BOX and _font_texture != null and not _font_glyphs.is_empty()
 
 
 func _process(_delta: float) -> void:
@@ -244,7 +326,8 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if database == null or session == null or controller == null:
 		return
-	if controller.is_accepting_commands():
+	# 物品页的说明区占用屏幕底部；经典 ItemSelectMenu 打开时不叠加角色状态框。
+	if controller.is_accepting_commands() and mode != Mode.ITEM_LIST:
 		_draw_player_status_boxes()
 		_draw_current_player_arrow()
 		if mode == Mode.PLAYER_TARGET:
@@ -255,6 +338,13 @@ func _draw() -> void:
 		_draw_enemy_vitals()
 	elif mode == Mode.MAGIC_LIST:
 		_draw_magic_menu()
+	elif mode == Mode.MISC_MENU:
+		_draw_misc_menu()
+	elif mode == Mode.ITEM_ACTION:
+		_draw_misc_menu(1)
+		_draw_item_action_menu()
+	elif mode == Mode.ITEM_LIST:
+		_draw_item_list()
 	elif mode == Mode.REWARD:
 		_draw_reward_page()
 	_draw_floating_numbers()
@@ -354,6 +444,59 @@ func _draw_magic_menu() -> void:
 		_draw_pal_text("没有可用仙术", Vector2i(35, 54), _palette_color(COLOR_MENU_INACTIVE), true)
 
 
+func _draw_misc_menu(confirmed_index: int = -1) -> void:
+	_draw_classic_box(Vector2i(2, 20), 4, 1, 0)
+	var word_ids := [56, 57, 58, 59, 60]
+	var enabled := [false, true, true, true, false]
+	for index in range(word_ids.size()):
+		var color_index := COLOR_MENU_NORMAL if enabled[index] else COLOR_MENU_INACTIVE
+		if index == confirmed_index:
+			color_index = COLOR_MENU_CONFIRMED
+		elif index == selected_misc_index:
+			color_index = _selected_color_index() if enabled[index] else COLOR_MENU_SELECTED_INACTIVE
+		_draw_pal_text(database.get_word(word_ids[index]), MISC_ITEM_POSITIONS[index], _palette_color(color_index), true)
+
+
+func _draw_item_action_menu() -> void:
+	_draw_classic_box(Vector2i(30, 50), 1, 1, 0)
+	for index in range(2):
+		var color_index := _selected_color_index() if index == selected_item_action else COLOR_MENU_NORMAL
+		_draw_pal_text(database.get_word(23 + index), ITEM_ACTION_POSITIONS[index], _palette_color(color_index), true)
+
+
+func _draw_item_list() -> void:
+	_draw_classic_box(Vector2i(2, 0), ITEM_ROWS - 1, 17, 1)
+	if _battle_item_ids.is_empty():
+		_draw_pal_text("没有可用物品", Vector2i(15, 12), _palette_color(COLOR_MENU_INACTIVE), true)
+		return
+	var start := _item_page_start()
+	var cursor_position := Vector2i(40, 22)
+	for slot in range(mini(ITEM_COLUMNS * ITEM_ROWS, _battle_item_ids.size() - start)):
+		var inventory_index := start + slot
+		var item_id := _battle_item_ids[inventory_index]
+		var column := slot % ITEM_COLUMNS
+		var row := slot / ITEM_COLUMNS
+		var enabled := controller.can_pending_player_throw_item(item_id) if _item_list_throwable else controller.can_pending_player_use_item(item_id)
+		var color_index := COLOR_MENU_NORMAL if enabled else COLOR_MENU_INACTIVE
+		if inventory_index == selected_item_index:
+			color_index = _selected_color_index() if enabled else COLOR_MENU_SELECTED_INACTIVE
+			cursor_position = Vector2i(40 + column * ITEM_COLUMN_WIDTH, 22 + row * ITEM_ROW_HEIGHT)
+		_draw_pal_text(database.get_word(item_id), Vector2i(15 + column * ITEM_COLUMN_WIDTH, 12 + row * ITEM_ROW_HEIGHT), _palette_color(color_index), true)
+		var amount := controller.available_item_count(item_id)
+		if amount > 1:
+			_draw_number(amount, 2, Vector2i(96 + column * ITEM_COLUMN_WIDTH, 17 + row * ITEM_ROW_HEIGHT), UI_FRAME_NUMBER_CYAN)
+	_draw_ui_frame(UI_FRAME_MAGIC_CURSOR, cursor_position)
+	_draw_ui_frame(UI_FRAME_ITEM_BOX, Vector2i(5, 145), -1, 0)
+	var selected_item := database.item_definition(selected_item_object())
+	if selected_item == null:
+		return
+	_draw_item_bitmap(selected_item.bitmap, Vector2i(8, 147))
+	var description_y := 150
+	for line in database.get_item_description(selected_item.object_id).split("*", false):
+		_draw_pal_text(line, Vector2i(75, description_y), _palette_color(0x3c), true)
+		description_y += 16
+
+
 func _draw_reward_page() -> void:
 	if _reward == null:
 		return
@@ -442,10 +585,26 @@ func _magic_entries_for_pending_role() -> PackedInt32Array:
 	return session.learned_magics_by_role[role_index]
 
 
+func _refresh_battle_items() -> void:
+	_battle_item_ids.clear()
+	for raw_id in session.inventory:
+		var item_id := int(raw_id)
+		if session.item_count(item_id) > 0:
+			_battle_item_ids.append(item_id)
+	_battle_item_ids.sort()
+	selected_item_index = clampi(selected_item_index, 0, maxi(0, _battle_item_ids.size() - 1))
+
+
+func _item_page_start() -> int:
+	var start := int(selected_item_index / ITEM_COLUMNS) * ITEM_COLUMNS - ITEM_COLUMNS * 4
+	return maxi(0, start)
+
+
 func _load_classic_resources() -> void:
 	_ui_sprite = database.load_ui_sprite()
 	_palette = database.load_palette(session.palette_index, session.night_palette)
 	_ui_textures.clear()
+	_item_textures.clear()
 	_font_glyphs.clear()
 	var metadata_file := FileAccess.open(database.root_path.path_join("text/font_glyphs.json"), FileAccess.READ)
 	if metadata_file != null:
@@ -489,6 +648,15 @@ func _draw_single_line_box(position: Vector2i, length: int, shadow_offset: int) 
 
 func _draw_ui_frame(frame_index: int, position: Vector2i, mono_high_nibble: int = -1, low_shift: int = 0) -> void:
 	var texture := _ui_texture(frame_index, mono_high_nibble, low_shift)
+	if texture != null:
+		draw_texture(texture, Vector2(position))
+
+
+func _draw_item_bitmap(bitmap_number: int, position: Vector2i) -> void:
+	if not _item_textures.has(bitmap_number):
+		var indexed := database.load_item_bitmap(bitmap_number)
+		_item_textures[bitmap_number] = ImageTexture.create_from_image(indexed.to_rgba_image(_palette)) if indexed.is_valid() and not _palette.is_empty() else null
+	var texture: Texture2D = _item_textures.get(bitmap_number)
 	if texture != null:
 		draw_texture(texture, Vector2(position))
 

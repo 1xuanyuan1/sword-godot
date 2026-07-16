@@ -83,7 +83,49 @@ func _init() -> void:
 	if magic_result.unsupported or magic_result.action_type != PalBattleController.ActionType.MAGIC or magic_result.hits.is_empty() or magic_result.hits[0].damage <= 0:
 		_fail("真实敌人基础攻击仙术没有产生玩家伤害")
 		return
-	print("PASS: 首战普攻样板以结果 %d 结束，共执行 %d 次行动、%d 次有效伤害；胜利获得 %d 经验 / %d 文并触发升级；敌队 %d 的敌术 %d 可真实结算" % [controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash, magic_team, magic_result.magic_object_id])
+	var item_session := GameSession.new()
+	item_session.party_roles = PackedInt32Array([0, 1])
+	item_session.set_item_count(99, 1)
+	var item_controller := PalBattleController.new()
+	if not item_controller.start_battle(database, item_session, 18, 21, 20260719):
+		_fail("真实止血草战斗样板无法初始化")
+		return
+	item_session.role_hp[1] = 20
+	item_session.role_dexterity[0] = 999
+	if not item_controller.submit_use_item(99, 1):
+		_fail("止血草无法提交给第二名队员")
+		return
+	item_controller.submit_defend()
+	var item_result := item_controller.execute_next_action()
+	if item_result == null or item_result.action_type != PalBattleController.ActionType.USE_ITEM or item_session.role_hp[1] != 70 or item_session.item_count(99) != 0:
+		_fail("止血草没有按真实脚本恢复 50 HP 并消耗一个")
+		return
+	var throw_session := GameSession.new()
+	throw_session.party_roles = PackedInt32Array([0, 1])
+	throw_session.set_item_count(153, 1)
+	var throw_controller := PalBattleController.new()
+	throw_controller.start_battle(database, throw_session, 18, 21, 20260720)
+	throw_session.role_dexterity[0] = 999
+	if not throw_controller.submit_throw_item(153, 0):
+		_fail("梅花镖无法提交给真实首战敌人")
+		return
+	throw_controller.submit_defend()
+	var throw_result := throw_controller.execute_next_action()
+	if throw_result == null or throw_result.action_type != PalBattleController.ActionType.THROW_ITEM or throw_result.hits.is_empty() or throw_result.hits[0].damage <= 0 or throw_session.item_count(153) != 0:
+		_fail("梅花镖没有按真实 0042 脚本伤敌并消耗一个")
+		return
+	var flee_session := GameSession.new()
+	flee_session.party_roles = PackedInt32Array([0, 1])
+	var flee_controller := PalBattleController.new()
+	flee_controller.start_battle(database, flee_session, 18, 21, 20260721, false)
+	flee_session.role_dexterity[0] = 999
+	flee_session.role_flee_rate[0] = 999
+	flee_controller.submit_flee()
+	var flee_result := flee_controller.execute_next_action()
+	if flee_result == null or not flee_result.flee_succeeded or flee_controller.battle_result != PalBattleController.BattleResult.FLED:
+		_fail("真实首战敌队没有按经典逃跑公式返回 FLED")
+		return
+	print("PASS: 首战普攻样板以结果 %d 结束，共执行 %d 次行动、%d 次有效伤害；胜利获得 %d 经验 / %d 文并触发升级；敌队 %d 的敌术 %d、止血草、梅花镖和逃跑均可真实结算" % [controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash, magic_team, magic_result.magic_object_id])
 	quit(0)
 
 

@@ -22,6 +22,9 @@ func _init() -> void:
 	_test_enemy_offensive_magic()
 	_test_enemy_attack_all_magic()
 	_test_unsupported_enemy_status_magic()
+	_test_consuming_healing_item()
+	_test_throw_item_magic_damage()
+	_test_flee_success_and_boss_failure()
 	_test_defeat()
 	if _failures.is_empty():
 		print("PASS: %d classic battle logic checks" % _checks)
@@ -269,6 +272,63 @@ func _test_unsupported_enemy_status_magic() -> void:
 	_expect(session.role_hp[0] == 100, "unsupported enemy status magic does not fabricate damage")
 
 
+func _test_consuming_healing_item() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	database.player_roles.dexterities[0] = 999
+	var heal := PalScriptEntry.new()
+	heal.operation = 0x001b
+	heal.operands = PackedInt32Array([0, 50, 0])
+	database.scripts = [PalScriptEntry.new(), heal, PalScriptEntry.new()]
+	_add_item(database, 99, 1, 0, PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_CONSUMING)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	session.role_hp[1] = 20
+	session.set_item_count(99, 1)
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 53)
+	_expect(controller.can_pending_player_use_item(99) and controller.submit_use_item(99, 1), "consuming restorative can be assigned to a living party target")
+	_expect(not controller.can_pending_player_use_item(99), "the second player cannot reserve the same last consumable")
+	controller.submit_defend()
+	var result := controller.execute_next_action()
+	_expect(result != null and result.action_type == PalBattleController.ActionType.USE_ITEM and result.item_object_id == 99 and result.hits.size() == 1, "item action reports the selected object and restored target")
+	_expect(session.role_hp[1] == 70 and session.item_count(99) == 0, "healing item runs opcode 001B and consumes exactly one inventory unit")
+
+
+func _test_throw_item_magic_damage() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 10, 0, false)])
+	database.player_roles.dexterities[0] = 999
+	_add_magic(database, 101, PalMagicDefinition.TYPE_NORMAL, 0, 0, PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	var simulate := PalScriptEntry.new()
+	simulate.operation = 0x0042
+	simulate.operands = PackedInt32Array([101, 120, 0])
+	database.scripts = [PalScriptEntry.new(), simulate, PalScriptEntry.new()]
+	_add_item(database, 153, 0, 1, PalItemDefinition.FLAG_THROWABLE | PalItemDefinition.FLAG_CONSUMING)
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.set_item_count(153, 1)
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 59)
+	_expect(controller.can_pending_player_throw_item(153) and controller.submit_throw_item(153, 0), "supported 0042 throw script can target a living enemy")
+	var result := controller.execute_next_action()
+	_expect(result != null and result.action_type == PalBattleController.ActionType.THROW_ITEM and result.magic_object_id == 101 and not result.hits.is_empty() and result.hits[0].damage > 0, "thrown item simulates its configured offensive magic damage")
+	_expect(controller.enemies[0].hp < 999 and session.item_count(153) == 0, "throwing updates enemy HP and consumes exactly one item")
+
+
+func _test_flee_success_and_boss_failure() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	database.player_roles.dexterities[0] = 999
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.role_flee_rate[0] = 999
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 61, false)
+	_expect(controller.submit_flee(), "classic flee command is accepted for the remaining party")
+	var escaped := controller.execute_next_action()
+	_expect(escaped != null and escaped.flee_succeeded and controller.battle_result == PalBattleController.BattleResult.FLED, "flee rate beats living enemy strength outside boss battles")
+	var boss_controller := PalBattleController.new()
+	boss_controller.start_battle(database, session, 0, 0, 61, true)
+	boss_controller.submit_flee()
+	var failed := boss_controller.execute_next_action()
+	_expect(failed != null and not failed.flee_succeeded and boss_controller.battle_result == PalBattleController.BattleResult.ONGOING, "boss battle always rejects fleeing without ending the battle")
+
+
 func _test_defeat() -> void:
 	var database := _synthetic_database([
 		_enemy_definition(999, 10, 1000, 0, 500, false),
@@ -382,6 +442,17 @@ func _add_magic(database: PalContentDatabase, object_id: int, magic_type: int, m
 	definition.mp_cost = mp_cost
 	definition.base_damage = base_damage
 	database.magics.append(definition)
+
+
+func _add_item(database: PalContentDatabase, object_id: int, use_script: int, throw_script: int, flags: int) -> void:
+	while database.items.size() <= object_id:
+		database.items.append(PalItemDefinition.new())
+	var item := PalItemDefinition.new()
+	item.object_id = object_id
+	item.script_on_use = use_script
+	item.script_on_throw = throw_script
+	item.flags = flags
+	database.items[object_id] = item
 
 
 func _session_for(database: PalContentDatabase, party_roles: PackedInt32Array) -> GameSession:

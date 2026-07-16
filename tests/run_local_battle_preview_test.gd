@@ -19,6 +19,8 @@ func _run() -> void:
 	viewport.add_child(preview)
 	await process_frame
 	await process_frame
+	# 本测试逐项手动执行行动并截取确定帧，关闭样板自己的自动行动调度，避免异步动画互相覆盖。
+	preview.set_process(false)
 	if preview._fighter_root.get_child_count() != 4:
 		_fail("首战应绘制两个敌人与两名队员，实际为 %d" % preview._fighter_root.get_child_count())
 		return
@@ -57,6 +59,114 @@ func _run() -> void:
 	if not preview._battle_ui.selected_enemy_vitals().is_empty():
 		_fail("退出敌人选择后左上角体力条没有隐藏")
 		return
+	preview._set_action_selection(3)
+	preview._confirm_current_selection()
+	await process_frame
+	if preview._input_mode != PalBattlePreview.InputMode.MISC_MENU or preview._battle_ui.selected_misc_index != 1:
+		_fail("选择其他图标后没有打开经典自动／物品／防御／逃跑／状态菜单")
+		return
+	var misc_image := viewport.get_texture().get_image()
+	var misc_path := output_directory.path_join("battle_misc_menu.png")
+	if misc_image == null or misc_image.save_png(misc_path) != OK:
+		_fail("无法写入战斗其他菜单截图")
+		return
+	preview._confirm_current_selection()
+	await process_frame
+	if preview._input_mode != PalBattlePreview.InputMode.ITEM_ACTION:
+		_fail("其他菜单选择物品后没有打开使用／投掷子菜单")
+		return
+	var item_action_image := viewport.get_texture().get_image()
+	var item_action_path := output_directory.path_join("battle_item_action_menu.png")
+	if item_action_image == null or item_action_image.save_png(item_action_path) != OK:
+		_fail("无法写入战斗物品子菜单截图")
+		return
+	preview._confirm_current_selection()
+	await process_frame
+	if preview._input_mode != PalBattlePreview.InputMode.ITEM_LIST or preview._battle_ui.selected_item_object() != 99 or not preview._battle_ui.selected_item_enabled():
+		_fail("战斗使用物品页没有显示样板背包中的止血草或错误置灰")
+		return
+	var item_list_image := viewport.get_texture().get_image()
+	var item_list_path := output_directory.path_join("battle_item_list.png")
+	if item_list_image == null or item_list_image.save_png(item_list_path) != OK:
+		_fail("无法写入战斗物品列表截图")
+		return
+	preview._session.role_hp[1] = 20
+	preview._session.role_dexterity[0] = 999
+	preview._confirm_current_selection()
+	if preview._input_mode != PalBattlePreview.InputMode.PLAYER_TARGET:
+		_fail("止血草没有进入我方角色目标选择")
+		return
+	preview._select_player(1)
+	preview._confirm_current_selection()
+	preview._submit_defend()
+	var item_result: PalBattleController.ActionResult
+	for _step in range(8):
+		var candidate := preview._controller.execute_next_action()
+		if candidate == null:
+			break
+		if candidate.action_type == PalBattleController.ActionType.USE_ITEM:
+			item_result = candidate
+			break
+	if item_result == null or item_result.action_type != PalBattleController.ActionType.USE_ITEM or preview._session.role_hp[1] != 70:
+		_fail("止血草没有按真实脚本恢复第二名队员 50 HP")
+		return
+	preview._play_player_use_item(item_result)
+	await create_timer(0.42).timeout
+	var item_use_image := viewport.get_texture().get_image()
+	var item_use_path := output_directory.path_join("battle_item_use.png")
+	if item_use_image == null or item_use_image.save_png(item_use_path) != OK:
+		_fail("无法写入战斗使用物品动画截图")
+		return
+	await create_timer(0.9).timeout
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview._session.role_dexterity[0] = 999
+	if not preview._controller.submit_throw_item(153, 0):
+		_fail("梅花镖没有进入真实投掷行动")
+		return
+	preview._submit_defend()
+	var throw_result := preview._controller.execute_next_action()
+	if throw_result == null or throw_result.action_type != PalBattleController.ActionType.THROW_ITEM or throw_result.hits.is_empty() or throw_result.hits[0].damage <= 0:
+		_fail("梅花镖没有生成真实伤害结果")
+		return
+	preview._play_player_throw_item(throw_result)
+	var throw_image: Image
+	for _step in range(120):
+		await create_timer(0.03).timeout
+		if preview._magic_root.get_child_count() > 0:
+			throw_image = viewport.get_texture().get_image()
+			break
+	var throw_path := output_directory.path_join("battle_item_throw.png")
+	if throw_image == null or throw_image.save_png(throw_path) != OK:
+		_fail("梅花镖投掷期间没有绘制模拟仙术特效")
+		return
+	for _step in range(120):
+		await create_timer(0.03).timeout
+		if preview._magic_root.get_child_count() == 0:
+			break
+	await create_timer(0.6).timeout
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview._session.role_dexterity[0] = 999
+	preview._session.role_flee_rate[0] = 999
+	preview._set_action_selection(3)
+	preview._confirm_current_selection()
+	preview._battle_ui.move_misc_selection(2)
+	preview._confirm_current_selection()
+	var flee_result := preview._controller.execute_next_action()
+	if flee_result == null or flee_result.action_type != PalBattleController.ActionType.FLEE or not flee_result.flee_succeeded or preview._controller.battle_result != PalBattleController.BattleResult.FLED:
+		_fail("其他菜单没有按真实公式提交成功逃跑")
+		return
+	preview._play_player_flee(flee_result)
+	await create_timer(0.32).timeout
+	var flee_image := viewport.get_texture().get_image()
+	var flee_path := output_directory.path_join("battle_flee.png")
+	if flee_image == null or flee_image.save_png(flee_path) != OK:
+		_fail("无法写入全队逃跑动画截图")
+		return
+	await create_timer(0.5).timeout
+	if preview._player_nodes.any(func(node: Sprite2D) -> bool: return node.visible):
+		_fail("逃跑动画结束后仍有队员留在战场")
+		return
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
 	preview._set_action_selection(1)
 	preview._confirm_current_selection()
 	await process_frame
@@ -215,7 +325,7 @@ func _run() -> void:
 	if level_image == null or level_image.save_png(level_path) != OK:
 		_fail("无法写入原版布局升级数值截图")
 		return
-	print("PASS: 经典指令、敌人体力、玩家/敌人仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, enemy_target_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, reward_path, level_path])
 	quit(0)
 
 

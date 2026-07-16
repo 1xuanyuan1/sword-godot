@@ -19,12 +19,16 @@ enum BattleResult {
 	ONGOING,
 	VICTORY,
 	DEFEAT,
+	FLED,
 }
 
 enum ActionType {
 	ATTACK,
 	DEFEND,
 	MAGIC,
+	USE_ITEM,
+	THROW_ITEM,
+	FLEE,
 }
 
 ## 单个敌人在本场战斗中的可变状态。
@@ -76,8 +80,10 @@ class ActionResult extends RefCounted:
 	var actor_index: int = -1
 	var action_type: int = ActionType.ATTACK
 	var magic_object_id: int = 0
+	var item_object_id: int = 0
 	var target_index: int = -1
 	var mp_cost: int = 0
+	var flee_succeeded: bool = false
 	var second_action: bool = false
 	var skipped: bool = false
 	var unsupported: bool = false
@@ -121,6 +127,8 @@ var session: GameSession
 var enemy_team_id: int = 0
 ## 当前战场编号。
 var battlefield_id: int = 0
+## 当前是否为禁止逃跑的 Boss 战。
+var is_boss_battle: bool = false
 ## 当前回合，从 1 开始。
 var turn_number: int = 1
 ## 当前胜负状态。
@@ -144,17 +152,20 @@ var _random := PalBattleRandom.new()
 var _command_cursor: int = 0
 var _queue_cursor: int = 0
 var _accepting_commands: bool = false
+var _reserved_items: Dictionary = {}
 
 
 #region Public lifecycle and commands
 
 ## 从指定敌队和战场创建一场战斗。
-## `random_seed < 0` 时使用当前微秒时间；失败时返回 `false` 并设置 `error_message`。
-func start_battle(content_database: PalContentDatabase, game_session: GameSession, team_id: int, field_id: int, random_seed: int = -1) -> bool:
+## `random_seed < 0` 时使用当前微秒时间；`boss_battle` 为真时逃跑必定失败。
+## 初始化失败时返回 `false` 并设置 `error_message`。
+func start_battle(content_database: PalContentDatabase, game_session: GameSession, team_id: int, field_id: int, random_seed: int = -1, boss_battle: bool = false) -> bool:
 	database = content_database
 	session = game_session
 	enemy_team_id = team_id
 	battlefield_id = field_id
+	is_boss_battle = boss_battle
 	turn_number = 1
 	battle_result = BattleResult.ONGOING
 	experience_gained = 0
@@ -167,6 +178,7 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	_command_cursor = 0
 	_queue_cursor = 0
 	_accepting_commands = false
+	_reserved_items.clear()
 	if database == null or session == null or database.player_roles == null:
 		error_message = "战斗缺少内容数据库、会话或 PLAYERROLES"
 		return false
@@ -311,6 +323,84 @@ func submit_magic(magic_object_id: int, target_index: int) -> bool:
 	return true
 
 
+## 返回当前角色能否在本回合使用指定物品。
+## 会检查背包可用数量、战斗使用标志及已支持的 HP/MP 脚本，不预扣库存。
+func can_pending_player_use_item(item_object_id: int) -> bool:
+	if pending_party_index() < 0 or available_item_count(item_object_id) <= 0:
+		return false
+	var item := database.item_definition(item_object_id)
+	return item != null and item.is_usable() and _stat_script_is_supported(item.script_on_use)
+
+
+## 返回当前角色能否投掷指定物品。
+## 第一阶段支持以 `0042` 模拟仙术或以 `0066` 计算武器伤害的经典投掷脚本。
+func can_pending_player_throw_item(item_object_id: int) -> bool:
+	if pending_party_index() < 0 or available_item_count(item_object_id) <= 0:
+		return false
+	var item := database.item_definition(item_object_id)
+	return item != null and item.is_throwable() and _throw_script_is_supported(item.script_on_throw)
+
+
+## 返回扣除本回合其他队员已选用数量后仍可提交的物品数。
+func available_item_count(item_object_id: int) -> int:
+	if session == null:
+		return 0
+	return maxi(0, session.item_count(item_object_id) - int(_reserved_items.get(item_object_id, 0)))
+
+
+## 为当前角色提交战斗使用物品；单体物品目标为队伍位置，全体物品会规范化为 -1。
+func submit_use_item(item_object_id: int, target_index: int) -> bool:
+	var party_index := pending_party_index()
+	if party_index < 0 or not can_pending_player_use_item(item_object_id):
+		return false
+	var item := database.item_definition(item_object_id)
+	if item.applies_to_all():
+		target_index = -1
+	elif target_index < 0 or target_index >= players.size() or _role_hp(players[target_index].role_index) <= 0:
+		return false
+	var player := players[party_index]
+	player.action_type = ActionType.USE_ITEM
+	player.action_id = item_object_id
+	player.target_index = target_index
+	if item.is_consuming():
+		_reserve_item(item_object_id)
+	_advance_command_cursor()
+	return true
+
+
+## 为当前角色提交投掷物品；投掷物一定预留并在行动执行时消耗一个。
+func submit_throw_item(item_object_id: int, target_index: int) -> bool:
+	var party_index := pending_party_index()
+	if party_index < 0 or not can_pending_player_throw_item(item_object_id):
+		return false
+	var item := database.item_definition(item_object_id)
+	if item.applies_to_all():
+		target_index = -1
+	elif target_index < 0 or target_index >= enemies.size() or not enemies[target_index].is_alive():
+		return false
+	var player := players[party_index]
+	player.action_type = ActionType.THROW_ITEM
+	player.action_id = item_object_id
+	player.target_index = target_index
+	_reserve_item(item_object_id)
+	_advance_command_cursor()
+	return true
+
+
+## 为当前角色及尚未选指令的队员统一提交逃跑，符合经典模式的全队逃跑键行为。
+func submit_flee() -> bool:
+	var party_index := pending_party_index()
+	if party_index < 0:
+		return false
+	for index in range(party_index, players.size()):
+		var player := players[index]
+		player.action_type = ActionType.FLEE if _role_hp(player.role_index) > 0 else ActionType.ATTACK
+		player.target_index = -1
+	_command_cursor = players.size()
+	build_action_queue()
+	return true
+
+
 ## 在全队指令完成后按经典身法规则构造行动队列。
 ## 指令尚未完成、战斗已结束或队列已开始执行时返回 `false`。
 func build_action_queue() -> bool:
@@ -441,6 +531,7 @@ func _prepare_command_phase() -> void:
 	action_queue.clear()
 	_queue_cursor = 0
 	_command_cursor = 0
+	_reserved_items.clear()
 	for player in players:
 		player.action_type = -1
 		player.action_id = 0
@@ -516,6 +607,7 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 	var player := players[entry.combatant_index]
 	result.action_type = player.action_type
 	if _role_hp(player.role_index) <= 0:
+		_release_player_item_reservation(player)
 		result.skipped = true
 		result.summary = "倒下的队员无法行动"
 		return result
@@ -525,6 +617,15 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 		return result
 	if player.action_type == ActionType.MAGIC:
 		_execute_player_magic(player, result)
+		return result
+	if player.action_type == ActionType.USE_ITEM:
+		_execute_player_use_item(player, result)
+		return result
+	if player.action_type == ActionType.THROW_ITEM:
+		_execute_player_throw_item(player, result)
+		return result
+	if player.action_type == ActionType.FLEE:
+		_execute_player_flee(player, result)
 		return result
 	if player.action_type != ActionType.ATTACK:
 		result.skipped = true
@@ -574,8 +675,8 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 		var event_role := player.role_index
 		if player.target_index >= 0 and player.target_index < players.size():
 			event_role = players[player.target_index].role_index
-		_run_supported_magic_script(object.script_on_use, player.role_index, result)
-		_run_supported_magic_script(object.script_on_success, event_role, result)
+		_run_supported_stat_script(object.script_on_use, player.role_index, result)
+		_run_supported_stat_script(object.script_on_success, event_role, result)
 	result.summary = "%s施展%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
 
 
@@ -600,10 +701,10 @@ func _calculate_player_magic_damage(role_index: int, target_index: int, definiti
 func _magic_effect_is_supported(object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> bool:
 	if object.is_used_on_enemy():
 		return _signed_word(definition.base_damage) > 0 and object.script_on_use == 0 and object.script_on_success == 0 and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]
-	return definition.magic_type in [PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY] and _magic_script_is_supported(object.script_on_use) and _magic_script_is_supported(object.script_on_success)
+	return definition.magic_type in [PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY] and _stat_script_is_supported(object.script_on_use) and _stat_script_is_supported(object.script_on_success)
 
 
-func _magic_script_is_supported(entry_index: int) -> bool:
+func _stat_script_is_supported(entry_index: int) -> bool:
 	var cursor := entry_index
 	for _step in range(64):
 		if cursor == 0:
@@ -623,7 +724,7 @@ func _magic_script_is_supported(entry_index: int) -> bool:
 	return false
 
 
-func _run_supported_magic_script(entry_index: int, event_role: int, result: ActionResult) -> void:
+func _run_supported_stat_script(entry_index: int, event_role: int, result: ActionResult) -> void:
 	var cursor := entry_index
 	for _step in range(64):
 		if cursor == 0 or cursor < 0 or cursor >= database.scripts.size():
@@ -648,6 +749,138 @@ func _run_supported_magic_script(entry_index: int, event_role: int, result: Acti
 				cursor += 1
 			_:
 				return
+
+
+func _execute_player_use_item(player: PlayerState, result: ActionResult) -> void:
+	var item := database.item_definition(player.action_id)
+	result.item_object_id = player.action_id
+	result.target_index = player.target_index
+	_release_player_item_reservation(player)
+	if item == null or session.item_count(player.action_id) <= 0 or not _stat_script_is_supported(item.script_on_use):
+		result.unsupported = true
+		result.summary = "该物品已用完或效果尚未接入"
+		return
+	var event_role := 0xffff
+	if player.target_index >= 0 and player.target_index < players.size():
+		event_role = players[player.target_index].role_index
+	_run_supported_stat_script(item.script_on_use, event_role, result)
+	if item.is_consuming():
+		session.change_item_count(player.action_id, -1)
+	result.summary = "%s使用%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
+
+
+func _execute_player_throw_item(player: PlayerState, result: ActionResult) -> void:
+	var item := database.item_definition(player.action_id)
+	result.item_object_id = player.action_id
+	result.target_index = player.target_index
+	_release_player_item_reservation(player)
+	if item == null or session.item_count(player.action_id) <= 0 or not _throw_script_is_supported(item.script_on_throw):
+		result.unsupported = true
+		result.summary = "该投掷物已用完或效果尚未接入"
+		return
+	_run_supported_throw_script(item.script_on_throw, player, result)
+	session.change_item_count(player.action_id, -1)
+	result.summary = "%s投掷%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
+
+
+func _execute_player_flee(player: PlayerState, result: ActionResult) -> void:
+	var enemy_strength := 0
+	for enemy in enemies:
+		if enemy.is_alive():
+			enemy_strength += _signed_word(enemy.definition.dexterity) + (enemy.definition.level + 6) * 4
+	enemy_strength = maxi(0, enemy_strength)
+	result.flee_succeeded = not is_boss_battle and session.flee_rate_for(player.role_index) >= _random.next_int(0, enemy_strength)
+	if result.flee_succeeded:
+		battle_result = BattleResult.FLED
+		_accepting_commands = false
+		result.summary = "%s成功逃跑" % _role_name(player.role_index)
+	else:
+		result.summary = database.get_word(31)
+
+
+func _throw_script_is_supported(entry_index: int) -> bool:
+	var cursor := entry_index
+	for _step in range(16):
+		if cursor == 0:
+			return true
+		if cursor < 0 or cursor >= database.scripts.size():
+			return false
+		var entry := database.scripts[cursor]
+		match entry.operation:
+			0x0000, 0x0001:
+				return true
+			0x0003:
+				cursor = entry.operands[0]
+				continue
+			0x0042, 0x0066:
+				var object := database.magic_object_definition(entry.operands[0])
+				var definition := database.magic_definition_for_object(entry.operands[0])
+				# 0042/0066 把仙术对象仅当作 FIRE 特效和伤害属性使用；部分暗器引用的
+				# 对象没有“对敌使用”菜单标志，官方 PAL_BattleSimulateMagic 仍会正常伤敌。
+				if object == null or definition == null or definition.magic_type not in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+					return false
+				cursor += 1
+			0x0021:
+				cursor += 1
+			_:
+				return false
+	return false
+
+
+func _run_supported_throw_script(entry_index: int, player: PlayerState, result: ActionResult) -> void:
+	var cursor := entry_index
+	for _step in range(16):
+		if cursor == 0 or cursor < 0 or cursor >= database.scripts.size():
+			return
+		var entry := database.scripts[cursor]
+		match entry.operation:
+			0x0000, 0x0001:
+				return
+			0x0003:
+				cursor = entry.operands[0]
+				continue
+			0x0042, 0x0066:
+				var magic_object_id := entry.operands[0]
+				var object := database.magic_object_definition(magic_object_id)
+				var definition := database.magic_definition_for_object(magic_object_id)
+				if object == null or definition == null:
+					return
+				var base_damage := entry.operands[1]
+				if entry.operation == 0x0066:
+					base_damage = entry.operands[1] * 5 + session.attack_strength_for(player.role_index) * _random.next_int(0, 3)
+				var target_all := object.applies_to_all() or player.target_index < 0
+				result.magic_object_id = magic_object_id
+				result.target_index = -1 if target_all else player.target_index
+				var target_indices := living_enemy_indices() if target_all else PackedInt32Array([_find_alive_enemy_from(player.target_index)])
+				for target_index in target_indices:
+					if target_index < 0:
+						continue
+					var damage := _calculate_simulated_magic_damage(base_damage, target_index, definition)
+					if damage > 0:
+						result.hits.append(_apply_enemy_damage(target_index, damage, false))
+				cursor += 1
+			0x0021:
+				var target_indices := living_enemy_indices() if entry.operands[0] != 0 or player.target_index < 0 else PackedInt32Array([_find_alive_enemy_from(player.target_index)])
+				for target_index in target_indices:
+					if target_index >= 0:
+						result.hits.append(_apply_enemy_damage(target_index, entry.operands[1], false))
+				cursor += 1
+			_:
+				return
+
+
+func _calculate_simulated_magic_damage(base_damage: int, target_index: int, definition: PalMagicDefinition) -> int:
+	var enemy := enemies[target_index].definition
+	var defense := maxi(0, _signed_word(enemy.defense) + (enemy.level + 6) * 4)
+	var damage := calculate_base_damage(base_damage, defense) / 4 + _signed_word(definition.base_damage)
+	if definition.elemental != 0:
+		var resistance := enemy.poison_resistance if definition.elemental > PalBattlefield.ELEMENT_COUNT else enemy.elemental_resistances[definition.elemental - 1]
+		damage = int(damage * (10.0 - float(resistance))) / 5
+		if definition.elemental <= PalBattlefield.ELEMENT_COUNT:
+			var battlefield := database.battlefield_definition(battlefield_id)
+			var field_effect := battlefield.magic_effects[definition.elemental - 1] if battlefield != null and battlefield.magic_effects.size() >= definition.elemental else 0
+			damage = int(damage * (10.0 + field_effect) / 10.0)
+	return maxi(0, damage)
 
 
 func _apply_player_stat_delta(party_index: int, hp_delta: int, mp_delta: int, result: ActionResult) -> void:
@@ -933,6 +1166,8 @@ func _role_stats_snapshot(role_index: int) -> PackedInt32Array:
 	])
 
 func _check_battle_result() -> void:
+	if battle_result == BattleResult.FLED:
+		return
 	if living_enemy_indices().is_empty():
 		battle_result = BattleResult.VICTORY
 		_accepting_commands = false
@@ -988,6 +1223,29 @@ func _role_hp(role_index: int) -> int:
 func _role_name(role_index: int) -> String:
 	var name := database.get_word(database.player_roles.name_word_for(role_index))
 	return name if not name.is_empty() else "角色%d" % role_index
+
+
+func _reserve_item(item_object_id: int) -> void:
+	_reserved_items[item_object_id] = int(_reserved_items.get(item_object_id, 0)) + 1
+
+
+func _release_item_reservation(item_object_id: int) -> void:
+	var remaining := int(_reserved_items.get(item_object_id, 0)) - 1
+	if remaining > 0:
+		_reserved_items[item_object_id] = remaining
+	else:
+		_reserved_items.erase(item_object_id)
+
+
+func _release_player_item_reservation(player: PlayerState) -> void:
+	if player == null or player.action_id <= 0:
+		return
+	if player.action_type == ActionType.THROW_ITEM:
+		_release_item_reservation(player.action_id)
+	elif player.action_type == ActionType.USE_ITEM:
+		var item := database.item_definition(player.action_id)
+		if item != null and item.is_consuming():
+			_release_item_reservation(player.action_id)
 
 
 static func _signed_word(value: int) -> int:

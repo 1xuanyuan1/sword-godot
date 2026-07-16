@@ -50,6 +50,11 @@ func is_usable() -> bool:
 	return (flags & FLAG_USABLE) != 0 and script_on_use > 0
 
 
+## 是否允许在战斗中投掷，并且存在投掷脚本。
+func is_throwable() -> bool:
+	return (flags & FLAG_THROWABLE) != 0 and script_on_throw > 0
+
+
 ## 使用成功后是否消耗一个物品。
 func is_consuming() -> bool:
 	return (flags & FLAG_CONSUMING) != 0

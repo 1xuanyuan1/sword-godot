@@ -278,6 +278,29 @@ keywords:
   - `tests/run_battle_logic_tests.gd`
   - `docs/BATTLE.md`
 
+---
+
+### [FT-033] [feat] 实现战斗物品、原版其他菜单与逃跑
+
+- **关联需求**: M4 经典战斗
+- **关联 TODO**: TD-005（阶段性）
+- **功能描述**: 按 `uibattle.c` 接入“自动／物品／防御／逃跑／状态”和“使用／投掷”菜单，复用原版 3×7 物品网格、数量、BALL 图标及说明；指令阶段预留消耗数量，执行时才写回背包。基础恢复品支持 `001B/001C/001D`，暗器支持 `0042` 模拟仙术、`0021` 固定伤害和 `0066` 武器伤害，并播放角色用物/投掷帧、FIRE 特效、音效及数字。逃跑按全体存活敌人身法/等级与角色逃跑值结算，成功返回 `FLED = 3`，Boss 战强制失败并播放反馈。
+- **验证情况**: 255 项合成检查、55 项经典战斗逻辑和真实资源回归通过；当前数据 29 个基础使用物品、49 个基础投掷物品可执行，止血草恢复 50 HP、梅花镖扣库存伤敌、普通战逃跑均已真实结算。其他/物品三级菜单、使用、投掷 FIRE 与全队逃跑动画已生成 320×200 OpenGL 截图。
+- **涉及文件**:
+  - `src/content/pal_item_definition.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_logic_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

@@ -14,6 +14,9 @@ enum InputMode {
 	ENEMY_TARGET,
 	PLAYER_TARGET,
 	MAGIC_LIST,
+	MISC_MENU,
+	ITEM_ACTION,
+	ITEM_LIST,
 	WAITING,
 	REWARD,
 	RESULT,
@@ -57,6 +60,8 @@ var _selected_enemy_index: int = 0
 var _selected_party_index: int = 0
 var _selected_action: int = 0
 var _pending_magic_object_id: int = 0
+var _pending_item_object_id: int = 0
+var _pending_item_throwable: bool = false
 var _input_mode: InputMode = InputMode.WAITING
 var _action_timer: float = 0.0
 var _animation_in_progress: bool = false
@@ -102,6 +107,10 @@ func load_battle(enemy_team_id: int, battlefield_id: int, party_roles: PackedInt
 		for role_index in preview_session.party_roles:
 			preview_session.role_hp[role_index] = preview_session.role_max_hp[role_index]
 			preview_session.role_mp[role_index] = preview_session.role_max_mp[role_index]
+		# 样板预置基础恢复品和暗器，只修改临时会话，便于直接验证战斗物品菜单。
+		for item_id in [99, 104, 153, 162]:
+			if _database.item_definition(item_id) != null:
+				preview_session.set_item_count(item_id, 3 if item_id in [99, 104] else 2)
 	var started := _start_battle_view(_database, preview_session, enemy_team_id, battlefield_id, false)
 	if started and lab_mode and _audio_player != null:
 		_audio_player.configure(_database, _session)
@@ -174,7 +183,7 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 		_player_current_frames.append(0)
 		_player_nodes.append(_add_fighter(sprite, foot, "Player%d" % party_index))
 	_controller = PalBattleController.new()
-	if not _controller.start_battle(_database, _session, enemy_team_id, battlefield_id):
+	if not _controller.start_battle(_database, _session, enemy_team_id, battlefield_id, -1, is_boss):
 		_show_error("无法开始战斗：%s" % _controller.error_message)
 		return false
 	_battle_ui.configure(_database, _session, _controller, _player_foot_positions)
@@ -182,6 +191,8 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 	_selected_party_index = 0
 	_selected_action = 0
 	_pending_magic_object_id = 0
+	_pending_item_object_id = 0
+	_pending_item_throwable = false
 	_action_timer = 0.0
 	_animation_in_progress = false
 	_enter_command_mode()
@@ -352,6 +363,12 @@ func _handle_direction(direction: Vector2i) -> void:
 			_select_player(-1 if direction.x < 0 or direction.y > 0 else 1)
 		InputMode.MAGIC_LIST:
 			_battle_ui.move_magic_selection(direction.x, direction.y)
+		InputMode.MISC_MENU:
+			_battle_ui.move_misc_selection(direction.y if direction.y != 0 else direction.x)
+		InputMode.ITEM_ACTION:
+			_battle_ui.move_item_action_selection(direction.y if direction.y != 0 else direction.x)
+		InputMode.ITEM_LIST:
+			_battle_ui.move_item_selection(direction.x, direction.y)
 
 
 func _set_action_selection(action_index: int) -> void:
@@ -400,7 +417,8 @@ func _confirm_current_selection() -> void:
 					_battle_ui.open_magic_list(_controller.pending_role_index())
 					_input_mode = InputMode.MAGIC_LIST
 				3:
-					_battle_ui.show_message("其他指令正在接入", 1000)
+					_battle_ui.open_misc_menu()
+					_input_mode = InputMode.MISC_MENU
 		InputMode.ENEMY_TARGET:
 			_submit_targeted_action(_selected_enemy_index)
 		InputMode.PLAYER_TARGET:
@@ -408,6 +426,23 @@ func _confirm_current_selection() -> void:
 		InputMode.MAGIC_LIST:
 			if _battle_ui.selected_magic_enabled():
 				_confirm_magic_selection()
+		InputMode.MISC_MENU:
+			match _battle_ui.selected_misc_index:
+				1:
+					_battle_ui.open_item_action_menu()
+					_input_mode = InputMode.ITEM_ACTION
+				2:
+					_submit_defend()
+				3:
+					_submit_flee()
+				_:
+					_battle_ui.show_message("该指令正在接入", 900)
+		InputMode.ITEM_ACTION:
+			_battle_ui.open_item_list(_battle_ui.selected_item_action == 1)
+			_input_mode = InputMode.ITEM_LIST
+		InputMode.ITEM_LIST:
+			if _battle_ui.selected_item_enabled():
+				_confirm_item_selection()
 
 
 func _begin_enemy_target_selection() -> void:
@@ -448,8 +483,31 @@ func _confirm_magic_selection() -> void:
 		_battle_ui.set_mode(PalBattleUI.Mode.PLAYER_TARGET)
 
 
+func _confirm_item_selection() -> void:
+	var item_object_id := _battle_ui.selected_item_object()
+	var item := _database.item_definition(item_object_id)
+	if item == null:
+		return
+	_pending_item_object_id = item_object_id
+	_pending_item_throwable = _battle_ui.selected_item_action == 1
+	if item.applies_to_all():
+		_submit_item(-1)
+	elif _pending_item_throwable:
+		_begin_enemy_target_selection()
+	else:
+		_selected_party_index = 0
+		if _controller.players.size() == 1:
+			_submit_item(0)
+			return
+		_input_mode = InputMode.PLAYER_TARGET
+		_battle_ui.set_player_selection(_selected_party_index)
+		_battle_ui.set_mode(PalBattleUI.Mode.PLAYER_TARGET)
+
+
 func _submit_targeted_action(target_index: int) -> void:
-	if _pending_magic_object_id > 0:
+	if _pending_item_object_id > 0:
+		_submit_item(target_index)
+	elif _pending_magic_object_id > 0:
 		_submit_magic(target_index)
 	else:
 		_submit_attack()
@@ -463,6 +521,18 @@ func _submit_magic(target_index: int) -> void:
 	_after_command_submitted()
 
 
+func _submit_item(target_index: int) -> void:
+	if _pending_item_object_id <= 0:
+		return
+	var accepted := _controller.submit_throw_item(_pending_item_object_id, target_index) if _pending_item_throwable else _controller.submit_use_item(_pending_item_object_id, target_index)
+	if not accepted:
+		return
+	_reset_enemy_highlight()
+	_pending_item_object_id = 0
+	_pending_item_throwable = false
+	_after_command_submitted()
+
+
 func _submit_attack() -> void:
 	if not _controller.submit_attack(_selected_enemy_index):
 		return
@@ -473,6 +543,13 @@ func _submit_attack() -> void:
 
 func _submit_defend() -> void:
 	if _controller == null or not _controller.submit_defend():
+		return
+	_reset_enemy_highlight()
+	_after_command_submitted()
+
+
+func _submit_flee() -> void:
+	if _controller == null or not _controller.submit_flee():
 		return
 	_reset_enemy_highlight()
 	_after_command_submitted()
@@ -493,6 +570,8 @@ func _enter_command_mode() -> void:
 	_input_mode = InputMode.COMMAND
 	_selected_action = 0
 	_pending_magic_object_id = 0
+	_pending_item_object_id = 0
+	_pending_item_throwable = false
 	_battle_ui.set_action_selection(0)
 	_battle_ui.set_enemy_selection(_selected_enemy_index)
 	_battle_ui.set_mode(PalBattleUI.Mode.COMMAND)
@@ -503,7 +582,19 @@ func _enter_command_mode() -> void:
 func _cancel_or_leave() -> void:
 	if _animation_in_progress:
 		return
-	if _input_mode in [InputMode.ENEMY_TARGET, InputMode.PLAYER_TARGET, InputMode.MAGIC_LIST]:
+	if _input_mode in [InputMode.ENEMY_TARGET, InputMode.PLAYER_TARGET] and _pending_item_object_id > 0:
+		_pending_item_object_id = 0
+		_battle_ui.open_item_list(_pending_item_throwable)
+		_input_mode = InputMode.ITEM_LIST
+	elif _input_mode == InputMode.ITEM_LIST:
+		_battle_ui.open_item_action_menu()
+		_input_mode = InputMode.ITEM_ACTION
+	elif _input_mode == InputMode.ITEM_ACTION:
+		_battle_ui.open_misc_menu()
+		_input_mode = InputMode.MISC_MENU
+	elif _input_mode == InputMode.MISC_MENU:
+		_enter_command_mode()
+	elif _input_mode in [InputMode.ENEMY_TARGET, InputMode.PLAYER_TARGET, InputMode.MAGIC_LIST]:
 		_enter_command_mode()
 	elif lab_mode:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -540,6 +631,10 @@ func _execute_next_action() -> void:
 		_input_mode = InputMode.RESULT
 		_battle_ui.set_mode(PalBattleUI.Mode.RESULT)
 		_battle_ui.show_message("全队倒下")
+	elif _controller.battle_result == PalBattleController.BattleResult.FLED:
+		_input_mode = InputMode.RESULT
+		_battle_ui.set_mode(PalBattleUI.Mode.RESULT)
+		_battle_ui.show_message("逃跑成功")
 	elif _controller.is_accepting_commands():
 		_enter_command_mode()
 	else:
@@ -564,6 +659,15 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 		return
 	if result.action_type == PalBattleController.ActionType.MAGIC and result.actor_is_enemy:
 		await _play_enemy_magic(result)
+		return
+	if result.action_type == PalBattleController.ActionType.USE_ITEM and not result.actor_is_enemy:
+		await _play_player_use_item(result)
+		return
+	if result.action_type == PalBattleController.ActionType.THROW_ITEM and not result.actor_is_enemy:
+		await _play_player_throw_item(result)
+		return
+	if result.action_type == PalBattleController.ActionType.FLEE and not result.actor_is_enemy:
+		await _play_player_flee(result)
 		return
 	if result.actor_is_enemy:
 		await _play_enemy_attack(result)
@@ -643,6 +747,106 @@ func _play_player_magic(result: PalBattleController.ActionResult) -> void:
 	await _wait_frames(5)
 
 
+func _play_player_use_item(result: PalBattleController.ActionResult) -> void:
+	if result.actor_index < 0 or result.actor_index >= _player_nodes.size():
+		return
+	var actor_index := result.actor_index
+	var original_foot := _player_foot_positions[actor_index]
+	await _wait_frames(4)
+	var use_foot := original_foot - Vector2i(15, 7)
+	_set_player_frame(actor_index, 5, use_foot)
+	if _audio_player != null:
+		_audio_player.play_sound(28)
+	_battle_ui.show_message(_database.get_word(result.item_object_id), 900)
+	var affected := PackedInt32Array()
+	if result.target_index < 0:
+		for party_index in range(_player_nodes.size()):
+			affected.append(party_index)
+	else:
+		affected.append(result.target_index)
+	for shift in range(7):
+		for party_index in affected:
+			_set_player_frame(party_index, _player_current_frames[party_index], _player_foot_positions[party_index], shift)
+		await _wait_frames(1)
+	for shift in range(5, -1, -1):
+		for party_index in affected:
+			_set_player_frame(party_index, _player_current_frames[party_index], _player_foot_positions[party_index], shift)
+		await _wait_frames(1)
+	for hit in result.hits:
+		if hit.target_index < 0 or hit.target_index >= _player_foot_positions.size():
+			continue
+		var foot := _player_foot_positions[hit.target_index]
+		if hit.healing > 0:
+			_battle_ui.show_number(hit.healing, Vector2i(foot.x - 9, maxi(10, foot.y - 75)), PalBattleUI.UI_FRAME_NUMBER_YELLOW)
+		if hit.mp_restored > 0:
+			_battle_ui.show_number(hit.mp_restored, Vector2i(foot.x - 9, maxi(10, foot.y - 67)), PalBattleUI.UI_FRAME_NUMBER_CYAN)
+	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
+	await _wait_frames(8)
+
+
+func _play_player_throw_item(result: PalBattleController.ActionResult) -> void:
+	if result.actor_index < 0 or result.actor_index >= _player_nodes.size():
+		return
+	var actor_index := result.actor_index
+	var original_foot := _player_foot_positions[actor_index]
+	var throw_foot := original_foot
+	for step in range(4, 0, -1):
+		throw_foot -= Vector2i(step, step / 2)
+		_set_player_frame(actor_index, _player_current_frames[actor_index], throw_foot)
+		await _wait_frames(1)
+	_battle_ui.show_message(_database.get_word(result.item_object_id), 1000)
+	_set_player_frame(actor_index, 5, throw_foot)
+	if _audio_player != null:
+		var role_index := _controller.players[actor_index].role_index
+		_audio_player.play_sound(_database.player_roles.magic_sound_for(role_index))
+	await _wait_frames(8)
+	_set_player_frame(actor_index, 6, throw_foot)
+	await _wait_frames(2)
+	var definition := _database.magic_definition_for_object(result.magic_object_id)
+	var object := _database.magic_object_definition(result.magic_object_id)
+	var effect_sprite := _database.load_magic_effect_sprite(definition.effect_sprite) if definition != null else null
+	if definition != null and object != null and effect_sprite != null and effect_sprite.is_valid():
+		await _play_magic_effect_sprite(effect_sprite, definition, result, throw_foot)
+		await _show_magic_result(result, object, definition)
+	else:
+		_battle_ui.show_message("投掷特效资源缺失", 900)
+		await _wait_frames(4)
+	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
+	await _wait_frames(4)
+
+
+func _play_player_flee(result: PalBattleController.ActionResult) -> void:
+	if result.actor_index < 0 or result.actor_index >= _player_nodes.size():
+		return
+	if result.flee_succeeded:
+		if _audio_player != null:
+			_audio_player.play_sound(45)
+		var feet := _player_foot_positions.duplicate()
+		for _frame in range(16):
+			for party_index in range(_player_nodes.size()):
+				if _session.role_hp[_controller.players[party_index].role_index] <= 0:
+					continue
+				var delta := Vector2i(4, 6) if party_index == 0 and _player_nodes.size() > 1 else (Vector2i(4, 4) if party_index == 1 or _player_nodes.size() == 1 else Vector2i(6, 3))
+				feet[party_index] += delta
+				_set_player_frame(party_index, 0, feet[party_index])
+			await _wait_frames(1)
+		for node in _player_nodes:
+			node.hide()
+		await _wait_frames(1)
+		return
+	var actor_index := result.actor_index
+	var original_foot := _player_foot_positions[actor_index]
+	var failed_foot := original_foot
+	for _frame in range(3):
+		failed_foot += Vector2i(4, 2)
+		_set_player_frame(actor_index, 0, failed_foot)
+		await _wait_frames(1)
+	_set_player_frame(actor_index, 1, failed_foot)
+	_battle_ui.show_message(_database.get_word(31), 900)
+	await _wait_frames(8)
+	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
+
+
 func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition, result: PalBattleController.ActionResult, casting_foot: Vector2i) -> void:
 	var effect_positions := _magic_effect_positions(definition, result)
 	if effect_positions.is_empty():
@@ -703,7 +907,8 @@ func _magic_effect_positions(definition: PalMagicDefinition, result: PalBattleCo
 
 
 func _show_magic_result(result: PalBattleController.ActionResult, object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> void:
-	if object.is_used_on_enemy():
+	# 暗器的 0042 模拟仙术对象可能没有“对敌使用”菜单标志，但命中结果仍明确指向敌人。
+	if object.is_used_on_enemy() or result.hits.any(func(hit: PalBattleController.Hit) -> bool: return hit.target_is_enemy):
 		for hit in result.hits:
 			if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
 				continue

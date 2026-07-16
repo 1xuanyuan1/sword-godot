@@ -229,6 +229,11 @@ func critical_sound_for(role_index: int) -> int:
 	return critical_sounds[role_index]
 
 
+## 返回角色施法／投掷起手音效，越界时返回 0。
+func magic_sound_for(role_index: int) -> int:
+	return magic_sounds[role_index] if role_index >= 0 and role_index < magic_sounds.size() else 0
+
+
 ## 返回角色自动格挡／保护音效，越界时返回 0。
 func cover_sound_for(role_index: int) -> int:
 	return cover_sounds[role_index] if role_index >= 0 and role_index < cover_sounds.size() else 0

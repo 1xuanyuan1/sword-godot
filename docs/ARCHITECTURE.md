@@ -102,6 +102,6 @@ CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileM
 
 ## 战斗资源与状态边界
 
-`PalContentDatabase` 读取敌人、仙术、战场、站位、升级阈值/习得仙术规则、官方 UI、双方战斗 Sprite 和 FIRE 仙术 Sprite，这些都是只读内容。`PalBattleController` 从这些定义创建单场敌人状态，收集玩家指令和敌人攻击/施法 AI，生成经典身法队列，并把 MP、双方伤害、恢复、经验、金钱和升级结算写入正式状态后返回与画面无关的 `ActionResult/RewardResult`。角色跨战斗的体力、真气、主经验、等级、成长属性和已学仙术继续由 `GameSession` 持有；`PalBattlePreview` 根据结果播放接近、攻击、双方施法、受击和归位动画，`PalBattleUI` 只绘制官方状态框、四向指令、敌我目标反馈、仙术列表、奖励与升级页，不自行改动数值。探索场景把统一 `PalAudioPlayer` 注入战斗层，因此敌我仙术 DATA 音效和普通/Boss 胜利音乐沿用系统菜单设置的音量。
+`PalContentDatabase` 读取敌人、仙术、物品、战场、站位、升级阈值/习得仙术规则、官方 UI、双方战斗 Sprite 和 FIRE 仙术 Sprite，这些都是只读内容。`PalBattleController` 从这些定义创建单场敌人状态，收集玩家指令和敌人攻击/施法 AI，预留本回合物品，生成经典身法队列，并把 MP、库存、双方伤害、恢复、逃跑、经验、金钱和升级结算写入正式状态后返回与画面无关的 `ActionResult/RewardResult`。角色跨战斗的体力、真气、背包、主经验、等级、成长属性和已学仙术继续由 `GameSession` 持有；`PalBattlePreview` 根据结果播放接近、攻击、使用/投掷物品、双方施法、逃跑、受击和归位动画，`PalBattleUI` 只绘制官方状态框、四向指令、其他/物品菜单、敌我目标反馈、仙术列表、奖励与升级页，不自行改动数值。探索场景把统一 `PalAudioPlayer` 注入战斗层，因此双方动作/仙术音效和普通/Boss 胜利音乐沿用系统菜单设置的音量。
 
 脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时暂停 ScriptVM，并由 `MapExplorer` 在 HUD 上覆盖创建复用同一 `GameSession` 的战斗。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗使用 `operand[2]` 分支。进入战斗时播放 `0045` 保存的 BGM，确认结果后恢复场景 BGM，再解除 `waiting_for_battle`；地图输入和自动事件不会在战斗背后继续运行。

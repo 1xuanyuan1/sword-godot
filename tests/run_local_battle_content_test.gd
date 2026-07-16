@@ -76,7 +76,27 @@ func _init() -> void:
 	if first_team == null or first_team.active_object_ids() != PackedInt32Array([495, 495]) or not database.load_battle_background(21).is_valid():
 		_fail("前期首场强制战斗没有解析为战场 21、敌队 18 的两个敌人")
 		return
-	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、升级规则、%d 组 FIRE 特效及 %d/%d 个基础/全部敌术均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size(), supported_enemy_magic_count, enemy_magic_count])
+	var item_session := GameSession.new()
+	item_session.party_roles = PackedInt32Array([0, 1])
+	item_session.initialize_role_state(database.player_roles)
+	var item_controller := PalBattleController.new()
+	if not item_controller.start_battle(database, item_session, 18, 21, 71):
+		_fail("真实物品支持范围无法创建首战控制器")
+		return
+	var supported_use_items := 0
+	var supported_throw_items := 0
+	for item in database.items:
+		if item == null or item.object_id <= 0:
+			continue
+		item_session.set_item_count(item.object_id, 1)
+		if item_controller.can_pending_player_use_item(item.object_id):
+			supported_use_items += 1
+		if item_controller.can_pending_player_throw_item(item.object_id):
+			supported_throw_items += 1
+	if supported_use_items == 0 or supported_throw_items == 0:
+		_fail("本地物品表没有可执行的基础恢复品或攻击暗器")
+		return
+	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、升级规则、%d 组 FIRE 特效、%d/%d 个基础/全部敌术及 %d/%d 个使用/投掷物品均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size(), supported_enemy_magic_count, enemy_magic_count, supported_use_items, supported_throw_items])
 	quit(0)
 
 
