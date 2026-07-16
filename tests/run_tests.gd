@@ -1136,10 +1136,10 @@ func _test_explorer_hud_canvas_layer() -> void:
 func _test_debug_checkpoints() -> void:
 	_expect(DebugCheckpoint.request("wine_dish_toast"), "current wine dish toast checkpoint is accepted")
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
-	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4995 and checkpoint.get("event") == 21, "wine dish checkpoint runs the original table narration")
+	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4995 and checkpoint.get("event") == 21 and checkpoint.get("music") == 31, "wine dish checkpoint runs the original table narration with the established scene BGM")
 	_expect(DebugCheckpoint.request("meal_delivery"), "meal delivery checkpoint is accepted")
 	checkpoint = DebugCheckpoint.consume()
-	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4885 and checkpoint.get("player_sprite") == 208, "meal delivery checkpoint restores carrying state")
+	_expect(checkpoint.get("scene") == 0 and checkpoint.get("script") == 4885 and checkpoint.get("player_sprite") == 208 and checkpoint.get("music") == 31, "meal delivery checkpoint restores carrying state and scene BGM")
 	_expect(DebugCheckpoint.request("drunken_swordsman"), "drunken swordsman checkpoint is accepted")
 	checkpoint = DebugCheckpoint.consume()
 	_expect(checkpoint.get("script") == 5079 and checkpoint.get("inventory", {}).get(272) == 1, "drunken swordsman checkpoint restores osmanthus wine")
@@ -1162,11 +1162,8 @@ func _test_game_menu_inventory() -> void:
 	var menu := PalGameMenu.new()
 	menu._ready()
 	menu.configure(database, session)
-	var ui_sounds: Array[int] = []
-	menu.ui_sound_requested.connect(func(number: int) -> void: ui_sounds.append(number))
 	menu.open_main()
 	_expect(menu.current_page == PalGameMenu.Page.MAIN and menu._main_selection == 2, "classic main menu opens with inventory selected")
-	_expect(ui_sounds == [AudioPlayer.SOUND_MENU_OPEN], "opening the classic menu requests UI feedback sound")
 	menu._confirm_selection()
 	_expect(menu.current_page == PalGameMenu.Page.INVENTORY_ACTION, "classic inventory command submenu opens from the main menu")
 	menu._confirm_selection()
@@ -1189,7 +1186,6 @@ func _test_game_menu_inventory() -> void:
 	_expect(session.music_volume == 90 and session.sound_volume == 90 and settings.back() == [90, 90], "system menu adjusts sound volume independently with left/right")
 	menu._confirm_selection()
 	_expect(session.sound_volume == 0 and settings.back() == [90, 0], "confirm on an audio row retains classic quick on/off behavior")
-	_expect(AudioPlayer.SOUND_MENU_MOVE in ui_sounds and AudioPlayer.SOUND_MENU_CONFIRM in ui_sounds, "menu navigation and confirmation request feedback sounds")
 	menu.free()
 
 

@@ -49,7 +49,6 @@ func _ready() -> void:
 	_session.reset_new_game()
 	_game_menu.configure(_database, _session)
 	_game_menu.audio_settings_changed.connect(_on_audio_settings_changed)
-	_game_menu.ui_sound_requested.connect(_on_ui_sound_requested)
 	_audio_player = AudioPlayer.new()
 	_audio_player.name = "PalAudioPlayer"
 	add_child(_audio_player)
@@ -176,8 +175,7 @@ func _process(delta: float) -> void:
 		_session.party_direction = direction
 		_showing_walk_frame = true
 		_walk_phase = (_walk_phase + 1) % 4
-		if _try_move(movement):
-			_play_footstep_if_due()
+		_try_move(movement)
 		_refresh_world()
 		_trigger_touch_event()
 		_move_cooldown = MOVE_REPEAT_SECONDS
@@ -459,6 +457,11 @@ func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
 	if checkpoint.has("player_sprite") and _database.player_roles != null:
 		_database.player_roles.scene_sprite_numbers[0] = int(checkpoint["player_sprite"])
 	_load_scene(scene_index, false)
+	# 人工检查点会跳过场景进入脚本；显式恢复该剧情时点已经由脚本确定的 BGM。
+	# 曲目仍由检查点剧情状态指定，不能按复用的 map_number 猜测。
+	if checkpoint.has("music"):
+		_session.music_number = int(checkpoint["music"])
+		_on_music_requested(_session.music_number, true, 0.0)
 	var script_entry := int(checkpoint.get("script", 0))
 	var event_object_id := int(checkpoint.get("event", 0))
 	_status.text = "剧情测试：%s｜%s" % [checkpoint.get("id", ""), checkpoint.get("hint", "场景 %d｜脚本 0x%04X" % [scene_index + 1, script_entry])]
@@ -586,10 +589,6 @@ func _on_sound_requested(sound_number: int) -> void:
 		_audio_player.play_sound(sound_number)
 
 
-func _on_ui_sound_requested(sound_number: int) -> void:
-	_on_sound_requested(sound_number)
-
-
 func _on_audio_settings_changed(_music_volume: int, _sound_volume: int) -> void:
 	if _audio_player != null:
 		_audio_player.apply_session_volumes()
@@ -697,19 +696,12 @@ func _on_player_sprites_changed() -> void:
 func _on_script_party_step() -> void:
 	_showing_walk_frame = true
 	_walk_phase = (_walk_phase + 1) % 4
-	_play_footstep_if_due()
 	_move_cooldown = SCRIPT_FRAME_SECONDS
 
 
 func _on_script_party_walk_finished() -> void:
 	_showing_walk_frame = false
 	_move_cooldown = 0.0
-
-
-func _play_footstep_if_due() -> void:
-	# 10 Hz 移动逻辑每两步播放一次短音效，避免连续重启同一个 VOC 形成爆音。
-	if _audio_player != null and (_walk_phase & 1) == 0:
-		_audio_player.play_sound(AudioPlayer.SOUND_FOOTSTEP)
 
 
 func _on_item_use_requested(item_id: int) -> void:

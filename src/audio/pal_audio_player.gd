@@ -12,12 +12,6 @@ signal audio_missing(kind: String, number: int, path: String)
 const SOUND_VOICE_COUNT := 8
 const SILENCE_DB := -80.0
 
-# SDLPal 当前菜单代码没有主动播放反馈音；以下编号集中在一处，便于按 DOS 实机试听校正。
-const SOUND_MENU_OPEN := 1
-const SOUND_MENU_MOVE := 2
-const SOUND_MENU_CONFIRM := 3
-const SOUND_FOOTSTEP := 2
-
 ## 当前已请求并成功载入的 RIX 曲目编号；0 表示停止，-1 表示尚未请求。
 var current_music_number: int = -1
 ## 最近一次成功载入的 VOC 音效编号。

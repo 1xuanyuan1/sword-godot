@@ -22,8 +22,8 @@ func _init() -> void:
 		printerr("FAIL: 开场 RIX 31 尚未生成，请重新导入 Data")
 		quit(1)
 		return
-	if not audio.has_sound_resource(98) or not audio.has_sound_resource(AudioPlayer.SOUND_MENU_OPEN) or not audio.has_sound_resource(AudioPlayer.SOUND_FOOTSTEP):
-		printerr("FAIL: 开场、菜单或脚步 VOC 音效尚未生成")
+	if not audio.has_sound_resource(98):
+		printerr("FAIL: 开场剧情 VOC 98 尚未生成")
 		quit(1)
 		return
 	if not audio.play_music(31, true) or not audio.play_sound(98):
@@ -31,8 +31,8 @@ func _init() -> void:
 		quit(1)
 		return
 	await process_frame
-	if audio.current_music_number != 31 or audio._music_player.stream == null or audio.last_sound_number != 98:
-		printerr("FAIL: 音频播放器状态没有反映开场脚本请求")
+	if audio.current_music_number != 31 or audio._music_player.stream == null or not audio._music_player.playing or audio.last_sound_number != 98:
+		printerr("FAIL: BGM 31 没有真正进入播放状态，或音频播放器状态没有反映开场脚本请求")
 		quit(1)
 		return
 	var playing_stream: AudioStreamWAV = audio._music_player.stream
@@ -48,5 +48,5 @@ func _init() -> void:
 		quit(1)
 		return
 	audio.stop_all()
-	print("PASS: 第一个场景 BGM 31、剧情音效 98、菜单/脚步音效和独立音量均可由 Godot 加载")
+	print("PASS: 第一个场景 BGM 31 正在播放，剧情音效 98 和独立音量均可由 Godot 加载")
 	quit(0)

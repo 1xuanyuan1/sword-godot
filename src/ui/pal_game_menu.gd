@@ -6,14 +6,10 @@
 class_name PalGameMenu
 extends Control
 
-const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
-
 ## 玩家确认使用物品时发出；接收方负责运行脚本并决定是否消耗。
 signal item_use_requested(item_id: int)
 ## 玩家在系统页调整音乐或音效音量时发出；播放层应立即应用两个百分比。
 signal audio_settings_changed(music_volume: int, sound_volume: int)
-## 菜单打开、移动或确认时请求播放集中配置的 UI 音效编号。
-signal ui_sound_requested(sound_number: int)
 
 enum Page {
 	MAIN,
@@ -83,7 +79,6 @@ func open_main() -> void:
 		return
 	current_page = Page.MAIN
 	show()
-	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_OPEN)
 	queue_redraw()
 
 
@@ -93,7 +88,6 @@ func open_inventory() -> void:
 		return
 	_inventory_return_page = Page.MAIN
 	_open_item_selection()
-	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_OPEN)
 
 
 ## 关闭整个菜单，返回地图输入。
@@ -284,12 +278,10 @@ func _move_selection(direction: Vector2i) -> void:
 				_change_selected_volume(direction.x * VOLUME_STEP)
 			elif direction.y != 0:
 				_system_selection = posmod(_system_selection + direction.y, SYSTEM_ITEM_POSITIONS.size())
-	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_MOVE)
 	queue_redraw()
 
 
 func _confirm_selection() -> void:
-	ui_sound_requested.emit(AudioPlayer.SOUND_MENU_CONFIRM)
 	match current_page:
 		Page.MAIN:
 			if _main_selection == 2:
