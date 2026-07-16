@@ -26,6 +26,11 @@ var _game_menu: PalGameMenu
 var _rng_player: PalRngPlayer
 var _battle_view: PalBattlePreview
 var _audio_player: Node
+var _fade_overlay: ColorRect
+var _fade_tween: Tween
+var _screen_fade_active: bool = false
+var _fade_in_after_scene_change: bool = false
+var _automatic_fade_in_duration: float = 0.6
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
 var _player_sprites: Dictionary = {}
@@ -73,6 +78,7 @@ func _ready() -> void:
 	_script_vm.party_walk_finished.connect(_on_script_party_walk_finished)
 	_script_vm.music_requested.connect(_on_music_requested)
 	_script_vm.sound_requested.connect(_on_sound_requested)
+	_script_vm.screen_fade_requested.connect(_on_screen_fade_requested)
 	_script_vm.rng_animation_requested.connect(_on_rng_animation_requested)
 	_script_vm.battle_requested.connect(_on_battle_requested)
 	add_child(_script_vm)
@@ -146,6 +152,16 @@ func _build_interface() -> void:
 	_battle_view.battle_finished.connect(_on_battle_finished)
 	_ui_layer.add_child(_battle_view)
 
+	# PAL 的调色板渐隐应覆盖地图、人物和 HUD；放在 HUD 最后保证转场期间不会露出对话框。
+	_fade_overlay = ColorRect.new()
+	_fade_overlay.name = "ScreenFade"
+	_fade_overlay.color = Color.BLACK
+	_fade_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fade_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fade_overlay.modulate.a = 0.0
+	_fade_overlay.visible = false
+	_ui_layer.add_child(_fade_overlay)
+
 
 func _process(delta: float) -> void:
 	if _map_data == null or not _map_data.is_valid():
@@ -153,6 +169,8 @@ func _process(delta: float) -> void:
 	if _battle_view != null and _battle_view.visible:
 		return
 	if _game_menu != null and _game_menu.visible:
+		return
+	if _screen_fade_active:
 		return
 	_script_frame_accumulator += minf(delta, 0.5)
 	var auto_world_changed := false
@@ -164,9 +182,9 @@ func _process(delta: float) -> void:
 		_displace_party_from_blockers()
 		_refresh_world()
 		# 自动脚本可能让 NPC 主动走入接触范围；官方会在同一游戏更新周期检查触发。
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_screen_fade and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle:
 			_trigger_touch_event()
-	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle):
+	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle):
 		return
 	# 同一轮接触扫描中的同步短脚本会在帧末续跑；期间不能夹入一次玩家移动。
 	if _touch_scan_active:
@@ -207,6 +225,8 @@ func _process(delta: float) -> void:
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not event.is_pressed() or event.is_echo():
 		return
+	if _screen_fade_active:
+		return
 	if _battle_view != null and _battle_view.visible:
 		return
 	if _game_menu != null and _game_menu.visible:
@@ -215,7 +235,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.keycode in MENU_KEYCODES:
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle and not _touch_scan_active:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_screen_fade and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle and not _touch_scan_active:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
 			else:
@@ -230,6 +250,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			_script_vm.advance_dialog()
 			return
 		if _script_vm != null and _script_vm.running:
+			return
+		if _script_vm != null and _script_vm.waiting_for_screen_fade:
 			return
 		if _script_vm != null and _script_vm.waiting_for_rng:
 			return
@@ -361,7 +383,7 @@ func _prepare_search_event(event: PalEventObject) -> bool:
 
 
 func _trigger_touch_event() -> bool:
-	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
+	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
 		return false
 	_touch_scan_active = true
 	_touch_scan_next_index = 0
@@ -369,7 +391,7 @@ func _trigger_touch_event() -> bool:
 
 
 func _continue_touch_scan() -> bool:
-	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
+	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
 		return false
 	if _pending_scene_index >= 0:
 		_reset_touch_scan()
@@ -453,7 +475,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 
 
 func _run_scene_enter_script(scene_index: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
 		return
 	if scene_index < 0 or scene_index >= _database.scenes.size():
 		return
@@ -626,6 +648,9 @@ func _on_unsupported_instruction(index: int, operation: int) -> void:
 
 func _on_script_redraw(_delay_units: int) -> void:
 	_refresh_world()
+	if _fade_in_after_scene_change and not _screen_fade_active:
+		_fade_in_after_scene_change = false
+		_start_screen_fade(false, _automatic_fade_in_duration, false)
 
 
 func _on_music_requested(music_number: int, loop: bool, fade_seconds: float) -> void:
@@ -636,6 +661,37 @@ func _on_music_requested(music_number: int, loop: bool, fade_seconds: float) -> 
 func _on_sound_requested(sound_number: int) -> void:
 	if _audio_player != null:
 		_audio_player.play_sound(sound_number)
+
+
+func _on_screen_fade_requested(fade_out: bool, duration_seconds: float) -> void:
+	if fade_out:
+		_fade_in_after_scene_change = true
+		_automatic_fade_in_duration = duration_seconds
+	else:
+		_fade_in_after_scene_change = false
+	_start_screen_fade(fade_out, duration_seconds, true)
+
+
+func _start_screen_fade(fade_out: bool, duration_seconds: float, complete_vm: bool) -> void:
+	if _fade_overlay == null:
+		if complete_vm and _script_vm != null:
+			_script_vm.complete_screen_fade()
+		return
+	if _fade_tween != null and _fade_tween.is_valid():
+		_fade_tween.kill()
+	_screen_fade_active = true
+	_fade_overlay.visible = true
+	_fade_tween = create_tween()
+	_fade_tween.tween_property(_fade_overlay, "modulate:a", 1.0 if fade_out else 0.0, maxf(0.01, duration_seconds))
+	_fade_tween.finished.connect(_on_screen_fade_finished.bind(fade_out, complete_vm))
+
+
+func _on_screen_fade_finished(fade_out: bool, complete_vm: bool) -> void:
+	_screen_fade_active = false
+	if not fade_out and _fade_overlay != null:
+		_fade_overlay.visible = false
+	if complete_vm and _script_vm != null:
+		_script_vm.complete_screen_fade()
 
 
 func _on_rng_animation_requested(animation_number: int, start_frame: int, end_frame: int, frames_per_second: int) -> void:
@@ -759,6 +815,9 @@ func _on_script_finished(next_entry: int) -> void:
 		_pending_used_item_id = 0
 		if should_trigger_touch:
 			call_deferred("_trigger_touch_event")
+	if _fade_in_after_scene_change and _pending_scene_index < 0 and not _screen_fade_active:
+		_fade_in_after_scene_change = false
+		_start_screen_fade(false, _automatic_fade_in_duration, false)
 
 
 func _apply_pending_scene() -> void:
@@ -767,6 +826,9 @@ func _apply_pending_scene() -> void:
 	var scene_index := _pending_scene_index
 	_pending_scene_index = -1
 	_load_scene(scene_index, true)
+	if _fade_in_after_scene_change:
+		_fade_in_after_scene_change = false
+		_start_screen_fade(false, _automatic_fade_in_duration, false)
 
 
 func _on_player_sprites_changed() -> void:
@@ -787,7 +849,7 @@ func _on_script_party_walk_finished() -> void:
 
 
 func _on_item_use_requested(item_id: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _session.item_count(item_id) <= 0:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _session.item_count(item_id) <= 0:
 		return
 	var item := _database.item_definition(item_id)
 	if item == null or not item.is_usable():

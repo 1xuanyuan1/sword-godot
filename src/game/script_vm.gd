@@ -26,6 +26,8 @@ signal dialog_ended
 signal music_requested(music_number: int, loop: bool, fade_seconds: float)
 ## 请求播放一次音效。
 signal sound_requested(sound_number: int)
+## 请求屏幕渐隐或渐显；探索控制器完成动画后必须调用 `complete_screen_fade()`。
+signal screen_fade_requested(fade_out: bool, duration_seconds: float)
 ## 请求播放阻塞剧情的 RNG 过场；`end_frame == -1` 表示播放到动画结束。
 signal rng_animation_requested(animation_number: int, start_frame: int, end_frame: int, frames_per_second: int)
 ## 请求打开一场阻塞剧情的经典战斗；`is_boss` 为真时不允许逃跑。
@@ -55,6 +57,8 @@ var waiting_for_frames: bool = false
 var waiting_for_party_walk: bool = false
 ## 是否正在逐帧让队伍乘坐当前事件对象移动到脚本目标。
 var waiting_for_party_ride: bool = false
+## 是否正在等待探索控制器完成阻塞式屏幕渐隐或渐显。
+var waiting_for_screen_fade: bool = false
 ## 是否正在等待剧情 RNG 动画播放完成。
 var waiting_for_rng: bool = false
 ## 是否正在等待战斗覆盖层返回胜负。
@@ -108,7 +112,7 @@ func set_scene_map(map_data: PalMapData) -> void:
 ## 从指定脚本入口执行一个触发事件。
 ## VM 忙碌或入口无效时不修改状态并返回原入口；暂停或结束时返回未来入口。
 func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
-	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog or waiting_for_rng or waiting_for_battle:
+	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog or waiting_for_screen_fade or waiting_for_rng or waiting_for_battle:
 		return entry_index
 	if event_object_id == 0xffff:
 		event_object_id = _last_event_object_id
@@ -120,6 +124,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	waiting_for_frames = false
 	waiting_for_party_walk = false
 	waiting_for_party_ride = false
+	waiting_for_screen_fade = false
 	waiting_for_rng = false
 	waiting_for_battle = false
 	_battle_defeat_entry = 0
@@ -153,6 +158,15 @@ func complete_rng_animation() -> void:
 	_continue_execution()
 
 
+## 通知 VM 屏幕渐隐或渐显已经结束，并从下一条脚本继续。
+func complete_screen_fade() -> void:
+	if not waiting_for_screen_fade:
+		return
+	waiting_for_screen_fade = false
+	running = true
+	_continue_execution()
+
+
 ## 通知 VM 剧情战斗已经结束，并按 `0007` 的战败或逃跑入口恢复脚本。
 ## 胜利和未配置分支的其他结果继续执行 `0007` 的下一条指令。
 func complete_battle(result: int) -> void:
@@ -176,6 +190,7 @@ func stop() -> void:
 	waiting_for_frames = false
 	waiting_for_party_walk = false
 	waiting_for_party_ride = false
+	waiting_for_screen_fade = false
 	waiting_for_rng = false
 	waiting_for_battle = false
 	_battle_defeat_entry = 0
@@ -192,7 +207,7 @@ func stop() -> void:
 ## 返回本帧是否可能改变世界画面。
 func tick_frame() -> bool:
 	_auto_frame_number += 1
-	if waiting_for_rng or waiting_for_battle:
+	if waiting_for_screen_fade or waiting_for_rng or waiting_for_battle:
 		return false
 	# SDLPal pauses scene updates while waiting for a dialog key.
 	var world_changed := false if waiting_for_dialog or _close_dialog_after_frame_wait else _tick_auto_scripts()
@@ -465,10 +480,18 @@ func _continue_execution() -> int:
 			0x004a:
 				if session != null:
 					session.battlefield_number = entry.operands[0]
-			# 屏幕淡出；当前先请求重绘，完整调色板渐变仍待实现。
-			0x0050:
-				# 场景淡出效果尚未实现；先安全刷新并继续场景切换脚本。
-				redraw_requested.emit(0)
+			# 屏幕渐隐/渐显；默认速度对应官方 PAL_FadeOut/PAL_FadeIn 的约 0.6 秒。
+			0x0050, 0x0051:
+				var fade_duration := float(entry.operands[0] if entry.operands[0] > 0 else 1) * 0.6
+				var fade_out := entry.operation == 0x0050
+				if get_signal_connection_list(&"screen_fade_requested").is_empty():
+					screen_fade_requested.emit(fade_out, fade_duration)
+				else:
+					_cursor = next_cursor
+					running = false
+					waiting_for_screen_fade = true
+					screen_fade_requested.emit(fade_out, fade_duration)
+					return _cursor
 			# 临时隐藏当前触发事件；operand[0] 为帧数，0 使用原版默认 800。
 			0x0052:
 				var event := _event_by_id(_event_object_id)
@@ -648,6 +671,7 @@ func _finish(next_entry: int) -> int:
 	waiting_for_frames = false
 	waiting_for_party_walk = false
 	waiting_for_party_ride = false
+	waiting_for_screen_fade = false
 	waiting_for_rng = false
 	waiting_for_battle = false
 	_battle_defeat_entry = 0

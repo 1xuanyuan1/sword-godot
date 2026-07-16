@@ -180,14 +180,18 @@ func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String
 	destination_boat.state = destination_original_state
 	session.set_party_world_position(Vector2i(1184, 1424))
 	var scene_changes: Array[int] = []
+	var fade_requests: Array = []
 	var boarding_vm := ScriptVM.new()
 	boarding_vm.configure(database, session)
 	boarding_vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
 	boarding_vm.scene_change_requested.connect(func(scene_index: int) -> void: scene_changes.append(scene_index))
+	boarding_vm.screen_fade_requested.connect(func(fade_out: bool, duration: float) -> void: fade_requests.append([fade_out, duration]))
 	boarding_vm.run_trigger(0x1725, 117)
 	_drive_script(boarding_vm)
 	if not unsupported.is_empty():
 		failure = "登船到仙灵岛流程遇到未支持指令：%s" % unsupported
+	elif fade_requests != [[true, 0.6]]:
+		failure = "余杭驶离后没有按原版渐隐：%s" % [fade_requests]
 	elif scene_changes != [14] or session.scene_index != 14 or session.party_world_position() != Vector2i(752, 808):
 		failure = "登船后没有切到仙灵岛：场景 %s/%d，落点 %s" % [scene_changes, session.scene_index, session.party_world_position()]
 	elif boat.position != original_position + Vector2i(288, -144):
@@ -216,9 +220,11 @@ func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String
 
 func _drive_script(vm: ScriptVM) -> void:
 	var guard := 0
-	while (vm.running or vm.waiting_for_dialog or vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride) and guard < 30000:
+	while (vm.running or vm.waiting_for_dialog or vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride or vm.waiting_for_screen_fade) and guard < 30000:
 		if vm.waiting_for_dialog:
 			vm.advance_dialog()
+		elif vm.waiting_for_screen_fade:
+			vm.complete_screen_fade()
 		else:
 			vm.tick_frame()
 		guard += 1

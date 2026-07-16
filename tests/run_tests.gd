@@ -40,6 +40,7 @@ func _init() -> void:
 	_test_audio_player_foundation()
 	_test_script_vm_foundation()
 	_test_script_vm_audio_requests()
+	_test_script_vm_screen_fade_wait()
 	_test_script_vm_rng_and_role_state()
 	_test_script_vm_scene_teleport()
 	_test_script_vm_scene_runtime_mutations()
@@ -795,6 +796,33 @@ func _test_script_vm_audio_requests() -> void:
 	vm.free()
 
 
+func _test_script_vm_screen_fade_wait() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x0050, 0x0049, 0x0051, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[2].operands = PackedInt32Array([0xffff, 0, 0])
+	database.scripts[3].operands[0] = 2
+	var event := PalEventObject.new()
+	event.object_id = 1
+	event.state = 2
+	database.event_objects.append(event)
+	var requests: Array = []
+	var vm := ScriptVM.new()
+	vm.configure(database, GameSession.new())
+	vm.screen_fade_requested.connect(func(fade_out: bool, duration: float) -> void: requests.append([fade_out, duration]))
+	vm.run_trigger(1, 1)
+	_expect(vm.waiting_for_screen_fade and not vm.running and requests == [[true, 0.6]], "opcode 0050 blocks the script while the screen fades out")
+	_expect(event.state == 2, "instructions after fade-out do not execute before the renderer completes the transition")
+	vm.complete_screen_fade()
+	_expect(vm.waiting_for_screen_fade and event.state == 0 and requests == [[true, 0.6], [false, 1.2]], "opcode 0051 resumes after fade-out and requests its operand-scaled fade-in")
+	vm.complete_screen_fade()
+	_expect(not vm.running and not vm.waiting_for_screen_fade, "script finishes only after the explicit fade-in callback")
+	vm.free()
+
+
 func _test_script_vm_rng_and_role_state() -> void:
 	var roles := PalPlayerRoles.new()
 	for role_index in range(PalPlayerRoles.ROLE_COUNT):
@@ -1412,6 +1440,7 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
+	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index(), "screen fade covers the complete world and HUD during scene transitions")
 	_expect(explorer._tile_world.get_parent() == explorer, "TileMap world remains on the Camera2D world canvas")
 	explorer.free()
 
