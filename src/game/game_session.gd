@@ -284,6 +284,19 @@ func increase_role_hp_mp(role_index: int, hp_delta: int, mp_delta: int) -> bool:
 	return role_hp[role_index] != old_hp or role_mp[role_index] != old_mp
 
 
+## 按最大 HP 的十分比复活一名倒下角色，并清除三级以下毒与临时状态。
+## 角色仍存活、索引无效或内容数据库缺失时返回 `false`，且不修改状态。
+func revive_role(role_index: int, tenths_of_max_hp: int, database: PalContentDatabase) -> bool:
+	if role_index < 0 or role_index >= role_hp.size() or role_index >= role_max_hp.size() or database == null or role_hp[role_index] > 0:
+		return false
+	var restored_hp := int(role_max_hp[role_index] * tenths_of_max_hp / 10.0)
+	role_hp[role_index] = mini(role_max_hp[role_index], maxi(0, restored_hp))
+	cure_role_poisons_by_level(role_index, 3, database)
+	for status_id in range(STATUS_COUNT):
+		remove_role_status(role_index, status_id)
+	return true
+
+
 ## 为指定角色加入一个仙术对象；已学会时保持不变并返回 `false`。
 func add_magic(role_index: int, magic_id: int) -> bool:
 	if role_index < 0 or role_index >= learned_magics_by_role.size() or magic_id <= 0:

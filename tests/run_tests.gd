@@ -4,6 +4,7 @@ extends SceneTree
 
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
+const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -862,7 +863,7 @@ func _test_script_vm_rng_and_role_state() -> void:
 		roles.dying_sounds.append(0)
 	var database := PalContentDatabase.new()
 	database.player_roles = roles
-	for operation in [0, 0x001d, 0x0036, 0x0037, 0x0055, 0]:
+	for operation in [0, 0x001d, 0x0036, 0x0037, 0x0055, 0, 0x0022, 0x0078, 0]:
 		var entry := PalScriptEntry.new()
 		entry.operation = operation
 		entry.operands = PackedInt32Array([0, 0, 0])
@@ -871,6 +872,16 @@ func _test_script_vm_rng_and_role_state() -> void:
 	database.scripts[2].operands[0] = 1
 	database.scripts[3].operands = PackedInt32Array([2, 4, 14])
 	database.scripts[4].operands = PackedInt32Array([345, 1, 0])
+	database.scripts[6].operands = PackedInt32Array([0, 5, 0])
+	database.poisons.resize(3)
+	var low_poison := PoisonDefinition.PoisonData.new()
+	low_poison.object_id = 1
+	low_poison.poison_level = 2
+	database.poisons[1] = low_poison
+	var high_poison := PoisonDefinition.PoisonData.new()
+	high_poison.object_id = 2
+	high_poison.poison_level = 4
+	database.poisons[2] = high_poison
 	var session := GameSession.new()
 	var rng_requests: Array = []
 	var vm := ScriptVM.new()
@@ -882,6 +893,17 @@ func _test_script_vm_rng_and_role_state() -> void:
 	_expect(not session.has_magic(0, 345), "script actions after an RNG movie do not execute early")
 	vm.complete_rng_animation()
 	_expect(not vm.waiting_for_rng and not vm.running and session.has_magic(0, 345), "opcode 0055 teaches the selected player magic after RNG playback")
+	# 复活前先保留一项临时状态和两种不同等级的毒，检查 0022 的清理边界。
+	session.set_role_status(0, GameSession.STATUS_BRAVERY, 5)
+	session.add_role_poison(0, 1, 10)
+	session.add_role_poison(0, 2, 20)
+	session.role_hp[0] = 0
+	var unsupported: Array[int] = []
+	vm.unsupported_instruction.connect(func(_index: int, operation: int) -> void: unsupported.append(operation))
+	vm.run_trigger(6, 0)
+	_expect(session.role_hp[0] == 50 and vm.script_success, "opcode 0022 revives the selected role by tenths of maximum HP")
+	_expect(not session.role_has_poison(0, 1) and session.role_has_poison(0, 2) and session.status_rounds_for(0, GameSession.STATUS_BRAVERY) == 0, "opcode 0022 clears level-three-or-lower poison and temporary statuses only")
+	_expect(unsupported.is_empty() and not vm.running, "reserved opcode 0078 behaves as the official no-op and lets the script finish")
 	vm.free()
 
 

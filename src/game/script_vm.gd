@@ -376,6 +376,16 @@ func _continue_execution() -> int:
 					if not session.equipment_effects_ready:
 						_equipment_manager.rebuild_all_effects()
 					_equipment_manager.remove_item_including_equipment(entry.operands[0], amount)
+			# 按最大 HP 的十分比复活当前角色或全队，并清除三级以下毒与临时状态。
+			0x0022:
+				if session != null:
+					var revived := false
+					if entry.operands[0] != 0:
+						for role_index in session.party_roles:
+							revived = session.revive_role(role_index, entry.operands[1], database) or revived
+					else:
+						revived = session.revive_role(_event_object_id, entry.operands[1], database)
+					script_success = revived
 			# 卸下指定角色装备；operand[1] 为 0 时清空六槽，否则使用 1–6 的部位编号。
 			0x0023:
 				if session != null:
@@ -607,6 +617,9 @@ func _continue_execution() -> int:
 				if session != null:
 					session.music_number = 0
 				music_requested.emit(0, false, fade_seconds)
+			# 官方 SDLPal `script.c` 将 0078 保留为空操作；继续下一条而不是误报未支持。
+			0x0078:
+				pass
 			# 直接移动 operand[0] 事件，operand[1]/[2] 为有符号世界偏移。
 			0x007d:
 				var event := _resolve_event(entry.operands[0])

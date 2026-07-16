@@ -1307,13 +1307,8 @@ func _revive_player(party_index: int, tenths_of_max_hp: int, result: ActionResul
 	if party_index < 0 or party_index >= players.size():
 		return false
 	var role_index := players[party_index].role_index
-	if _role_hp(role_index) > 0:
+	if not session.revive_role(role_index, tenths_of_max_hp, database):
 		return false
-	var restored := maxi(1, int(session.role_max_hp[role_index] * tenths_of_max_hp / 10.0))
-	session.role_hp[role_index] = mini(session.role_max_hp[role_index], restored)
-	session.cure_role_poisons_by_level(role_index, 3, database)
-	for status_id in range(GameSession.STATUS_COUNT):
-		session.remove_role_status(role_index, status_id)
 	var hit := _player_hit_for_result(result, party_index)
 	hit.healing += session.role_hp[role_index]
 	return true

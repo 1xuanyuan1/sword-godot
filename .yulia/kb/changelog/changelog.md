@@ -434,6 +434,26 @@ keywords:
   - `docs/SCRIPT_VM.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-040] [feat] 贯通天亮返店与赵灵儿营救战后剧情
+
+- **关联需求**: M3 场景流程、M4 经典战斗桥接、M5 完整通关回归
+- **关联 TODO**: TD-001、TD-005、TD-008（阶段性）
+- **功能描述**: 对齐固定 SDLPal `script.c`，把保留操作码 `0078` 实现为官方空操作，并在场景 VM 接入 `0022` 按最大 HP 十分比复活当前角色或全队、清除三级以下毒与临时状态；复活规则下沉到 `GameSession`，战斗效果脚本与场景剧情共用同一语义。真实资源回归从御剑教学继续覆盖天亮独白、余杭日间音乐、李大娘早餐对话和客房赵灵儿营救入口 `6906`，验证赵灵儿临时入队、敌队 18／战场 21 请求、模拟胜利、战后复活回满、正式入队、音乐渐隐及后续 EventObject 入口。
+- **验证情况**: 277 项基础合成检查、22 项装备系统检查、123 项经典战斗逻辑、10 项剧情战斗桥接、真实脚本战斗桥接、中文文档门禁和扩展后的早期主线回归全部通过；脚本 `6906–7017` 的消息 `1475–1512` 可越过战斗等待完整执行，不再停在 `0078`，且测试不输出或提交原版文本。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/game/script_vm.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_early_mainline_test.gd`
+  - `README.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/BATTLE.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点
