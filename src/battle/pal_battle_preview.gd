@@ -210,6 +210,8 @@ func _build_interface() -> void:
 	_battle_ui = PalBattleUI.new()
 	_battle_ui.name = "ClassicBattleUI"
 	_battle_ui.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	# 战斗角色按脚底 Y 值使用 100–180 的 z_index；官方菜单必须整体压在角色之上。
+	_battle_ui.z_index = 1000
 	add_child(_battle_ui)
 	_error_label = Label.new()
 	_error_label.position = Vector2(8, 82)
@@ -222,6 +224,7 @@ func _build_interface() -> void:
 	_error_label.add_theme_color_override("font_shadow_color", Color.BLACK)
 	_error_label.add_theme_constant_override("shadow_offset_x", 1)
 	_error_label.add_theme_constant_override("shadow_offset_y", 1)
+	_error_label.z_index = 1001
 	_error_label.hide()
 	add_child(_error_label)
 

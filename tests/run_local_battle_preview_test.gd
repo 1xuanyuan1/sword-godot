@@ -25,6 +25,9 @@ func _run() -> void:
 	if not preview._battle_ui.has_classic_resources():
 		_fail("战斗状态框、四向图标或点阵字资源未成功加载")
 		return
+	if preview._battle_ui.z_index <= preview._player_nodes[0].z_index:
+		_fail("经典战斗 UI 没有位于按 Y 排序的人物之上")
+		return
 	var image := viewport.get_texture().get_image()
 	if image == null or image.get_size() != Vector2i(320, 200):
 		_fail("当前渲染器无法读回 320×200 战斗画面；请去掉 --headless")
