@@ -301,6 +301,23 @@ keywords:
   - `docs/PROJECT_STRUCTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-034] [feat] 恢复 R 键重复上一回合战斗指令
+
+- **关联需求**: M4 经典战斗
+- **关联 TODO**: TD-005（阶段性）
+- **功能描述**: 对齐官方 `input.c::kKeyRepeat`、`fight.c::PAL_BattleCommitAction()` 与经典回合 `fRepeat`，在战斗主指令阶段按 `R` 可让当前及后续队员按各自缓存重复上一回合动作、对象编号和目标。首回合空缓存转为普攻；攻击仙术/投掷物资源不足时降级为普攻，恢复仙术/使用物品资源不足时降级为防御；临时降级不会覆盖缓存，资源恢复后仍可重复原指令。
+- **验证情况**: 255 项合成检查、64 项经典战斗逻辑、10 项剧情战斗桥接、真实首战逻辑及 OpenGL 战斗回归通过；覆盖首回合全队普攻、两类仙术 MP 不足降级、两类物品耗尽降级、缓存不被降级动作污染、物品重复预留与实际 `KEY_R` 输入入口。
+- **涉及文件**:
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `docs/BATTLE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/todo.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

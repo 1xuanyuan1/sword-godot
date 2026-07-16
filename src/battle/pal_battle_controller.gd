@@ -51,6 +51,10 @@ class PlayerState extends RefCounted:
 	var action_type: int = -1
 	var action_id: int = 0
 	var target_index: int = -1
+	# 对齐 fight.c 的 prevAction：重复回合的降级动作不能覆盖这份缓存。
+	var previous_action_type: int = -1
+	var previous_action_id: int = 0
+	var previous_target_index: int = -1
 	var defending: bool = false
 
 
@@ -153,6 +157,7 @@ var _command_cursor: int = 0
 var _queue_cursor: int = 0
 var _accepting_commands: bool = false
 var _reserved_items: Dictionary = {}
+var _repeating_previous_commands: bool = false
 
 
 #region Public lifecycle and commands
@@ -179,6 +184,7 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	_queue_cursor = 0
 	_accepting_commands = false
 	_reserved_items.clear()
+	_repeating_previous_commands = false
 	if database == null or session == null or database.player_roles == null:
 		error_message = "战斗缺少内容数据库、会话或 PLAYERROLES"
 		return false
@@ -401,11 +407,37 @@ func submit_flee() -> bool:
 	return true
 
 
+## 为当前及尚未选择指令的队员重复上一回合指令，对应 SDLPal 的 `R / kKeyRepeat`。
+## 第一回合尚无缓存时退化为普通攻击；MP 不足、物品耗尽或目标失效时按官方规则改为攻击或防御。
+## 成功时直接结束本回合指令阶段并构建行动队列；失败时不修改当前指令。
+func repeat_previous_commands() -> bool:
+	if pending_party_index() < 0:
+		return false
+	_repeating_previous_commands = true
+	while _command_cursor < players.size():
+		var party_index := _command_cursor
+		_assign_repeated_command(party_index)
+		_command_cursor += 1
+		_skip_players_without_commands()
+	var built := build_action_queue()
+	if not built:
+		_repeating_previous_commands = false
+	return built
+
+
 ## 在全队指令完成后按经典身法规则构造行动队列。
 ## 指令尚未完成、战斗已结束或队列已开始执行时返回 `false`。
 func build_action_queue() -> bool:
 	if battle_result != BattleResult.ONGOING or _command_cursor < players.size() or _queue_cursor > 0:
 		return false
+	# fight.c 只在普通选择回合备份 action；重复回合即使因资源不足降级，
+	# 也必须保留原始 prevAction，方便资源恢复后再次按 R。
+	if not _repeating_previous_commands:
+		for player in players:
+			player.previous_action_type = player.action_type
+			player.previous_action_id = player.action_id
+			player.previous_target_index = player.target_index
+	_repeating_previous_commands = false
 	action_queue.clear()
 	_queue_cursor = 0
 	for enemy_index in range(enemies.size()):
@@ -548,6 +580,83 @@ func _advance_command_cursor() -> void:
 	_skip_players_without_commands()
 	if _command_cursor >= players.size():
 		build_action_queue()
+
+
+func _assign_repeated_command(party_index: int) -> void:
+	var player := players[party_index]
+	match player.previous_action_type:
+		ActionType.DEFEND:
+			_assign_defend(player, party_index)
+		ActionType.MAGIC:
+			_assign_repeated_magic(player, party_index)
+		ActionType.USE_ITEM:
+			_assign_repeated_use_item(player, party_index)
+		ActionType.THROW_ITEM:
+			_assign_repeated_throw_item(player)
+		ActionType.FLEE:
+			player.action_type = ActionType.FLEE
+			player.action_id = 0
+			player.target_index = -1
+		_:
+			# 官方 prevAction 初始为 Pass；重复第一回合时会转成普通攻击。
+			_assign_attack(player, player.previous_target_index)
+
+
+func _assign_repeated_magic(player: PlayerState, party_index: int) -> void:
+	var object := database.magic_object_definition(player.previous_action_id)
+	var definition := database.magic_definition_for_object(player.previous_action_id)
+	if object == null or definition == null or not can_pending_player_use_magic(player.previous_action_id):
+		# fight.c::PAL_BattleCommitAction：攻击仙术无效时普攻，恢复/辅助仙术无效时防御。
+		if object != null and not object.is_used_on_enemy():
+			_assign_defend(player, party_index)
+		else:
+			_assign_attack(player, player.previous_target_index)
+		return
+	player.action_type = ActionType.MAGIC
+	player.action_id = player.previous_action_id
+	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY, PalMagicDefinition.TYPE_SUMMON]:
+		player.target_index = -1
+	elif object.is_used_on_enemy():
+		player.target_index = _find_alive_enemy_from(player.previous_target_index)
+	else:
+		player.target_index = player.previous_target_index if player.previous_target_index >= 0 and player.previous_target_index < players.size() else party_index
+
+
+func _assign_repeated_use_item(player: PlayerState, party_index: int) -> void:
+	var item := database.item_definition(player.previous_action_id)
+	if item == null or not can_pending_player_use_item(player.previous_action_id):
+		# 官方把已耗尽的使用物品降级为防御。
+		_assign_defend(player, party_index)
+		return
+	player.action_type = ActionType.USE_ITEM
+	player.action_id = player.previous_action_id
+	player.target_index = -1 if item.applies_to_all() else (player.previous_target_index if player.previous_target_index >= 0 and player.previous_target_index < players.size() else party_index)
+	if item.is_consuming():
+		_reserve_item(player.action_id)
+
+
+func _assign_repeated_throw_item(player: PlayerState) -> void:
+	var item := database.item_definition(player.previous_action_id)
+	if item == null or not can_pending_player_throw_item(player.previous_action_id):
+		# 官方把已耗尽的投掷物品降级为普通攻击。
+		_assign_attack(player, player.previous_target_index)
+		return
+	player.action_type = ActionType.THROW_ITEM
+	player.action_id = player.previous_action_id
+	player.target_index = -1 if item.applies_to_all() else _find_alive_enemy_from(player.previous_target_index)
+	_reserve_item(player.action_id)
+
+
+func _assign_attack(player: PlayerState, preferred_target: int) -> void:
+	player.action_type = ActionType.ATTACK
+	player.action_id = 0
+	player.target_index = -1 if database.player_roles.attack_all[player.role_index] != 0 else _find_alive_enemy_from(preferred_target)
+
+
+func _assign_defend(player: PlayerState, party_index: int) -> void:
+	player.action_type = ActionType.DEFEND
+	player.action_id = 0
+	player.target_index = party_index
 
 
 func _skip_players_without_commands() -> void:

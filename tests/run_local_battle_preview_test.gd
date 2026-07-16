@@ -28,6 +28,16 @@ func _run() -> void:
 		var current_music := preview._audio_player.current_music_number if preview._audio_player != null else -999
 		_fail("独立战斗样板没有装载循环战斗 BGM 37：编号 %d" % current_music)
 		return
+	var repeat_event := InputEventKey.new()
+	repeat_event.keycode = KEY_R
+	repeat_event.pressed = true
+	preview._unhandled_key_input(repeat_event)
+	if preview._input_mode != PalBattlePreview.InputMode.WAITING or not preview._controller.players.all(func(player: PalBattleController.PlayerState) -> bool: return player.action_type == PalBattleController.ActionType.ATTACK):
+		_fail("战斗主指令阶段按 R 没有让全队重复首回合默认攻击")
+		return
+	# 恢复首战初始状态，避免快捷键检查影响后续逐项动画回归。
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview.set_process(false)
 	if preview._fighter_root.get_child_count() != 4:
 		_fail("首战应绘制两个敌人与两名队员，实际为 %d" % preview._fighter_root.get_child_count())
 		return

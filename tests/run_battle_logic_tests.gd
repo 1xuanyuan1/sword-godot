@@ -25,6 +25,8 @@ func _init() -> void:
 	_test_consuming_healing_item()
 	_test_throw_item_magic_damage()
 	_test_flee_success_and_boss_failure()
+	_test_repeat_previous_magic_commands()
+	_test_repeat_exhausted_items()
 	_test_defeat()
 	if _failures.is_empty():
 		print("PASS: %d classic battle logic checks" % _checks)
@@ -327,6 +329,69 @@ func _test_flee_success_and_boss_failure() -> void:
 	boss_controller.submit_flee()
 	var failed := boss_controller.execute_next_action()
 	_expect(failed != null and not failed.flee_succeeded and boss_controller.battle_result == PalBattleController.BattleResult.ONGOING, "boss battle always rejects fleeing without ending the battle")
+
+
+func _test_repeat_previous_magic_commands() -> void:
+	var database := _synthetic_database([_enemy_definition(9999, 1, 1, 0, 0, false)])
+	for role_index in [0, 1]:
+		database.player_roles.dexterities[role_index] = 999
+	var heal := PalScriptEntry.new()
+	heal.operation = 0x001b
+	heal.operands = PackedInt32Array([0, 10, 0])
+	database.scripts = [PalScriptEntry.new(), heal, PalScriptEntry.new()]
+	_add_magic(database, 100, PalMagicDefinition.TYPE_NORMAL, 5, 10, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE | PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	_add_magic(database, 101, PalMagicDefinition.TYPE_APPLY_TO_PLAYER, 6, 0, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE, 1)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	session.learned_magics_by_role[0] = PackedInt32Array([100])
+	session.learned_magics_by_role[1] = PackedInt32Array([101])
+	session.role_hp[1] = 80
+	var first_turn_controller := PalBattleController.new()
+	first_turn_controller.start_battle(database, _session_for(database, PackedInt32Array([0, 1])), 0, 0, 65)
+	_expect(first_turn_controller.repeat_previous_commands() and first_turn_controller.players.all(func(player: PalBattleController.PlayerState) -> bool: return player.action_type == PalBattleController.ActionType.ATTACK), "R on the first turn converts the empty previous action into normal attacks")
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 67)
+	_expect(controller.submit_magic(100, 0) and controller.submit_magic(101, 1), "manual magic commands establish the previous-turn action cache")
+	controller.execute_remaining_actions()
+	session.role_mp[0] = 0
+	session.role_mp[1] = 0
+	_expect(controller.repeat_previous_commands(), "R repeat accepts the previous command set for the whole remaining party")
+	_expect(controller.players[0].action_type == PalBattleController.ActionType.ATTACK and controller.players[1].action_type == PalBattleController.ActionType.DEFEND, "repeat falls back from unaffordable offensive magic to attack and healing magic to defend")
+	controller.execute_remaining_actions()
+	session.role_mp[0] = 50
+	session.role_mp[1] = 50
+	controller.repeat_previous_commands()
+	_expect(controller.players[0].action_type == PalBattleController.ActionType.MAGIC and controller.players[0].action_id == 100 and controller.players[1].action_type == PalBattleController.ActionType.MAGIC and controller.players[1].action_id == 101, "repeat fallback does not overwrite the original previous-turn magic cache")
+
+
+func _test_repeat_exhausted_items() -> void:
+	var database := _synthetic_database([_enemy_definition(9999, 1, 1, 0, 0, false)])
+	for role_index in [0, 1]:
+		database.player_roles.dexterities[role_index] = 999
+	var heal := PalScriptEntry.new()
+	heal.operation = 0x001b
+	heal.operands = PackedInt32Array([0, 10, 0])
+	var simulate := PalScriptEntry.new()
+	simulate.operation = 0x0042
+	simulate.operands = PackedInt32Array([100, 20, 0])
+	database.scripts = [PalScriptEntry.new(), heal, PalScriptEntry.new(), simulate, PalScriptEntry.new()]
+	_add_magic(database, 100, PalMagicDefinition.TYPE_NORMAL, 0, 0, PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	_add_item(database, 99, 1, 0, PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_CONSUMING)
+	_add_item(database, 153, 0, 3, PalItemDefinition.FLAG_THROWABLE | PalItemDefinition.FLAG_CONSUMING)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	session.role_hp[1] = 80
+	session.set_item_count(99, 1)
+	session.set_item_count(153, 1)
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 71)
+	_expect(controller.submit_throw_item(153, 0) and controller.submit_use_item(99, 1), "manual throw and use commands reserve their last inventory units")
+	controller.execute_remaining_actions()
+	_expect(session.item_count(99) == 0 and session.item_count(153) == 0 and controller.repeat_previous_commands(), "repeat processes item commands after the previous units were consumed")
+	_expect(controller.players[0].action_type == PalBattleController.ActionType.ATTACK and controller.players[1].action_type == PalBattleController.ActionType.DEFEND, "repeat falls back from exhausted thrown item to attack and used item to defend")
+	controller.execute_remaining_actions()
+	session.set_item_count(99, 1)
+	session.set_item_count(153, 1)
+	controller.repeat_previous_commands()
+	_expect(controller.players[0].action_type == PalBattleController.ActionType.THROW_ITEM and controller.players[1].action_type == PalBattleController.ActionType.USE_ITEM and controller.available_item_count(99) == 0 and controller.available_item_count(153) == 0, "restored inventory reactivates cached item commands and reserves each repeated item once")
 
 
 func _test_defeat() -> void:

@@ -222,6 +222,9 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		KEY_D:
 			if _input_mode == InputMode.COMMAND:
 				_submit_defend()
+		KEY_R:
+			if _input_mode == InputMode.COMMAND:
+				_repeat_previous_commands()
 		KEY_BRACKETLEFT:
 			if lab_mode and not _animation_in_progress:
 				_load_nearest_team(-1)
@@ -553,6 +556,13 @@ func _submit_defend() -> void:
 
 func _submit_flee() -> void:
 	if _controller == null or not _controller.submit_flee():
+		return
+	_reset_enemy_highlight()
+	_after_command_submitted()
+
+
+func _repeat_previous_commands() -> void:
+	if _controller == null or not _controller.repeat_previous_commands():
 		return
 	_reset_enemy_highlight()
 	_after_command_submitted()
