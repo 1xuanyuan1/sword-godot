@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用本机生成资源验证桂花酒之后的买虾、病倒求药和夜赴山神庙主线。
+## 使用本机生成资源验证桂花酒之后的买虾、病倒求药、黑苗人离店和御剑教学主线。
 ## 测试只比较消息编号和运行时状态，不输出或提交原版对话内容。
 extends SceneTree
 
@@ -17,12 +17,16 @@ func _init() -> void:
 	if failure.is_empty():
 		failure = _test_medicine_return_and_temple_reminder(database)
 	if failure.is_empty():
+		failure = _test_black_miao_night_departure(database)
+	if failure.is_empty():
+		failure = _test_temple_sword_training(database)
+	if failure.is_empty():
 		failure = _test_boat_steps_and_item_narration(database)
 	if not failure.is_empty():
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、求药归来、张四登船、李逍遥乘船至仙灵岛与道具叙述 Toast 主线完成")
+	print("PASS: 买虾、求药归来、黑苗人夜间离店、山神庙御剑教学、张四登船、李逍遥乘船至仙灵岛与道具叙述 Toast 主线完成")
 	quit(0)
 
 
@@ -136,6 +140,109 @@ func _test_medicine_return_and_temple_reminder(database: PalContentDatabase) -> 
 	return failure
 
 
+func _test_black_miao_night_departure(database: PalContentDatabase) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = 2
+	session.music_number = 36
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var messages: Array[int] = []
+	var unsupported: Array[String] = []
+	var next_entries: Array[int] = []
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	if database.event_objects[59].trigger_script != 6254 or database.event_objects[59].trigger_mode != 7:
+		vm.free()
+		return "求药归来后没有把黑苗人安装到夜间离店触发入口"
+	vm.run_trigger(6254, 60)
+	_drive_script(vm)
+	var failure := ""
+	if not unsupported.is_empty():
+		failure = "黑苗人夜间离店遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1236, 1264):
+		failure = "黑苗人夜间离店消息不完整：%s" % [messages]
+	elif next_entries != [6254]:
+		failure = "黑苗人离店触发入口没有按 0000 保持：%s" % [next_entries]
+	elif database.event_objects[59].state != 0:
+		failure = "黑苗人没有在夜间剧情后离开客栈：状态 %d" % database.event_objects[59].state
+	elif database.event_objects[59].auto_script != 6309 or database.event_objects[60].auto_script != 6313 or database.event_objects[61].auto_script != 6317:
+		failure = "黑苗人离店的三个自动脚本没有运行到稳定结束入口：%d/%d/%d" % [database.event_objects[59].auto_script, database.event_objects[60].auto_script, database.event_objects[61].auto_script]
+	vm.free()
+	return failure
+
+
+func _test_temple_sword_training(database: PalContentDatabase) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = 2
+	session.music_number = 36
+	session.night_palette = true
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	# 故意把李逍遥置于低 HP/MP，确认教学结尾的 001D 真正恢复了运行时状态。
+	session.role_hp[0] = 1
+	session.role_mp[0] = 0
+	var messages: Array[int] = []
+	var unsupported: Array[String] = []
+	var next_entries: Array[int] = []
+	var music_requests: Array = []
+	var fade_requests: Array = []
+	var rng_requests: Array = []
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: music_requests.append([number, loop, fade]))
+	vm.screen_fade_requested.connect(func(fade_out: bool, duration: float) -> void: fade_requests.append([fade_out, duration]))
+	vm.rng_animation_requested.connect(func(number: int, first_frame: int, last_frame: int, fps: int) -> void: rng_requests.append([number, first_frame, last_frame, fps]))
+	var teacher := database.event_objects[195]
+	if teacher.trigger_script != 6622 or teacher.trigger_mode != 6:
+		vm.free()
+		return "山神庙醉道士没有指向御剑教学入口 6622：脚本 %d，模式 %d" % [teacher.trigger_script, teacher.trigger_mode]
+	vm.run_trigger(6622, 196)
+	_drive_script(vm)
+	var failure := ""
+	if not unsupported.is_empty():
+		failure = "山神庙御剑教学遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1360, 1400):
+		failure = "山神庙御剑教学消息不完整：%s" % [messages]
+	elif rng_requests != [[1, 0, -1, 14]]:
+		failure = "御剑教学没有播放完整的 RNG #1：%s" % [rng_requests]
+	elif fade_requests.size() != 2 or fade_requests[0][0] != true or fade_requests[1][0] != true:
+		failure = "御剑教学过场渐隐时序不正确：%s" % [fade_requests]
+	elif [0, true, 0.0] not in music_requests or [86, true, 0.0] not in music_requests or session.music_number != 86:
+		failure = "御剑教学停止场景音乐或切换过场音乐不正确：%s" % [music_requests]
+	elif not session.has_magic(0, 345):
+		failure = "李逍遥没有在御剑教学后习得对象 345"
+	elif session.role_hp[0] != session.role_max_hp[0] or session.role_mp[0] != session.role_max_mp[0]:
+		failure = "御剑教学没有恢复李逍遥 HP/MP：%d/%d，%d/%d" % [session.role_hp[0], session.role_max_hp[0], session.role_mp[0], session.role_max_mp[0]]
+	elif session.night_palette:
+		failure = "御剑教学结束后没有切回日间调色板"
+	elif session.party_world_position() != Vector2i(672, 400) or database.player_roles.scene_sprite_for(0) != 2:
+		failure = "御剑教学结束后的队伍位置或李逍遥造型不正确：%s，Sprite %d" % [session.party_world_position(), database.player_roles.scene_sprite_for(0)]
+	elif teacher.state != 0 or teacher.trigger_mode != 2:
+		failure = "醉道士没有在教学后隐藏并降为近距离触发：状态 %d，模式 %d" % [teacher.state, teacher.trigger_mode]
+	elif database.scenes[6].script_on_enter != 6767:
+		failure = "御剑教学没有安装下一阶段场景 7 进入脚本：%d" % database.scenes[6].script_on_enter
+	else:
+		var expected_event_states := {
+			172: 2, 173: 2, 49: 0, 102: 0, 103: 0, 104: 0, 105: 0,
+			78: 2, 79: 2, 80: 2, 81: 2, 82: 2, 88: 2, 89: 1,
+			86: 2, 87: 2, 90: 2, 91: 2, 92: 2, 93: 1, 94: 1,
+			77: 2, 57: 2, 61: 2, 62: 2, 28: 2,
+		}
+		for event_id: int in expected_event_states:
+			var actual_state: int = database.event_objects[event_id - 1].state
+			if actual_state != expected_event_states[event_id]:
+				failure = "御剑教学后 EventObject %d 状态错误：%d，应为 %d" % [event_id, actual_state, expected_event_states[event_id]]
+				break
+	if failure.is_empty() and next_entries != [6622]:
+		failure = "御剑教学触发入口没有按 0000 保持：%s" % [next_entries]
+	vm.free()
+	return failure
+
+
 func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String:
 	var session := GameSession.new()
 	session.reset_new_game()
@@ -220,11 +327,13 @@ func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String
 
 func _drive_script(vm: ScriptVM) -> void:
 	var guard := 0
-	while (vm.running or vm.waiting_for_dialog or vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride or vm.waiting_for_screen_fade) and guard < 30000:
+	while (vm.running or vm.waiting_for_dialog or vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride or vm.waiting_for_screen_fade or vm.waiting_for_rng) and guard < 30000:
 		if vm.waiting_for_dialog:
 			vm.advance_dialog()
 		elif vm.waiting_for_screen_fade:
 			vm.complete_screen_fade()
+		elif vm.waiting_for_rng:
+			vm.complete_rng_animation()
 		else:
 			vm.tick_frame()
 		guard += 1
