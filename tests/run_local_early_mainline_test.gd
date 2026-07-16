@@ -22,7 +22,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、求药归来、乘船 000B–000E 与破天锤/忘忧散叙述 Toast 主线完成")
+	print("PASS: 买虾、求药归来、张四登船、李逍遥乘船至仙灵岛与道具叙述 Toast 主线完成")
 	quit(0)
 
 
@@ -157,6 +157,9 @@ func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String
 	var boat := database.event_objects[116]
 	var destination_boat := database.event_objects[117]
 	var original_position := boat.position
+	var original_state := boat.state
+	var destination_original_position := destination_boat.position
+	var destination_original_state := destination_boat.state
 	var boat_vm := ScriptVM.new()
 	boat_vm.configure(database, session)
 	boat_vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
@@ -168,12 +171,52 @@ func _test_boat_steps_and_item_narration(database: PalContentDatabase) -> String
 	elif boat.position != original_position + Vector2i(0, 16) or boat.state != 0 or destination_boat.state != 2:
 		failure = "乘船事件没有完成八步移动及船只切换：位置 %s→%s，状态 %d/%d" % [original_position, boat.position, boat.state, destination_boat.state]
 	boat_vm.free()
+	if not failure.is_empty():
+		return failure
+	# 恢复船只的原始状态，从登船接触脚本验证李逍遥、船只同步移动并切到仙灵岛。
+	boat.position = original_position
+	boat.state = original_state
+	destination_boat.position = destination_original_position
+	destination_boat.state = destination_original_state
+	session.set_party_world_position(Vector2i(1184, 1424))
+	var scene_changes: Array[int] = []
+	var boarding_vm := ScriptVM.new()
+	boarding_vm.configure(database, session)
+	boarding_vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	boarding_vm.scene_change_requested.connect(func(scene_index: int) -> void: scene_changes.append(scene_index))
+	boarding_vm.run_trigger(0x1725, 117)
+	_drive_script(boarding_vm)
+	if not unsupported.is_empty():
+		failure = "登船到仙灵岛流程遇到未支持指令：%s" % unsupported
+	elif scene_changes != [14] or session.scene_index != 14 or session.party_world_position() != Vector2i(752, 808):
+		failure = "登船后没有切到仙灵岛：场景 %s/%d，落点 %s" % [scene_changes, session.scene_index, session.party_world_position()]
+	elif boat.position != original_position + Vector2i(288, -144):
+		failure = "李逍遥乘坐的船没有同步驶离码头：%s→%s" % [original_position, boat.position]
+	boarding_vm.free()
+	if not failure.is_empty():
+		return failure
+	var island_messages: Array[int] = []
+	var island_next_entries: Array[int] = []
+	var island_vm := ScriptVM.new()
+	island_vm.configure(database, session)
+	island_vm.dialog_message.connect(func(index: int) -> void: island_messages.append(index))
+	island_vm.script_finished.connect(func(next_entry: int) -> void: island_next_entries.append(next_entry))
+	island_vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	island_vm.run_trigger(database.scenes[14].script_on_enter)
+	_drive_script(island_vm)
+	if not unsupported.is_empty():
+		failure = "仙灵岛进入脚本遇到未支持指令：%s" % unsupported
+	elif island_messages != _message_range(0x09a1, 0x09a6) or island_next_entries != [0x2544]:
+		failure = "仙灵岛进入对话或稳定入口不完整：消息 %s，入口 %s" % [island_messages, island_next_entries]
+	elif session.music_number != 70 or session.battle_music_number != 37 or session.party_world_position() != Vector2i(752, 808):
+		failure = "仙灵岛进入状态不正确：BGM %d，战斗 BGM %d，落点 %s" % [session.music_number, session.battle_music_number, session.party_world_position()]
+	island_vm.free()
 	return failure
 
 
 func _drive_script(vm: ScriptVM) -> void:
 	var guard := 0
-	while (vm.running or vm.waiting_for_dialog or vm.waiting_for_frames or vm.waiting_for_party_walk) and guard < 30000:
+	while (vm.running or vm.waiting_for_dialog or vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride) and guard < 30000:
 		if vm.waiting_for_dialog:
 			vm.advance_dialog()
 		else:

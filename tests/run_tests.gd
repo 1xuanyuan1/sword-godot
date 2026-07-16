@@ -51,6 +51,7 @@ func _init() -> void:
 	_test_script_vm_auto_event_lifecycle()
 	_test_script_vm_inn_conversation_operations()
 	_test_script_vm_inventory_and_party_walk()
+	_test_script_vm_party_ride()
 	_test_script_vm_center_toast()
 	_test_script_vm_quoted_narration_toast()
 	_test_explorer_scene_enter_persistence()
@@ -1284,6 +1285,36 @@ func _test_script_vm_inventory_and_party_walk() -> void:
 	_expect(not vm.running and session.item_count(272) == 0, "inventory remove completes after scripted party walk")
 	_expect(database.event_objects[0].state == 0, "opcode 006F synchronizes the invoking event state")
 	_expect(redraws == [0] and next_entries == [7], "fade placeholder and opcode 0008 preserve the future trigger entry")
+	vm.free()
+
+
+func _test_script_vm_party_ride() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x003f, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([3, 2, 0])
+	var boat := PalEventObject.new()
+	boat.object_id = 1
+	boat.position = Vector2i(20, 40)
+	database.event_objects.append(boat)
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.set_party_world_position(Vector2i(32, 16))
+	session.set_party_gesture(GameSession.DIR_SOUTH, 1, 0)
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.run_trigger(1, 1)
+	_expect(vm.running and vm.waiting_for_party_ride, "opcode 003F starts an asynchronous party-and-event ride")
+	var guard := 0
+	while vm.waiting_for_party_ride and guard < 100:
+		vm.tick_frame()
+		guard += 1
+	_expect(not vm.running and not vm.waiting_for_party_ride and session.party_world_position() == Vector2i(96, 32), "low-speed ride reaches the PAL half-grid target and resumes the script")
+	_expect(boat.position == Vector2i(84, 56) and session.trail_positions[0] == Vector2i(96, 32), "ride moves the invoking boat by the same delta and updates the party trail")
+	_expect(session.scripted_party_frame(0) == 1, "ride preserves the scripted boarding pose instead of replacing it with walking frames")
 	vm.free()
 
 

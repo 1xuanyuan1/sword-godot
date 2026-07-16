@@ -53,6 +53,8 @@ var waiting_for_dialog: bool = false
 var waiting_for_frames: bool = false
 ## 是否正在逐帧把队伍移动到脚本目标。
 var waiting_for_party_walk: bool = false
+## 是否正在逐帧让队伍乘坐当前事件对象移动到脚本目标。
+var waiting_for_party_ride: bool = false
 ## 是否正在等待剧情 RNG 动画播放完成。
 var waiting_for_rng: bool = false
 ## 是否正在等待战斗覆盖层返回胜负。
@@ -72,6 +74,9 @@ var _close_dialog_after_frame_wait: bool = false
 var _next_trigger_entry: int = 0
 var _party_walk_target: Vector2i = Vector2i.ZERO
 var _party_walk_speed: int = 0
+var _party_ride_target: Vector2i = Vector2i.ZERO
+var _party_ride_speed: int = 0
+var _party_ride_event_id: int = 0
 var _scene_map_data: PalMapData
 var _reported_auto_instructions: Dictionary = {}
 var _current_rng_animation: int = 0
@@ -114,6 +119,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	_dialog_is_toast = false
 	waiting_for_frames = false
 	waiting_for_party_walk = false
+	waiting_for_party_ride = false
 	waiting_for_rng = false
 	waiting_for_battle = false
 	_battle_defeat_entry = 0
@@ -169,6 +175,7 @@ func stop() -> void:
 	waiting_for_dialog = false
 	waiting_for_frames = false
 	waiting_for_party_walk = false
+	waiting_for_party_ride = false
 	waiting_for_rng = false
 	waiting_for_battle = false
 	_battle_defeat_entry = 0
@@ -191,6 +198,8 @@ func tick_frame() -> bool:
 	var world_changed := false if waiting_for_dialog or _close_dialog_after_frame_wait else _tick_auto_scripts()
 	if waiting_for_party_walk:
 		return _tick_party_walk() or world_changed
+	if waiting_for_party_ride:
+		return _tick_party_ride() or world_changed
 	if not waiting_for_frames:
 		return world_changed
 	_frames_remaining -= 1
@@ -381,6 +390,19 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				_dialog_is_toast = true
 				dialog_started.emit(3, entry.operands[0], 0)
+			# 队伍乘坐当前事件对象到目标；003F/0044/0097 分别使用低/普通/高速。
+			0x003f, 0x0044, 0x0097:
+				var ride_event := _event_by_id(_event_object_id)
+				if session != null and ride_event != null:
+					_party_ride_target = Vector2i(
+						entry.operands[0] * 32 + entry.operands[2] * 16,
+						entry.operands[1] * 16 + entry.operands[2] * 8
+					)
+					_party_ride_speed = 2 if entry.operation == 0x003f else (4 if entry.operation == 0x0044 else 8)
+					_party_ride_event_id = _event_object_id
+					_cursor = next_cursor
+					waiting_for_party_ride = true
+					return _cursor
 			# 选择后续 0037 要播放的 RNG 动画编号。
 			0x0036:
 				_current_rng_animation = entry.operands[0]
@@ -625,6 +647,7 @@ func _finish(next_entry: int) -> int:
 	waiting_for_dialog = false
 	waiting_for_frames = false
 	waiting_for_party_walk = false
+	waiting_for_party_ride = false
 	waiting_for_rng = false
 	waiting_for_battle = false
 	_battle_defeat_entry = 0
@@ -677,6 +700,47 @@ func _tick_party_walk() -> bool:
 	if session.party_world_position() == _party_walk_target:
 		waiting_for_party_walk = false
 		party_walk_finished.emit()
+		_continue_execution()
+	return true
+
+
+func _tick_party_ride() -> bool:
+	if not waiting_for_party_ride or session == null:
+		return false
+	var event := _event_by_id(_party_ride_event_id)
+	if event == null:
+		waiting_for_party_ride = false
+		_continue_execution()
+		return false
+	var offset := _party_ride_target - session.party_world_position()
+	if offset == Vector2i.ZERO:
+		waiting_for_party_ride = false
+		_party_ride_event_id = 0
+		_continue_execution()
+		return false
+	var direction: int
+	if offset.y < 0:
+		direction = GameSession.DIR_WEST if offset.x < 0 else GameSession.DIR_NORTH
+	else:
+		direction = GameSession.DIR_SOUTH if offset.x < 0 else GameSession.DIR_EAST
+	var movement := Vector2i(
+		offset.x if absi(offset.x) <= _party_ride_speed * 2 else _party_ride_speed * (-2 if offset.x < 0 else 2),
+		offset.y if absi(offset.y) <= _party_ride_speed else _party_ride_speed * (-1 if offset.y < 0 else 1)
+	)
+	# 对齐 SDLPal `PAL_PartyRideEventObject`：轨迹记录新位置，队伍固定动作不被普通步态清除。
+	if session.trail_positions.size() != GameSession.TRAIL_SIZE or session.trail_directions.size() != GameSession.TRAIL_SIZE:
+		session.set_party_world_position(session.party_world_position())
+	for index in range(GameSession.TRAIL_SIZE - 1, 0, -1):
+		session.trail_positions[index] = session.trail_positions[index - 1]
+		session.trail_directions[index] = session.trail_directions[index - 1]
+	session.party_direction = direction
+	session.viewport_position += movement
+	session.trail_positions[0] = session.party_world_position()
+	session.trail_directions[0] = direction
+	event.position += movement
+	if session.party_world_position() == _party_ride_target:
+		waiting_for_party_ride = false
+		_party_ride_event_id = 0
 		_continue_execution()
 	return true
 
