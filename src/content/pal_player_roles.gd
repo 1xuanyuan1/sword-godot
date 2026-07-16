@@ -28,9 +28,11 @@ const FLEE_RATE_WORD_OFFSET := 126
 const POISON_RESISTANCE_WORD_OFFSET := 132
 const ELEMENT_RESISTANCE_WORD_OFFSET := 138
 const ELEMENT_COUNT := 5
+const COVERED_BY_WORD_OFFSET := 186
 const MAGIC_WORD_OFFSET := 192
 const MAGIC_SLOT_COUNT := 32
 const WALK_FRAMES_WORD_OFFSET := 384
+const COOPERATIVE_MAGIC_WORD_OFFSET := 390
 const DEATH_SOUND_WORD_OFFSET := 408
 const ATTACK_SOUND_WORD_OFFSET := 414
 const WEAPON_SOUND_WORD_OFFSET := 420
@@ -91,8 +93,12 @@ var flee_rates: PackedInt32Array = PackedInt32Array()
 var poison_resistances: PackedInt32Array = PackedInt32Array()
 ## 每名角色的五灵抗性表。
 var elemental_resistances_by_role: Array[PackedInt32Array] = []
+## 每名角色濒死或异常时由哪名 PLAYERROLES 角色保护。
+var covered_by: PackedInt32Array = PackedInt32Array()
 ## 每名角色初始拥有的非零仙术对象编号。
 var magics_by_role: Array[PackedInt32Array] = []
+## 每名角色发动经典合击时使用的仙术对象编号。
+var cooperative_magics: PackedInt32Array = PackedInt32Array()
 ## 解析失败原因；为空且数组长度正确时对象有效。
 var error_message: String = ""
 
@@ -128,7 +134,9 @@ static func from_bytes(data: PackedByteArray) -> PalPlayerRoles:
 		for element_index in range(ELEMENT_COUNT):
 			elemental_resistances.append(PalBinary.u16_le(data, (ELEMENT_RESISTANCE_WORD_OFFSET + element_index * ROLE_COUNT + role_index) * 2))
 		roles.elemental_resistances_by_role.append(elemental_resistances)
+		roles.covered_by.append(PalBinary.u16_le(data, (COVERED_BY_WORD_OFFSET + role_index) * 2))
 		roles.walk_frames.append(PalBinary.u16_le(data, (WALK_FRAMES_WORD_OFFSET + role_index) * 2))
+		roles.cooperative_magics.append(PalBinary.u16_le(data, (COOPERATIVE_MAGIC_WORD_OFFSET + role_index) * 2))
 		roles.death_sounds.append(PalBinary.u16_le(data, (DEATH_SOUND_WORD_OFFSET + role_index) * 2))
 		roles.attack_sounds.append(PalBinary.u16_le(data, (ATTACK_SOUND_WORD_OFFSET + role_index) * 2))
 		roles.weapon_sounds.append(PalBinary.u16_le(data, (WEAPON_SOUND_WORD_OFFSET + role_index) * 2))
@@ -147,7 +155,7 @@ static func from_bytes(data: PackedByteArray) -> PalPlayerRoles:
 
 ## 返回结构是否通过长度和字段校验。
 func is_valid() -> bool:
-	var fields_are_valid := error_message.is_empty() and avatar_numbers.size() == ROLE_COUNT and battle_sprite_numbers.size() == ROLE_COUNT and scene_sprite_numbers.size() == ROLE_COUNT and name_word_indices.size() == ROLE_COUNT and attack_all.size() == ROLE_COUNT and levels.size() == ROLE_COUNT and max_hp.size() == ROLE_COUNT and max_mp.size() == ROLE_COUNT and hp.size() == ROLE_COUNT and mp.size() == ROLE_COUNT and equipments_by_role.size() == ROLE_COUNT and attack_strengths.size() == ROLE_COUNT and magic_strengths.size() == ROLE_COUNT and defenses.size() == ROLE_COUNT and dexterities.size() == ROLE_COUNT and flee_rates.size() == ROLE_COUNT and poison_resistances.size() == ROLE_COUNT and elemental_resistances_by_role.size() == ROLE_COUNT and magics_by_role.size() == ROLE_COUNT and walk_frames.size() == ROLE_COUNT and attack_sounds.size() == ROLE_COUNT and weapon_sounds.size() == ROLE_COUNT and critical_sounds.size() == ROLE_COUNT and cover_sounds.size() == ROLE_COUNT and death_sounds.size() == ROLE_COUNT
+	var fields_are_valid := error_message.is_empty() and avatar_numbers.size() == ROLE_COUNT and battle_sprite_numbers.size() == ROLE_COUNT and scene_sprite_numbers.size() == ROLE_COUNT and name_word_indices.size() == ROLE_COUNT and attack_all.size() == ROLE_COUNT and levels.size() == ROLE_COUNT and max_hp.size() == ROLE_COUNT and max_mp.size() == ROLE_COUNT and hp.size() == ROLE_COUNT and mp.size() == ROLE_COUNT and equipments_by_role.size() == ROLE_COUNT and attack_strengths.size() == ROLE_COUNT and magic_strengths.size() == ROLE_COUNT and defenses.size() == ROLE_COUNT and dexterities.size() == ROLE_COUNT and flee_rates.size() == ROLE_COUNT and poison_resistances.size() == ROLE_COUNT and elemental_resistances_by_role.size() == ROLE_COUNT and covered_by.size() == ROLE_COUNT and magics_by_role.size() == ROLE_COUNT and cooperative_magics.size() == ROLE_COUNT and walk_frames.size() == ROLE_COUNT and attack_sounds.size() == ROLE_COUNT and weapon_sounds.size() == ROLE_COUNT and critical_sounds.size() == ROLE_COUNT and cover_sounds.size() == ROLE_COUNT and death_sounds.size() == ROLE_COUNT
 	if not fields_are_valid:
 		return false
 	for equipments in equipments_by_role:
@@ -164,6 +172,16 @@ func avatar_for(role_index: int) -> int:
 ## 返回角色的基础 F.MKF 战斗 Sprite 编号，越界时返回 0。
 func battle_sprite_for(role_index: int) -> int:
 	return battle_sprite_numbers[role_index] if role_index >= 0 and role_index < battle_sprite_numbers.size() else 0
+
+
+## 返回该角色濒死或异常时负责保护他的 PLAYERROLES 角色编号。
+func covered_by_role(role_index: int) -> int:
+	return covered_by[role_index] if role_index >= 0 and role_index < covered_by.size() else -1
+
+
+## 返回角色基础合击仙术对象编号；装备覆盖由 `GameSession` 叠加。
+func cooperative_magic_for(role_index: int) -> int:
+	return cooperative_magics[role_index] if role_index >= 0 and role_index < cooperative_magics.size() else 0
 
 
 ## 返回角色的 MGO 场景 Sprite 编号，越界时返回 0。

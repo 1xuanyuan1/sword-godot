@@ -372,6 +372,33 @@ keywords:
   - `docs/PROJECT_STRUCTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-037] [feat] 恢复经典合击与角色保护格挡
+
+- **关联需求**: M4 经典战斗
+- **关联 TODO**: TD-003、TD-005（阶段性）
+- **功能描述**: 补充 PLAYERROLES 的 `covered_by` 与 `cooperative_magic` 字段解析，并让装备效果组 65 按官方顺序覆盖基础合击。右侧合击图标按经典健康条件启用，支持单体目标、提交后结束余下指令、身法乘 10、跳过本轮其他玩家行动和 `R` 重复；每名健康贡献者消耗仙术 MP 数值对应的 HP且最低保留 1，合计武术/灵力后按原版魔法伤害、抗性和战场修正结算。画面还原多人合击站位、音效 29、施法帧与 FIRE 特效。敌人物理攻击抽中自动防御时，会按 `covered_by` 让健康队友移动到濒死/异常目标前方，以保护帧和原版音效零伤害格挡；异常目标找不到健康保护人时不能自行闪避。
+- **验证情况**: 274 项基础合成检查、22 项装备系统检查、104 项经典战斗逻辑、10 项剧情战斗桥接和中文文档检查通过；真实资源确认李逍遥合击对象 386“合体气功”、每位贡献者消耗 9 HP，角色保护关系与 60/85 个敌术继续可加载；OpenGL 回归新增合体气功多人动画和保护格挡截图，首战、物品、仙术、毒性结算及奖励页保持通过。
+- **涉及文件**:
+  - `src/content/pal_player_roles.gd`
+  - `src/game/game_session.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_equipment_tests.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/EQUIPMENT.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

@@ -462,6 +462,18 @@ func battle_sprite_for(role_index: int, base_sprite: int) -> int:
 	return result
 
 
+## 返回应用装备覆盖后的角色合击仙术对象编号；没有覆盖时读取 PLAYERROLES 基础字段。
+func cooperative_magic_for(role_index: int, roles: PalPlayerRoles) -> int:
+	var result := roles.cooperative_magic_for(role_index) if roles != null else 0
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return result
+	for effects in equipment_effects_by_slot:
+		var values: PackedInt32Array = effects.get(EQUIPMENT_EFFECT_COOPERATIVE_MAGIC, PackedInt32Array())
+		if role_index < values.size() and values[role_index] != 0:
+			result = values[role_index]
+	return result
+
+
 ## 返回装备后的毒抗性，按官方规则最高限制为 100。
 func poison_resistance_for(role_index: int) -> int:
 	return mini(100, _stat_with_equipment(role_poison_resistance, role_index, EQUIPMENT_EFFECT_POISON_RESISTANCE))

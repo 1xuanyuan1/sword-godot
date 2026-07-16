@@ -16,6 +16,10 @@ func _init() -> void:
 	_expect(manager.configure(database, session), "equipment manager rebuilds initial equipment")
 	_expect(session.equipped_item(0, 3) == 166, "initial hand equipment is preserved")
 	_expect(session.attack_strength_for(0) == 22 and session.dexterity_for(0) == 23, "initial weapon script contributes attack and dexterity")
+	_expect(session.cooperative_magic_for(0, database.player_roles) == 105, "base PLAYERROLES cooperative magic is available without equipment override")
+	session.set_equipment_effect(0, GameSession.EQUIPMENT_EFFECT_COOPERATIVE_MAGIC, 0, 205)
+	_expect(session.cooperative_magic_for(0, database.player_roles) == 205, "equipment effect group 65 overrides cooperative magic")
+	session.clear_equipment_effects(0, 0)
 	session.set_item_count(166, 1)
 	_expect(manager.equip_item(166, 0) and session.item_count(166) == 1 and manager.last_unequipped_item == 166, "equipping the same item preserves inventory and wLastUnequippedItem")
 	session.set_item_count(166, 0)
@@ -125,7 +129,9 @@ func _synthetic_roles() -> PalPlayerRoles:
 		roles.flee_rates.append(20)
 		roles.poison_resistances.append(0)
 		roles.elemental_resistances_by_role.append(PackedInt32Array([0, 0, 0, 0, 0]))
+		roles.covered_by.append(0)
 		roles.magics_by_role.append(PackedInt32Array())
+		roles.cooperative_magics.append(0)
 		roles.walk_frames.append(3)
 		roles.death_sounds.append(0)
 		roles.attack_sounds.append(0)
@@ -134,6 +140,7 @@ func _synthetic_roles() -> PalPlayerRoles:
 		roles.magic_sounds.append(0)
 		roles.cover_sounds.append(0)
 		roles.dying_sounds.append(0)
+	roles.cooperative_magics[0] = 105
 	return roles
 
 

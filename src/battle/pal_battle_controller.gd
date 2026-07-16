@@ -26,6 +26,7 @@ enum ActionType {
 	ATTACK,
 	DEFEND,
 	MAGIC,
+	COOPERATIVE_MAGIC,
 	USE_ITEM,
 	THROW_ITEM,
 	FLEE,
@@ -80,6 +81,7 @@ class Hit extends RefCounted:
 	var mp_restored: int = 0
 	var critical: bool = false
 	var auto_defended: bool = false
+	var covering_index: int = -1
 	var defeated: bool = false
 
 
@@ -92,6 +94,8 @@ class ActionResult extends RefCounted:
 	var item_object_id: int = 0
 	var target_index: int = -1
 	var mp_cost: int = 0
+	var cooperative_hp_cost: int = 0
+	var contributor_indices: PackedInt32Array = PackedInt32Array()
 	var flee_succeeded: bool = false
 	var second_action: bool = false
 	var skipped: bool = false
@@ -166,6 +170,8 @@ var _reserved_items: Dictionary = {}
 var _repeating_previous_commands: bool = false
 var _end_turn_pending: bool = false
 var _battle_cleanup_applied: bool = false
+var _cooperative_magic_executed: bool = false
+var _cooperative_contributors: PackedInt32Array = PackedInt32Array()
 
 
 #region Public lifecycle and commands
@@ -195,6 +201,8 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	_repeating_previous_commands = false
 	_end_turn_pending = false
 	_battle_cleanup_applied = false
+	_cooperative_magic_executed = false
+	_cooperative_contributors = PackedInt32Array()
 	if database == null or session == null or database.player_roles == null:
 		error_message = "战斗缺少内容数据库、会话或 PLAYERROLES"
 		return false
@@ -380,6 +388,59 @@ func submit_magic(magic_object_id: int, target_index: int) -> bool:
 	return true
 
 
+## 返回当前等待指令的角色所配置的合击仙术对象编号；无有效合击时返回 0。
+func pending_cooperative_magic_object_id() -> int:
+	var role_index := pending_role_index()
+	return session.cooperative_magic_for(role_index, database.player_roles) if role_index >= 0 else 0
+
+
+## 返回当前角色是否能发动经典合击。
+## 至少需要两名健康队员，发动者也必须健康，且其合击对象需是已接入的攻击仙术。
+func can_pending_player_use_cooperative_magic() -> bool:
+	var party_index := pending_party_index()
+	if party_index < 0 or players.size() <= 1 or not _is_player_healthy_for_cooperation(party_index):
+		return false
+	var healthy_count := 0
+	for candidate_index in range(players.size()):
+		if _is_player_healthy_for_cooperation(candidate_index):
+			healthy_count += 1
+	if healthy_count <= 1:
+		return false
+	var magic_object_id := pending_cooperative_magic_object_id()
+	var object := database.magic_object_definition(magic_object_id)
+	var definition := database.magic_definition_for_object(magic_object_id)
+	return object != null and definition != null and object.is_used_on_enemy() and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD] and _signed_word(definition.base_damage) > 0
+
+
+## 为当前角色提交合击；群体合击会把目标规范化为 -1，并立即结束本回合余下指令选择。
+## 不健康队员不会成为贡献者；目标或合击定义无效时返回 `false`。
+func submit_cooperative_magic(target_index: int) -> bool:
+	var party_index := pending_party_index()
+	if party_index < 0 or not can_pending_player_use_cooperative_magic():
+		return false
+	var magic_object_id := pending_cooperative_magic_object_id()
+	var object := database.magic_object_definition(magic_object_id)
+	var definition := database.magic_definition_for_object(magic_object_id)
+	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+		target_index = -1
+	elif target_index < 0 or target_index >= enemies.size() or not enemies[target_index].is_alive():
+		return false
+	_cooperative_contributors = PackedInt32Array()
+	for candidate_index in range(players.size()):
+		if _is_player_healthy_for_cooperation(candidate_index):
+			_cooperative_contributors.append(candidate_index)
+	var player := players[party_index]
+	player.action_type = ActionType.COOPERATIVE_MAGIC
+	player.action_id = magic_object_id
+	player.target_index = target_index
+	# 经典选择阶段一旦有人提交合击就不再询问后续队员；队列中的其他玩家会在合击后跳过。
+	for remaining_index in range(party_index + 1, players.size()):
+		players[remaining_index].action_type = ActionType.PASS
+		players[remaining_index].target_index = -1
+	_command_cursor = players.size()
+	return build_action_queue()
+
+
 ## 返回当前角色能否在本回合使用指定物品。
 ## 会检查背包可用数量、战斗使用标志及已支持的 HP/MP 脚本，不预扣库存。
 func can_pending_player_use_item(item_object_id: int) -> bool:
@@ -468,6 +529,12 @@ func repeat_previous_commands() -> bool:
 	while _command_cursor < players.size():
 		var party_index := _command_cursor
 		_assign_repeated_command(party_index)
+		if players[party_index].action_type == ActionType.COOPERATIVE_MAGIC:
+			for remaining_index in range(party_index + 1, players.size()):
+				players[remaining_index].action_type = ActionType.PASS
+				players[remaining_index].target_index = -1
+			_command_cursor = players.size()
+			break
 		_command_cursor += 1
 		_skip_players_without_commands()
 	var built := build_action_queue()
@@ -625,6 +692,8 @@ func _prepare_command_phase() -> void:
 	_queue_cursor = 0
 	_command_cursor = 0
 	_reserved_items.clear()
+	_cooperative_magic_executed = false
+	_cooperative_contributors = PackedInt32Array()
 	for player in players:
 		player.action_type = -1
 		player.action_id = 0
@@ -650,6 +719,8 @@ func _assign_repeated_command(party_index: int) -> void:
 			_assign_defend(player, party_index)
 		ActionType.MAGIC:
 			_assign_repeated_magic(player, party_index)
+		ActionType.COOPERATIVE_MAGIC:
+			_assign_repeated_cooperative_magic(player)
 		ActionType.USE_ITEM:
 			_assign_repeated_use_item(player, party_index)
 		ActionType.THROW_ITEM:
@@ -681,6 +752,24 @@ func _assign_repeated_magic(player: PlayerState, party_index: int) -> void:
 		player.target_index = _find_alive_enemy_from(player.previous_target_index)
 	else:
 		player.target_index = player.previous_target_index if player.previous_target_index >= 0 and player.previous_target_index < players.size() else party_index
+
+
+func _assign_repeated_cooperative_magic(player: PlayerState) -> void:
+	if not can_pending_player_use_cooperative_magic() or pending_cooperative_magic_object_id() != player.previous_action_id:
+		_assign_attack(player, player.previous_target_index)
+		return
+	var object := database.magic_object_definition(player.previous_action_id)
+	var definition := database.magic_definition_for_object(player.previous_action_id)
+	player.action_type = ActionType.COOPERATIVE_MAGIC
+	player.action_id = player.previous_action_id
+	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+		player.target_index = -1
+	else:
+		player.target_index = _find_alive_enemy_from(player.previous_target_index)
+	_cooperative_contributors = PackedInt32Array()
+	for candidate_index in range(players.size()):
+		if _is_player_healthy_for_cooperation(candidate_index):
+			_cooperative_contributors.append(candidate_index)
 
 
 func _assign_repeated_use_item(player: PlayerState, party_index: int) -> void:
@@ -758,9 +847,14 @@ func _player_queue_entry(party_index: int) -> QueueEntry:
 	if _role_hp(player.role_index) <= 0:
 		entry.dexterity = 0
 		return entry
+	if player.action_type == ActionType.PASS:
+		entry.dexterity = 0
+		return entry
 	var dexterity := session.dexterity_for(player.role_index)
 	if session.status_rounds_for(player.role_index, GameSession.STATUS_HASTE) > 0:
 		dexterity = mini(999, dexterity * 3)
+	if player.action_type == ActionType.COOPERATIVE_MAGIC:
+		dexterity *= 10
 	if player.action_type == ActionType.DEFEND:
 		dexterity *= 5
 	if _is_player_dying(player.role_index):
@@ -789,6 +883,10 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 	result.second_action = entry.is_second
 	var player := players[entry.combatant_index]
 	result.action_type = player.action_type
+	if _cooperative_magic_executed:
+		result.skipped = true
+		result.summary = "%s已参与本回合合击" % _role_name(player.role_index)
+		return result
 	if _role_hp(player.role_index) <= 0 and session.status_rounds_for(player.role_index, GameSession.STATUS_PUPPET) == 0:
 		_release_player_item_reservation(player)
 		result.skipped = true
@@ -807,6 +905,9 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 		return result
 	if player.action_type == ActionType.MAGIC:
 		_execute_player_magic(player, result)
+		return result
+	if player.action_type == ActionType.COOPERATIVE_MAGIC:
+		_execute_player_cooperative_magic(player, result)
 		return result
 	if player.action_type == ActionType.USE_ITEM:
 		_execute_player_use_item(player, result)
@@ -875,6 +976,55 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 	else:
 		_run_battle_effect_script(object.script_on_success, false, false, player.target_index, result)
 	result.summary = "%s施展%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
+
+
+func _execute_player_cooperative_magic(player: PlayerState, result: ActionResult) -> void:
+	var object := database.magic_object_definition(player.action_id)
+	var definition := database.magic_definition_for_object(player.action_id)
+	result.magic_object_id = player.action_id
+	result.target_index = player.target_index
+	result.contributor_indices = _cooperative_contributors.duplicate()
+	_cooperative_magic_executed = true
+	if object == null or definition == null or result.contributor_indices.size() <= 1:
+		result.unsupported = true
+		result.summary = "合击条件已经失效"
+		return
+	# PAL_CLASSIC 合击消耗的是每名贡献者的 HP，而非发动者 MP；最低保留 1 点体力。
+	result.cooperative_hp_cost = definition.mp_cost
+	var combined_strength := 0
+	for party_index in result.contributor_indices:
+		if party_index < 0 or party_index >= players.size():
+			continue
+		var role_index := players[party_index].role_index
+		combined_strength += session.attack_strength_for(role_index)
+		combined_strength += session.magic_strength_for(role_index)
+		session.role_hp[role_index] = maxi(1, session.role_hp[role_index] - definition.mp_cost)
+	combined_strength /= 4
+	var target_indices := living_enemy_indices()
+	if player.target_index >= 0:
+		var resolved_target := _find_alive_enemy_from(player.target_index)
+		result.target_index = resolved_target
+		target_indices = PackedInt32Array([resolved_target])
+	for target_index in target_indices:
+		if target_index < 0:
+			continue
+		var damage := _calculate_cooperative_magic_damage(combined_strength, target_index, definition)
+		result.hits.append(_apply_enemy_damage(target_index, maxi(1, damage), false))
+	result.summary = "%s发动%s合击" % [_role_name(player.role_index), database.get_word(player.action_id)]
+
+
+func _calculate_cooperative_magic_damage(combined_strength: int, target_index: int, definition: PalMagicDefinition) -> int:
+	var enemy := enemies[target_index].definition
+	var damage := calculate_base_damage(combined_strength, _effective_enemy_defense(enemy)) / 4
+	damage += _signed_word(definition.base_damage)
+	if definition.elemental != 0:
+		var resistance := enemy.poison_resistance if definition.elemental > PalBattlefield.ELEMENT_COUNT else enemy.elemental_resistances[definition.elemental - 1]
+		damage = int(damage * (10.0 - float(resistance))) / 5
+		if definition.elemental <= PalBattlefield.ELEMENT_COUNT:
+			var battlefield := database.battlefield_definition(battlefield_id)
+			var field_effect := battlefield.magic_effects[definition.elemental - 1] if battlefield != null and battlefield.magic_effects.size() >= definition.elemental else 0
+			damage = int(damage * (10.0 + field_effect) / 10.0)
+	return damage
 
 
 func _calculate_player_magic_damage(role_index: int, target_index: int, definition: PalMagicDefinition) -> int:
@@ -1432,7 +1582,7 @@ func _execute_enemy_action(entry: QueueEntry) -> ActionResult:
 			_run_battle_effect_script(equivalent_item.script_on_use, true, false, target_index, result)
 	result.summary = "敌人攻击%s：%s" % [
 		_role_name(players[target_index].role_index),
-		"自动防御" if hit.auto_defended else "%d点伤害" % hit.damage,
+		("%s保护" % _role_name(players[hit.covering_index].role_index) if hit.covering_index >= 0 else "自动防御") if hit.auto_defended else "%d点伤害" % hit.damage,
 	]
 	return result
 
@@ -1546,9 +1696,14 @@ func _enemy_physical_hit(enemy_index: int, target_index: int) -> Hit:
 	var player := players[target_index]
 	var hit := Hit.new()
 	hit.target_index = target_index
-	# 原版无异常状态的角色也有 7/17 自动格挡机会；格挡时本次物理攻击不扣体力。
-	if _random.next_int(0, 16) >= 10:
-		hit.auto_defended = true
+	# 原版无异常状态的角色有 7/17 自动格挡机会；濒死/异常目标可由 PLAYERROLES 指定队友保护。
+	hit.auto_defended = _random.next_int(0, 16) >= 10
+	if hit.auto_defended and (_is_player_dying(player.role_index) or _role_has_coverable_bad_status(player.role_index)):
+		hit.covering_index = _covering_party_index(target_index)
+	# 混乱、睡眠或定身者找不到健康保护人时不能自行闪避；仅濒死仍保留自己的格挡机会。
+	if hit.covering_index < 0 and _role_has_coverable_bad_status(player.role_index):
+		hit.auto_defended = false
+	if hit.auto_defended:
 		return hit
 	var attack := _signed_word(enemy.definition.attack_strength) + (enemy.definition.level + 6) * 6
 	attack = maxi(0, attack)
@@ -1565,6 +1720,23 @@ func _enemy_physical_hit(enemy_index: int, target_index: int) -> Hit:
 	session.increase_role_hp_mp(player.role_index, -damage, 0)
 	hit.defeated = _role_hp(player.role_index) == 0
 	return hit
+
+
+func _role_has_coverable_bad_status(role_index: int) -> bool:
+	return session.status_rounds_for(role_index, GameSession.STATUS_CONFUSED) > 0 or session.status_rounds_for(role_index, GameSession.STATUS_SLEEP) > 0 or session.status_rounds_for(role_index, GameSession.STATUS_PARALYZED) > 0
+
+
+func _covering_party_index(target_index: int) -> int:
+	if target_index < 0 or target_index >= players.size() or database.player_roles == null:
+		return -1
+	var cover_role := database.player_roles.covered_by_role(players[target_index].role_index)
+	for party_index in range(players.size()):
+		var role_index := players[party_index].role_index
+		if role_index != cover_role:
+			continue
+		if _role_hp(role_index) > 0 and not _is_player_dying(role_index) and not _role_has_coverable_bad_status(role_index):
+			return party_index
+	return -1
 
 
 func _finish_turn() -> ActionResult:
@@ -1720,6 +1892,18 @@ func _is_player_dying(role_index: int) -> bool:
 	if role_index < 0 or role_index >= session.role_max_hp.size():
 		return false
 	return _role_hp(role_index) < mini(100, session.role_max_hp[role_index] / 5)
+
+
+func _is_player_healthy_for_cooperation(party_index: int) -> bool:
+	if party_index < 0 or party_index >= players.size():
+		return false
+	var role_index := players[party_index].role_index
+	if _role_hp(role_index) <= 0 or _is_player_dying(role_index):
+		return false
+	for status_id in [GameSession.STATUS_SLEEP, GameSession.STATUS_CONFUSED, GameSession.STATUS_SILENCE, GameSession.STATUS_PARALYZED, GameSession.STATUS_PUPPET]:
+		if session.status_rounds_for(role_index, status_id) > 0:
+			return false
+	return true
 
 
 func _role_hp(role_index: int) -> int:

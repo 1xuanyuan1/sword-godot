@@ -57,6 +57,41 @@ func _run() -> void:
 	if image.save_png(output_path) != OK:
 		_fail("无法写入战斗样板截图")
 		return
+	preview._handle_direction(Vector2i(1, 0))
+	if preview._selected_action != 2 or not preview._controller.can_pending_player_use_cooperative_magic():
+		_fail("两名健康队员没有启用右侧经典合击图标")
+		return
+	preview._confirm_current_selection()
+	if preview._input_mode != PalBattlePreview.InputMode.ENEMY_TARGET:
+		_fail("李逍遥的合体气功没有进入敌人目标选择")
+		return
+	var coop_hp_before := PackedInt32Array([preview._session.role_hp[0], preview._session.role_hp[1]])
+	preview._confirm_current_selection()
+	var cooperative_result := preview._controller.execute_next_action()
+	if cooperative_result == null or cooperative_result.action_type != PalBattleController.ActionType.COOPERATIVE_MAGIC or cooperative_result.magic_object_id != 386 or cooperative_result.hits.is_empty() or cooperative_result.hits[0].damage <= 0:
+		_fail("真实合体气功没有生成合击伤害结果")
+		return
+	if preview._session.role_hp[0] != coop_hp_before[0] - 9 or preview._session.role_hp[1] != coop_hp_before[1] - 9:
+		_fail("合体气功没有让两名贡献者各消耗 9 HP")
+		return
+	preview._play_cooperative_magic(cooperative_result)
+	var cooperative_image: Image
+	for _step in range(160):
+		await create_timer(0.03).timeout
+		if preview._magic_root.get_child_count() > 0:
+			cooperative_image = viewport.get_texture().get_image()
+			break
+	var cooperative_path := output_directory.path_join("battle_cooperative_magic.png")
+	if cooperative_image == null or cooperative_image.save_png(cooperative_path) != OK:
+		_fail("合体气功播放期间没有绘制多人施法与 FIRE 特效")
+		return
+	for _step in range(180):
+		await create_timer(0.03).timeout
+		if preview._magic_root.get_child_count() == 0:
+			break
+	await create_timer(0.8).timeout
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview.set_process(false)
 	preview._begin_enemy_target_selection()
 	await process_frame
 	var enemy_vitals := preview._battle_ui.selected_enemy_vitals()
@@ -282,6 +317,26 @@ func _run() -> void:
 	if preview._player_nodes[0].position.distance_to(expected_position) > 0.1:
 		_fail("玩家普攻动画结束后没有回到原始战位")
 		return
+	var cover_result := PalBattleController.ActionResult.new()
+	cover_result.actor_is_enemy = true
+	cover_result.actor_index = 0
+	var cover_hit := PalBattleController.Hit.new()
+	cover_hit.target_index = 1
+	cover_hit.auto_defended = true
+	cover_hit.covering_index = 0
+	cover_result.hits.append(cover_hit)
+	preview._play_enemy_attack(cover_result)
+	var cover_image: Image
+	for _step in range(80):
+		await create_timer(0.03).timeout
+		if preview._player_current_frames[0] == 3:
+			cover_image = viewport.get_texture().get_image()
+			break
+	var cover_path := output_directory.path_join("battle_player_cover.png")
+	if cover_image == null or cover_image.save_png(cover_path) != OK:
+		_fail("保护角色没有上前为濒死队员格挡")
+		return
+	await create_timer(0.8).timeout
 
 	preview.load_battle(17, 21, PackedInt32Array([0, 1]))
 	var enemy_magic_actor := -1
@@ -361,7 +416,7 @@ func _run() -> void:
 	if level_image == null or level_image.save_png(level_path) != OK:
 		_fail("无法写入原版布局升级数值截图")
 		return
-	print("PASS: 经典指令、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
+	print("PASS: 经典指令、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 
 

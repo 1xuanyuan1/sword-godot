@@ -20,9 +20,11 @@ func _init() -> void:
 	_test_victory_rewards_and_level_up()
 	_test_single_target_healing_magic()
 	_test_offensive_magic_damage()
+	_test_cooperative_magic()
 	_test_player_status_magic_and_silence()
 	_test_player_action_statuses()
 	_test_protect_and_haste_modifiers()
+	_test_player_cover_behavior()
 	_test_enemy_status_magic()
 	_test_enemy_target_status_magic()
 	_test_enemy_offensive_magic()
@@ -221,6 +223,35 @@ func _test_offensive_magic_damage() -> void:
 	_expect(session.role_mp[0] == 45 and controller.enemies[0].hp == 999 - result.hits[0].damage, "offensive magic consumes MP and updates enemy HP")
 
 
+func _test_cooperative_magic() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	database.player_roles.cooperative_magics[0] = 105
+	database.player_roles.dexterities[0] = 80
+	_add_magic(database, 105, PalMagicDefinition.TYPE_NORMAL, 9, 90, PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 30)
+	_expect(controller.pending_cooperative_magic_object_id() == 105 and controller.can_pending_player_use_cooperative_magic(), "two healthy players enable the current role's cooperative magic")
+	_expect(controller.submit_cooperative_magic(0) and not controller.is_accepting_commands(), "submitting cooperative magic ends the remaining command selection")
+	var result := controller.execute_next_action()
+	_expect(result != null and result.action_type == PalBattleController.ActionType.COOPERATIVE_MAGIC and result.magic_object_id == 105 and result.contributor_indices == PackedInt32Array([0, 1]), "cooperative action reports its magic and healthy contributors")
+	_expect(result != null and result.hits.size() == 1 and result.hits[0].target_is_enemy and result.hits[0].damage >= 90, "cooperative magic uses combined attack and magic strength against its target")
+	_expect(session.role_hp[0] == 91 and session.role_hp[1] == 91 and session.role_mp[0] == 50 and session.role_mp[1] == 50, "cooperative magic consumes its MP-cost value from every contributor's HP and preserves MP")
+	var skipped_partner := false
+	for candidate in controller.execute_remaining_actions():
+		if not candidate.actor_is_enemy and candidate.actor_index == 1 and candidate.skipped:
+			skipped_partner = true
+	_expect(skipped_partner, "other player actions are skipped after cooperative magic executes")
+	_expect(controller.repeat_previous_commands(), "R can repeat a still-valid previous cooperative magic")
+	_expect(controller.players[0].action_type == PalBattleController.ActionType.COOPERATIVE_MAGIC, "repeat preserves the cooperative action instead of degrading it")
+
+	var unhealthy_session := _session_for(database, PackedInt32Array([0, 1]))
+	unhealthy_session.role_hp[1] = 19
+	var unhealthy_controller := PalBattleController.new()
+	unhealthy_controller.start_battle(database, unhealthy_session, 0, 0, 32)
+	_expect(not unhealthy_controller.can_pending_player_use_cooperative_magic(), "cooperative magic requires at least two non-dying healthy contributors")
+
+
 func _test_player_status_magic_and_silence() -> void:
 	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
 	var status_script := PalScriptEntry.new()
@@ -347,6 +378,35 @@ func _test_enemy_target_status_magic() -> void:
 	_expect(controller.submit_magic(104, 0), "enemy-target status magic is accepted when its script graph is supported")
 	var result := controller.execute_next_action()
 	_expect(result != null and not result.unsupported and controller.enemy_status_rounds(0, GameSession.STATUS_SLEEP) == 3, "002E applies status to the selected enemy after resistance succeeds")
+
+
+func _test_player_cover_behavior() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 20, 0, 0, false)])
+	database.player_roles.covered_by[0] = 1
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	session.role_hp[0] = 19
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 40)
+	var cover_seed := -1
+	var cover_hit: PalBattleController.Hit
+	for seed_value in range(1, 64):
+		session.role_hp[0] = 19
+		controller.set_random_seed(seed_value)
+		var candidate := controller._enemy_physical_hit(0, 0)
+		if candidate.auto_defended:
+			cover_seed = seed_value
+			cover_hit = candidate
+			break
+	_expect(cover_hit != null and cover_hit.covering_index == 1 and cover_hit.damage == 0 and session.role_hp[0] == 19, "healthy covered-by role protects a dying target on its auto-defense roll")
+
+	var unprotected_session := _session_for(database, PackedInt32Array([0, 1]))
+	unprotected_session.role_hp[1] = 19
+	unprotected_session.set_role_status(0, GameSession.STATUS_SLEEP, 2)
+	var unprotected_controller := PalBattleController.new()
+	unprotected_controller.start_battle(database, unprotected_session, 0, 0, 40)
+	unprotected_controller.set_random_seed(cover_seed)
+	var unprotected_hit := unprotected_controller._enemy_physical_hit(0, 0)
+	_expect(not unprotected_hit.auto_defended and unprotected_hit.covering_index == -1 and unprotected_hit.damage > 0, "sleeping target cannot evade when its configured protector is also dying")
 
 
 func _test_enemy_offensive_magic() -> void:
@@ -694,7 +754,9 @@ func _synthetic_roles() -> PalPlayerRoles:
 		roles.flee_rates.append(20)
 		roles.poison_resistances.append(0)
 		roles.elemental_resistances_by_role.append(PackedInt32Array([0, 0, 0, 0, 0]))
+		roles.covered_by.append(0)
 		roles.magics_by_role.append(PackedInt32Array())
+		roles.cooperative_magics.append(0)
 		roles.walk_frames.append(3)
 		roles.death_sounds.append(0)
 		roles.attack_sounds.append(0)

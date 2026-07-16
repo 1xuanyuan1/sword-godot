@@ -27,6 +27,7 @@ const PLAYER_POSITIONS: Array = [
 	[Vector2i(200, 176), Vector2i(256, 152)],
 	[Vector2i(180, 180), Vector2i(234, 170), Vector2i(270, 146)],
 ]
+const COOPERATIVE_POSITIONS: Array[Vector2i] = [Vector2i(208, 157), Vector2i(234, 170), Vector2i(260, 183)]
 const BATTLE_FRAME_SECONDS := 0.04
 const DEFAULT_LAB_BATTLE_MUSIC := 37
 
@@ -61,6 +62,7 @@ var _selected_enemy_index: int = 0
 var _selected_party_index: int = 0
 var _selected_action: int = 0
 var _pending_magic_object_id: int = 0
+var _pending_cooperative_magic: bool = false
 var _pending_item_object_id: int = 0
 var _pending_item_throwable: bool = false
 var _input_mode: InputMode = InputMode.WAITING
@@ -199,6 +201,7 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 	_selected_party_index = 0
 	_selected_action = 0
 	_pending_magic_object_id = 0
+	_pending_cooperative_magic = false
 	_pending_item_object_id = 0
 	_pending_item_throwable = false
 	_action_timer = 0.0
@@ -363,9 +366,8 @@ func _handle_direction(direction: Vector2i) -> void:
 				_set_action_selection(0)
 			elif direction.x < 0 and _pending_role_has_magics():
 				_set_action_selection(1)
-			elif direction.x > 0:
-				# 合击合法性依赖队伍、状态和合击仙术；尚未接入前保持官方不可用色。
-				_set_action_selection(0)
+			elif direction.x > 0 and _controller.can_pending_player_use_cooperative_magic():
+				_set_action_selection(2)
 			elif direction.y > 0:
 				_set_action_selection(3)
 		InputMode.ENEMY_TARGET:
@@ -427,6 +429,8 @@ func _confirm_current_selection() -> void:
 				1:
 					_battle_ui.open_magic_list(_controller.pending_role_index())
 					_input_mode = InputMode.MAGIC_LIST
+				2:
+					_confirm_cooperative_magic_selection()
 				3:
 					_battle_ui.open_misc_menu()
 					_input_mode = InputMode.MISC_MENU
@@ -494,6 +498,21 @@ func _confirm_magic_selection() -> void:
 		_battle_ui.set_mode(PalBattleUI.Mode.PLAYER_TARGET)
 
 
+func _confirm_cooperative_magic_selection() -> void:
+	if not _controller.can_pending_player_use_cooperative_magic():
+		return
+	var magic_object_id := _controller.pending_cooperative_magic_object_id()
+	var object := _database.magic_object_definition(magic_object_id)
+	var definition := _database.magic_definition_for_object(magic_object_id)
+	if object == null or definition == null:
+		return
+	_pending_cooperative_magic = true
+	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+		_submit_cooperative_magic(-1)
+	else:
+		_begin_enemy_target_selection()
+
+
 func _confirm_item_selection() -> void:
 	var item_object_id := _battle_ui.selected_item_object()
 	var item := _database.item_definition(item_object_id)
@@ -518,6 +537,8 @@ func _confirm_item_selection() -> void:
 func _submit_targeted_action(target_index: int) -> void:
 	if _pending_item_object_id > 0:
 		_submit_item(target_index)
+	elif _pending_cooperative_magic:
+		_submit_cooperative_magic(target_index)
 	elif _pending_magic_object_id > 0:
 		_submit_magic(target_index)
 	else:
@@ -529,6 +550,14 @@ func _submit_magic(target_index: int) -> void:
 		return
 	_reset_enemy_highlight()
 	_pending_magic_object_id = 0
+	_after_command_submitted()
+
+
+func _submit_cooperative_magic(target_index: int) -> void:
+	if not _pending_cooperative_magic or not _controller.submit_cooperative_magic(target_index):
+		return
+	_reset_enemy_highlight()
+	_pending_cooperative_magic = false
 	_after_command_submitted()
 
 
@@ -548,6 +577,7 @@ func _submit_attack() -> void:
 	if not _controller.submit_attack(_selected_enemy_index):
 		return
 	_pending_magic_object_id = 0
+	_pending_cooperative_magic = false
 	_reset_enemy_highlight()
 	_after_command_submitted()
 
@@ -588,6 +618,7 @@ func _enter_command_mode() -> void:
 	_input_mode = InputMode.COMMAND
 	_selected_action = 0
 	_pending_magic_object_id = 0
+	_pending_cooperative_magic = false
 	_pending_item_object_id = 0
 	_pending_item_throwable = false
 	_battle_ui.set_action_selection(0)
@@ -677,6 +708,9 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 		return
 	if result.action_type == PalBattleController.ActionType.MAGIC and not result.actor_is_enemy:
 		await _play_player_magic(result)
+		return
+	if result.action_type == PalBattleController.ActionType.COOPERATIVE_MAGIC and not result.actor_is_enemy:
+		await _play_cooperative_magic(result)
 		return
 	if result.action_type == PalBattleController.ActionType.MAGIC and result.actor_is_enemy:
 		await _play_enemy_magic(result)
@@ -836,6 +870,65 @@ func _play_player_use_item(result: PalBattleController.ActionResult) -> void:
 			_battle_ui.show_number(hit.mp_restored, Vector2i(foot.x - 9, maxi(10, foot.y - 67)), PalBattleUI.UI_FRAME_NUMBER_CYAN)
 	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
 	await _wait_frames(8)
+
+
+func _play_cooperative_magic(result: PalBattleController.ActionResult) -> void:
+	if result.actor_index < 0 or result.actor_index >= _player_nodes.size() or result.contributor_indices.size() <= 1:
+		return
+	var definition := _database.magic_definition_for_object(result.magic_object_id)
+	var object := _database.magic_object_definition(result.magic_object_id)
+	if definition == null or object == null:
+		return
+	var original_feet := _player_foot_positions.duplicate()
+	var cooperative_feet := original_feet.duplicate()
+	cooperative_feet[result.actor_index] = COOPERATIVE_POSITIONS[0]
+	var position_index := 0
+	for party_index in range(_player_nodes.size()):
+		if party_index == result.actor_index:
+			continue
+		position_index += 1
+		if party_index in result.contributor_indices and position_index < COOPERATIVE_POSITIONS.size():
+			cooperative_feet[party_index] = COOPERATIVE_POSITIONS[position_index]
+	if _audio_player != null:
+		_audio_player.play_sound(29)
+	for step in range(1, 7):
+		var progress := float(step) / 6.0
+		for party_index in result.contributor_indices:
+			var foot := Vector2i(
+				roundi(lerpf(original_feet[party_index].x, cooperative_feet[party_index].x, progress)),
+				roundi(lerpf(original_feet[party_index].y, cooperative_feet[party_index].y, progress))
+			)
+			_set_player_frame(party_index, _player_current_frames[party_index], foot)
+		await _wait_frames(1)
+	for contributor_offset in range(result.contributor_indices.size() - 1, -1, -1):
+		var party_index := result.contributor_indices[contributor_offset]
+		if party_index == result.actor_index:
+			continue
+		_set_player_frame(party_index, 5, cooperative_feet[party_index])
+		await _wait_frames(3)
+	_set_player_frame(result.actor_index, 5, cooperative_feet[result.actor_index], 6)
+	await _wait_frames(5)
+	_set_player_frame(result.actor_index, 6, cooperative_feet[result.actor_index])
+	await _wait_frames(3)
+	var effect_sprite := _database.load_magic_effect_sprite(definition.effect_sprite)
+	if effect_sprite != null and effect_sprite.is_valid():
+		await _play_magic_effect_sprite(effect_sprite, definition, result, cooperative_feet[result.actor_index])
+		await _show_magic_result(result, object, definition)
+	else:
+		_battle_ui.show_message("合击特效资源缺失，请重新导入 Data", 1000)
+		await _wait_frames(4)
+	for step in range(1, 7):
+		var progress := float(step) / 6.0
+		for party_index in result.contributor_indices:
+			var foot := Vector2i(
+				roundi(lerpf(cooperative_feet[party_index].x, original_feet[party_index].x, progress)),
+				roundi(lerpf(cooperative_feet[party_index].y, original_feet[party_index].y, progress))
+			)
+			_set_player_frame(party_index, _resting_player_frame(party_index), foot)
+		await _wait_frames(1)
+	for party_index in result.contributor_indices:
+		_set_player_frame(party_index, _resting_player_frame(party_index), original_feet[party_index])
+	await _wait_frames(3)
 
 
 func _play_player_throw_item(result: PalBattleController.ActionResult) -> void:
@@ -1018,6 +1111,12 @@ func _play_enemy_attack(result: PalBattleController.ActionResult) -> void:
 		await _wait_frames(2)
 	var target_foot := _player_foot_positions[hit.target_index]
 	var attack_foot := target_foot - Vector2i(44, 16)
+	var cover_original_foot := Vector2i.ZERO
+	var cover_guard_foot := Vector2i.ZERO
+	if hit.covering_index >= 0 and hit.covering_index < _player_nodes.size():
+		cover_original_foot = _player_foot_positions[hit.covering_index]
+		cover_guard_foot = target_foot - Vector2i(24, 12)
+		_set_player_frame(hit.covering_index, 3, cover_guard_foot)
 	if _audio_player != null and definition.sounds.size() > 1:
 		_audio_player.play_sound(definition.sounds[1])
 	var first_attack_frame := maxi(0, definition.idle_frames + definition.magic_frames - 1)
@@ -1028,20 +1127,25 @@ func _play_enemy_attack(result: PalBattleController.ActionResult) -> void:
 		_set_enemy_frame(actor_index, frame, 0, attack_foot)
 		await _wait_frames(maxi(1, definition.action_wait_frames))
 	var target_frame := 3 if hit.auto_defended else 4
-	_set_player_frame(hit.target_index, target_frame, target_foot, 0 if hit.auto_defended else 6)
+	if hit.covering_index < 0:
+		_set_player_frame(hit.target_index, target_frame, target_foot, 0 if hit.auto_defended else 6)
 	if _audio_player != null:
 		var target_role := _controller.players[hit.target_index].role_index
-		var hit_sound := _database.player_roles.cover_sound_for(target_role) if hit.auto_defended else (definition.sounds[4] if definition.sounds.size() > 4 else 0)
+		var sound_role := _controller.players[hit.covering_index].role_index if hit.covering_index >= 0 else target_role
+		var hit_sound := _database.player_roles.cover_sound_for(sound_role) if hit.auto_defended else (definition.sounds[4] if definition.sounds.size() > 4 else 0)
 		_audio_player.play_sound(hit_sound)
 		if hit.defeated:
 			_audio_player.play_sound(_database.player_roles.death_sound_for(target_role))
 	if hit.damage > 0:
 		_battle_ui.show_number(hit.damage, Vector2i(target_foot.x - 9, maxi(10, target_foot.y - 75)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
 	await _wait_frames(1)
-	_set_player_frame(hit.target_index, target_frame, target_foot + Vector2i(8, 4))
+	if hit.covering_index < 0:
+		_set_player_frame(hit.target_index, target_frame, target_foot + Vector2i(8, 4))
 	await _wait_frames(3)
 	await _move_enemy(actor_index, original_foot, 0, BATTLE_FRAME_SECONDS * 2.0)
 	_set_enemy_frame(actor_index, 0, 0, original_foot)
+	if hit.covering_index >= 0:
+		_set_player_frame(hit.covering_index, _resting_player_frame(hit.covering_index), cover_original_foot)
 	_set_player_frame(hit.target_index, _resting_player_frame(hit.target_index), target_foot)
 	await _wait_frames(4)
 

@@ -382,7 +382,7 @@ func _draw_selected_player_arrow() -> void:
 
 
 func _draw_action_icons() -> void:
-	var valid := [true, not _magic_entries_for_pending_role().is_empty(), false, true]
+	var valid := [true, not _magic_entries_for_pending_role().is_empty(), controller != null and controller.can_pending_player_use_cooperative_magic(), true]
 	for index in range(4):
 		if index == selected_action:
 			_draw_ui_frame(UI_FRAME_ACTION_FIRST + index, ACTION_POSITIONS[index])

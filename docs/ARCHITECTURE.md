@@ -38,7 +38,7 @@ flowchart LR
 | `PalMapCoordinates` | 世界像素到菱形 MAP half 的碰撞换算、玩家活动边界 | 读取地图内容、修改队伍位置 |
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
-| `PalBattleController` | 单场敌人体力、敌人毒/状态、指令、身法队列、回合末毒结算和胜负 | 读取原始文件、绘制 Sprite |
+| `PalBattleController` | 单场敌人体力、敌人毒/状态、合击贡献者、保护判定、指令、身法队列、回合末毒结算和胜负 | 读取原始文件、绘制 Sprite |
 | `PalBattlePreview` | 当前敌队、战场、双方节点、目标选择和攻击动画 | 自行计算伤害、修改探索剧情 |
 | `PalBattleUI` | 原版状态框、四向指令、仙术列表和上浮数字 | 提交指令、扣除 HP/MP |
 | `PalRngPlayer` | 当前过场帧区间、播放速度和可见状态 | 修改角色数值、决定后续脚本入口 |
@@ -105,6 +105,6 @@ CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileM
 
 ## 战斗资源与状态边界
 
-`PalContentDatabase` 读取敌人、仙术、物品、毒、战场、站位、升级阈值/习得仙术规则、官方 UI、双方战斗 Sprite 和 FIRE 仙术 Sprite，这些都是只读内容。`PalEquipmentManager` 先把当前六槽装备脚本重建到 `GameSession`，战斗读取的是基础属性与逐槽加成之和。`PalBattleController` 从这些定义创建单场敌人状态，收集玩家指令和敌人攻击/施法 AI，预留本回合物品，生成经典身法队列，并执行毒/状态战斗脚本与回合末结算；MP、库存、双方伤害、恢复、逃跑、经验、金钱和升级结算写入正式状态后，以与画面无关的 `ActionResult/RewardResult` 返回。角色跨战斗的体力、真气、毒、背包、装备、主经验、等级、成长属性和已学仙术继续由 `GameSession` 持有，临时状态在战斗结束时清除，装备状态由独立效果槽维持；`PalBattlePreview` 根据结果播放接近、攻击、毒性发作、使用/投掷物品、双方施法、逃跑、受击和归位动画，`PalBattleUI` 只绘制官方状态框、四向指令、其他/物品菜单、敌我目标反馈、仙术列表、奖励与升级页，不自行改动数值。探索场景把统一 `PalAudioPlayer` 注入战斗层，因此双方动作/仙术音效和普通/Boss 胜利音乐沿用系统菜单设置的音量。
+`PalContentDatabase` 读取敌人、仙术、物品、毒、战场、站位、角色合击/保护关系、升级阈值/习得仙术规则、官方 UI、双方战斗 Sprite 和 FIRE 仙术 Sprite，这些都是只读内容。`PalEquipmentManager` 先把当前六槽装备脚本重建到 `GameSession`，战斗读取的是基础属性与逐槽加成之和，装备效果组 65 可覆盖基础合击。`PalBattleController` 从这些定义创建单场敌人状态，收集玩家指令、健康合击贡献者和敌人攻击/施法 AI，预留本回合物品，生成经典身法队列，并执行保护判定、毒/状态战斗脚本与回合末结算；HP/MP、库存、双方伤害、恢复、逃跑、经验、金钱和升级结算写入正式状态后，以与画面无关的 `ActionResult/RewardResult` 返回。角色跨战斗的体力、真气、毒、背包、装备、主经验、等级、成长属性和已学仙术继续由 `GameSession` 持有，临时状态在战斗结束时清除，装备状态由独立效果槽维持；`PalBattlePreview` 根据结果播放接近、攻击、保护格挡、合击、毒性发作、使用/投掷物品、双方施法、逃跑、受击和归位动画，`PalBattleUI` 只绘制官方状态框、四向指令、其他/物品菜单、敌我目标反馈、仙术列表、奖励与升级页，不自行改动数值。探索场景把统一 `PalAudioPlayer` 注入战斗层，因此双方动作/仙术音效和普通/Boss 胜利音乐沿用系统菜单设置的音量。
 
 脚本执行到 `004A` 时只更新会话的战场编号；执行 `0007` 时暂停 ScriptVM，并由 `MapExplorer` 在 HUD 上覆盖创建复用同一 `GameSession` 的战斗。胜利继续下一条指令，战败跳到 `operand[1]`，允许逃跑的普通战斗使用 `operand[2]` 分支。进入战斗时播放 `0045` 保存的 BGM，确认结果后恢复场景 BGM，再解除 `waiting_for_battle`；地图输入和自动事件不会在战斗背后继续运行。

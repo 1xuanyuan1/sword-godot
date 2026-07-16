@@ -62,9 +62,14 @@ func _init() -> void:
 	var item_session := GameSession.new()
 	item_session.party_roles = PackedInt32Array([0, 1])
 	item_session.initialize_role_state(database.player_roles)
+	for role_index in item_session.party_roles:
+		item_session.role_hp[role_index] = item_session.role_max_hp[role_index]
 	var item_controller := PalBattleController.new()
 	if not item_controller.start_battle(database, item_session, 18, 21, 71):
 		_fail("真实仙术和物品支持范围无法创建首战控制器")
+		return
+	if database.player_roles.cooperative_magic_for(0) != 386 or database.player_roles.covered_by_role(0) != 2 or item_session.cooperative_magic_for(0, database.player_roles) != 386 or not item_controller.can_pending_player_use_cooperative_magic():
+		_fail("李逍遥合体气功或 PLAYERROLES 保护关系解析错误")
 		return
 	var enemy_magic_count := 0
 	var supported_enemy_magic_count := 0
@@ -96,7 +101,7 @@ func _init() -> void:
 	if supported_use_items == 0 or supported_throw_items == 0:
 		_fail("本地物品表没有可执行的基础恢复品或攻击暗器")
 		return
-	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、升级规则、%d 组 FIRE 特效、%d/%d 个已接入/全部敌术及 %d/%d 个使用/投掷物品均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size(), supported_enemy_magic_count, enemy_magic_count, supported_use_items, supported_throw_items])
+	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、合击/保护关系、升级规则、%d 组 FIRE 特效、%d/%d 个已接入/全部敌术及 %d/%d 个使用/投掷物品均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size(), supported_enemy_magic_count, enemy_magic_count, supported_use_items, supported_throw_items])
 	quit(0)
 
 

@@ -562,7 +562,9 @@ func _test_player_roles_structure() -> void:
 	role_bytes.encode_u16(PalPlayerRoles.DEFENSE_WORD_OFFSET * 2, 22)
 	role_bytes.encode_u16(PalPlayerRoles.DEXTERITY_WORD_OFFSET * 2, 18)
 	role_bytes.encode_u16(PalPlayerRoles.FLEE_RATE_WORD_OFFSET * 2, 15)
+	role_bytes.encode_u16(PalPlayerRoles.COVERED_BY_WORD_OFFSET * 2, 1)
 	role_bytes.encode_u16(PalPlayerRoles.MAGIC_WORD_OFFSET * 2, 345)
+	role_bytes.encode_u16(PalPlayerRoles.COOPERATIVE_MAGIC_WORD_OFFSET * 2, 401)
 	var walk_offset := PalPlayerRoles.WALK_FRAMES_WORD_OFFSET * 2
 	role_bytes[walk_offset] = 4
 	role_bytes.encode_u16(PalPlayerRoles.ATTACK_SOUND_WORD_OFFSET * 2, 10)
@@ -578,6 +580,7 @@ func _test_player_roles_structure() -> void:
 	_expect(roles.hp_for(0) == 90 and roles.mp_for(0) == 40 and roles.magics_for(0) == PackedInt32Array([345]), "PLAYERROLES current HP/MP and initial magic table")
 	_expect(roles.equipments_for(0) == PackedInt32Array([166, 0, 0, 0, 0, 0]), "PLAYERROLES six initial equipment slots")
 	_expect(roles.attack_strength_for(0) == 33 and roles.magic_strength_for(0) == 44 and roles.defense_for(0) == 22 and roles.dexterity_for(0) == 18 and roles.flee_rate_for(0) == 15, "PLAYERROLES classic battle stats")
+	_expect(roles.covered_by_role(0) == 1 and roles.cooperative_magic_for(0) == 401, "PLAYERROLES cover role and cooperative magic fields")
 	_expect(roles.attack_sound_for(0) == 10 and roles.weapon_sound_for(0) == 11 and roles.critical_sound_for(0) == 12 and roles.cover_sound_for(0) == 13 and roles.death_sound_for(0) == 14, "PLAYERROLES classic battle sound fields")
 	_expect(roles.walk_frame_count_for(0) == 4 and roles.walk_frame_count_for(1) == 3, "PLAYERROLES walk frame fallback")
 
@@ -846,7 +849,9 @@ func _test_script_vm_rng_and_role_state() -> void:
 		roles.flee_rates.append(20)
 		roles.poison_resistances.append(0)
 		roles.elemental_resistances_by_role.append(PackedInt32Array([0, 0, 0, 0, 0]))
+		roles.covered_by.append(0)
 		roles.magics_by_role.append(PackedInt32Array())
+		roles.cooperative_magics.append(0)
 		roles.walk_frames.append(3)
 		roles.death_sounds.append(0)
 		roles.attack_sounds.append(0)
