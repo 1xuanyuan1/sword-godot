@@ -29,6 +29,9 @@ enum ActionType {
 	USE_ITEM,
 	THROW_ITEM,
 	FLEE,
+	PASS,
+	ATTACK_MATE,
+	POISON,
 }
 
 ## 单个敌人在本场战斗中的可变状态。
@@ -38,6 +41,8 @@ class EnemyState extends RefCounted:
 	var definition: PalEnemyDefinition
 	var hp: int = 0
 	var max_hp: int = 0
+	var status_rounds: PackedInt32Array = PackedInt32Array()
+	var poisons: Dictionary = {}
 
 	## 返回敌人是否仍可行动和被选中。
 	func is_alive() -> bool:
@@ -91,6 +96,7 @@ class ActionResult extends RefCounted:
 	var second_action: bool = false
 	var skipped: bool = false
 	var unsupported: bool = false
+	var poison_tick: bool = false
 	var turn_finished: bool = false
 	var battle_result: int = BattleResult.ONGOING
 	var summary: String = ""
@@ -158,6 +164,8 @@ var _queue_cursor: int = 0
 var _accepting_commands: bool = false
 var _reserved_items: Dictionary = {}
 var _repeating_previous_commands: bool = false
+var _end_turn_pending: bool = false
+var _battle_cleanup_applied: bool = false
 
 
 #region Public lifecycle and commands
@@ -185,6 +193,8 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	_accepting_commands = false
 	_reserved_items.clear()
 	_repeating_previous_commands = false
+	_end_turn_pending = false
+	_battle_cleanup_applied = false
 	if database == null or session == null or database.player_roles == null:
 		error_message = "战斗缺少内容数据库、会话或 PLAYERROLES"
 		return false
@@ -218,6 +228,8 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 		enemy.definition = definition
 		enemy.hp = definition.health
 		enemy.max_hp = definition.health
+		enemy.status_rounds.resize(GameSession.STATUS_COUNT)
+		enemy.status_rounds.fill(0)
 		enemies.append(enemy)
 	if enemies.is_empty():
 		error_message = "敌队 %d 没有有效敌人" % team_id
@@ -271,6 +283,40 @@ func living_enemy_indices() -> PackedInt32Array:
 	return result
 
 
+## 返回队员指定经典状态的剩余回合数；索引越界时返回 0。
+func player_status_rounds(party_index: int, status_id: int) -> int:
+	if party_index < 0 or party_index >= players.size():
+		return 0
+	return session.status_rounds_for(players[party_index].role_index, status_id)
+
+
+## 返回敌人指定经典状态的剩余回合数；索引越界时返回 0。
+func enemy_status_rounds(enemy_index: int, status_id: int) -> int:
+	if enemy_index < 0 or enemy_index >= enemies.size() or status_id < 0 or status_id >= GameSession.STATUS_COUNT:
+		return 0
+	return enemies[enemy_index].status_rounds[status_id]
+
+
+## 返回队员当前所中毒对象编号，顺序保持施加顺序。
+func player_poison_ids(party_index: int) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	if party_index < 0 or party_index >= players.size():
+		return result
+	for poison_id in session.poison_entries_for(players[party_index].role_index):
+		result.append(int(poison_id))
+	return result
+
+
+## 返回敌人当前所中毒对象编号，顺序保持施加顺序。
+func enemy_poison_ids(enemy_index: int) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	if enemy_index < 0 or enemy_index >= enemies.size():
+		return result
+	for poison_id in enemies[enemy_index].poisons:
+		result.append(int(poison_id))
+	return result
+
+
 ## 为当前队员提交普通攻击目标。
 ## 可攻击全体的角色会忽略目标并保存为 -1；目标无效或当前不接收指令时返回 `false`。
 func submit_attack(target_index: int) -> bool:
@@ -308,7 +354,7 @@ func can_pending_player_use_magic(magic_object_id: int) -> bool:
 	var role_index := players[party_index].role_index
 	var object := database.magic_object_definition(magic_object_id)
 	var definition := database.magic_definition_for_object(magic_object_id)
-	return object != null and definition != null and session.has_magic(role_index, magic_object_id) and object.is_usable_in_battle() and definition.mp_cost <= session.role_mp[role_index] and _magic_effect_is_supported(object, definition)
+	return object != null and definition != null and session.has_magic(role_index, magic_object_id) and object.is_usable_in_battle() and session.status_rounds_for(role_index, GameSession.STATUS_SILENCE) == 0 and definition.mp_cost <= session.role_mp[role_index] and _magic_effect_is_supported(object, definition)
 
 
 ## 为当前队员提交仙术和目标；全体仙术会把目标规范化为 -1。
@@ -340,7 +386,7 @@ func can_pending_player_use_item(item_object_id: int) -> bool:
 	if pending_party_index() < 0 or available_item_count(item_object_id) <= 0:
 		return false
 	var item := database.item_definition(item_object_id)
-	return item != null and item.is_usable() and _stat_script_is_supported(item.script_on_use)
+	return item != null and item.is_usable() and _battle_effect_script_is_supported(item.script_on_use)
 
 
 ## 返回当前角色能否投掷指定物品。
@@ -469,7 +515,16 @@ func build_action_queue() -> bool:
 ## 执行行动队列中的下一项，并返回与画面解耦的结果。
 ## 不在行动阶段或战斗已结束时返回 `null`；目标死亡时会按 SDLPal 规则自动重选。
 func execute_next_action() -> ActionResult:
-	if battle_result != BattleResult.ONGOING or _accepting_commands or _queue_cursor >= action_queue.size():
+	if battle_result != BattleResult.ONGOING or _accepting_commands:
+		return null
+	# 普通队列最后一项先交给画面播放；下一次调用才真实结算毒与状态，避免数值提前一帧变化。
+	if _end_turn_pending:
+		_end_turn_pending = false
+		var end_turn_result := _finish_turn()
+		end_turn_result.battle_result = battle_result
+		_apply_battle_cleanup_if_needed()
+		return end_turn_result
+	if _queue_cursor >= action_queue.size():
 		return null
 	var entry := action_queue[_queue_cursor]
 	_queue_cursor += 1
@@ -477,8 +532,8 @@ func execute_next_action() -> ActionResult:
 	_check_battle_result()
 	result.battle_result = battle_result
 	if battle_result == BattleResult.ONGOING and _queue_cursor >= action_queue.size():
-		_finish_turn()
-		result.turn_finished = true
+		_end_turn_pending = true
+	_apply_battle_cleanup_if_needed()
 	return result
 
 
@@ -501,6 +556,7 @@ func execute_remaining_actions(max_actions: int = 32) -> Array[ActionResult]:
 func claim_victory_rewards() -> RewardResult:
 	if battle_result != BattleResult.VICTORY:
 		return null
+	_apply_battle_cleanup_if_needed()
 	if reward_result != null:
 		return reward_result
 	var reward := RewardResult.new()
@@ -667,10 +723,21 @@ func _assign_defend(player: PlayerState, party_index: int) -> void:
 func _skip_players_without_commands() -> void:
 	while _command_cursor < players.size():
 		var player := players[_command_cursor]
-		if _role_hp(player.role_index) > 0:
+		if _role_hp(player.role_index) <= 0:
+			if session.status_rounds_for(player.role_index, GameSession.STATUS_PUPPET) > 0:
+				player.action_type = ActionType.ATTACK
+				player.target_index = -1 if session.can_attack_all(player.role_index, database.player_roles) else _find_alive_enemy_from(0)
+			else:
+				player.action_type = ActionType.PASS
+				player.target_index = -1
+		elif session.status_rounds_for(player.role_index, GameSession.STATUS_SLEEP) > 0 or session.status_rounds_for(player.role_index, GameSession.STATUS_PARALYZED) > 0:
+			player.action_type = ActionType.PASS
+			player.target_index = -1
+		elif session.status_rounds_for(player.role_index, GameSession.STATUS_CONFUSED) > 0:
+			player.action_type = ActionType.PASS if _is_player_dying(player.role_index) else ActionType.ATTACK_MATE
+			player.target_index = -1
+		else:
 			break
-		player.action_type = ActionType.ATTACK
-		player.target_index = 0
 		_command_cursor += 1
 
 
@@ -692,6 +759,8 @@ func _player_queue_entry(party_index: int) -> QueueEntry:
 		entry.dexterity = 0
 		return entry
 	var dexterity := session.dexterity_for(player.role_index)
+	if session.status_rounds_for(player.role_index, GameSession.STATUS_HASTE) > 0:
+		dexterity = mini(999, dexterity * 3)
 	if player.action_type == ActionType.DEFEND:
 		dexterity *= 5
 	if _is_player_dying(player.role_index):
@@ -720,10 +789,17 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 	result.second_action = entry.is_second
 	var player := players[entry.combatant_index]
 	result.action_type = player.action_type
-	if _role_hp(player.role_index) <= 0:
+	if _role_hp(player.role_index) <= 0 and session.status_rounds_for(player.role_index, GameSession.STATUS_PUPPET) == 0:
 		_release_player_item_reservation(player)
 		result.skipped = true
 		result.summary = "倒下的队员无法行动"
+		return result
+	if player.action_type == ActionType.PASS:
+		result.skipped = true
+		result.summary = "%s本回合无法行动" % _role_name(player.role_index)
+		return result
+	if player.action_type == ActionType.ATTACK_MATE:
+		_execute_player_attack_mate(entry.combatant_index, result)
 		return result
 	if player.action_type == ActionType.DEFEND:
 		player.defending = true
@@ -753,13 +829,17 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 			result.skipped = true
 			result.summary = "没有可攻击目标"
 			return result
-		var hit := _player_single_hit(player, target_index)
-		result.hits.append(hit)
-		result.summary = "%s攻击敌人，造成%d点伤害%s" % [
-			_role_name(player.role_index),
-			hit.damage,
-			"（暴击）" if hit.critical else "",
-		]
+		var attack_times := 2 if session.status_rounds_for(player.role_index, GameSession.STATUS_DUAL_ATTACK) > 0 else 1
+		for _attack_index in range(attack_times):
+			if not enemies[target_index].is_alive():
+				break
+			result.hits.append(_player_single_hit(player, target_index))
+		var total_damage := 0
+		var critical := false
+		for hit in result.hits:
+			total_damage += hit.damage
+			critical = critical or hit.critical
+		result.summary = "%s攻击敌人，造成%d点伤害%s" % [_role_name(player.role_index), total_damage, "（暴击）" if critical else ""]
 	return result
 
 
@@ -778,19 +858,22 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 		return
 	result.mp_cost = definition.mp_cost
 	session.increase_role_hp_mp(player.role_index, 0, -definition.mp_cost)
+	var actor_party_index := player.party_index
+	var use_outcome: Dictionary = _run_battle_effect_script(object.script_on_use, false, false, actor_party_index, result)
+	if not bool(use_outcome.get("success", true)):
+		result.summary = "%s施展%s失败" % [_role_name(player.role_index), database.get_word(player.action_id)]
+		return
 	if object.is_used_on_enemy():
+		_run_battle_effect_script(object.script_on_success, false, true, player.target_index, result)
 		var target_indices := living_enemy_indices() if player.target_index < 0 else PackedInt32Array([_find_alive_enemy_from(player.target_index)])
-		for target_index in target_indices:
-			if target_index < 0:
-				continue
-			var damage := _calculate_player_magic_damage(player.role_index, target_index, definition)
-			result.hits.append(_apply_enemy_damage(target_index, maxi(1, damage), false))
+		if _signed_word(definition.base_damage) > 0:
+			for target_index in target_indices:
+				if target_index < 0:
+					continue
+				var damage := _calculate_player_magic_damage(player.role_index, target_index, definition)
+				result.hits.append(_apply_enemy_damage(target_index, maxi(1, damage), false))
 	else:
-		var event_role := player.role_index
-		if player.target_index >= 0 and player.target_index < players.size():
-			event_role = players[player.target_index].role_index
-		_run_supported_stat_script(object.script_on_use, player.role_index, result)
-		_run_supported_stat_script(object.script_on_success, event_role, result)
+		_run_battle_effect_script(object.script_on_success, false, false, player.target_index, result)
 	result.summary = "%s施展%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
 
 
@@ -813,56 +896,251 @@ func _calculate_player_magic_damage(role_index: int, target_index: int, definiti
 
 
 func _magic_effect_is_supported(object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> bool:
+	if not _battle_effect_script_is_supported(object.script_on_use) or not _battle_effect_script_is_supported(object.script_on_success):
+		return false
 	if object.is_used_on_enemy():
-		return _signed_word(definition.base_damage) > 0 and object.script_on_use == 0 and object.script_on_success == 0 and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]
-	return definition.magic_type in [PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY] and _stat_script_is_supported(object.script_on_use) and _stat_script_is_supported(object.script_on_success)
+		return definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD] and (_signed_word(definition.base_damage) > 0 or object.script_on_use > 0 or object.script_on_success > 0)
+	return definition.magic_type in [PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY] and (object.script_on_use > 0 or object.script_on_success > 0)
 
 
-func _stat_script_is_supported(entry_index: int) -> bool:
-	var cursor := entry_index
-	for _step in range(64):
-		if cursor == 0:
-			return true
-		if cursor < 0 or cursor >= database.scripts.size():
-			return false
-		var entry := database.scripts[cursor]
-		match entry.operation:
-			0x0000, 0x0001:
-				return true
-			0x0003:
-				cursor = entry.operands[0]
-			0x001b, 0x001c, 0x001d:
-				cursor += 1
-			_:
+func _battle_effect_script_is_supported(entry_index: int) -> bool:
+	if entry_index == 0:
+		return true
+	var pending: Array[int] = [entry_index]
+	var visited: Dictionary = {}
+	var inspected := 0
+	while not pending.is_empty():
+		var cursor: int = pending.pop_back()
+		while cursor != 0:
+			if cursor < 0 or cursor >= database.scripts.size():
 				return false
-	return false
+			if visited.has(cursor):
+				break
+			visited[cursor] = true
+			inspected += 1
+			if inspected > 512:
+				return false
+			var entry := database.scripts[cursor]
+			match entry.operation:
+				0x0000, 0x0001:
+					break
+				0x0003:
+					cursor = entry.operands[0]
+				0x0006:
+					pending.append(cursor + 1)
+					cursor = entry.operands[1]
+				0x002e:
+					pending.append(cursor + 1)
+					cursor = entry.operands[2]
+				0x005d, 0x005e:
+					pending.append(cursor + 1)
+					cursor = entry.operands[1]
+				0x0061, 0x0068:
+					pending.append(cursor + 1)
+					cursor = entry.operands[0]
+				0x001b, 0x001c, 0x001d, 0x0021, 0x0022, 0x0028, 0x0029, 0x002a, 0x002b, 0x002c, 0x002d, 0x002f, 0x0039, 0x005f, 0x0060:
+					cursor += 1
+				_:
+					return false
+	return true
 
 
-func _run_supported_stat_script(entry_index: int, event_role: int, result: ActionResult) -> void:
+func _run_battle_effect_script(entry_index: int, actor_is_enemy: bool, _target_is_enemy: bool, target_index: int, result: ActionResult) -> Dictionary:
+	if entry_index == 0:
+		return {"cursor": 0, "success": true}
+	if not _battle_effect_script_is_supported(entry_index):
+		return {"cursor": entry_index, "success": false}
 	var cursor := entry_index
-	for _step in range(64):
+	var success := true
+	for _step in range(256):
 		if cursor == 0 or cursor < 0 or cursor >= database.scripts.size():
-			return
+			return {"cursor": cursor, "success": success}
 		var entry := database.scripts[cursor]
 		match entry.operation:
-			0x0000, 0x0001:
-				return
+			# PAL_RunTriggerScript 的 0000 保留原入口；0001 则把持久入口替换成下一行。
+			0x0000:
+				return {"cursor": entry_index, "success": success}
+			0x0001:
+				return {"cursor": cursor + 1, "success": success}
+			# 无条件跳转与概率跳转；0006 在随机值大于等于阈值时走 operand[1]。
 			0x0003:
 				cursor = entry.operands[0]
-				continue
+			0x0006:
+				cursor = entry.operands[1] if _random.next_int(1, 100) >= entry.operands[0] else cursor + 1
+			# 增减玩家 HP、MP 或两者；operand[0] 非零表示全队。
 			0x001b, 0x001c, 0x001d:
 				var hp_delta := _signed_word(entry.operands[1]) if entry.operation in [0x001b, 0x001d] else 0
 				var mp_delta := _signed_word(entry.operands[1]) if entry.operation in [0x001c, 0x001d] else 0
-				if entry.operands[0] != 0:
-					for party_index in range(players.size()):
-						_apply_player_stat_delta(party_index, hp_delta, mp_delta, result)
-				else:
-					var party_index := _party_index_for_role(event_role)
-					if party_index >= 0:
-						_apply_player_stat_delta(party_index, hp_delta, mp_delta, result)
+				var changed := false
+				for party_index in _battle_player_targets(target_index, entry.operands[0] != 0):
+					changed = _apply_player_stat_delta(party_index, hp_delta, mp_delta, result) or changed
+				if entry.operands[0] == 0 or entry.operation == 0x001b:
+					success = changed
 				cursor += 1
+			# 对单个或全部敌人造成固定伤害。
+			0x0021:
+				var damaged := false
+				for enemy_index in _battle_enemy_targets(target_index, entry.operands[0] != 0):
+					result.hits.append(_apply_enemy_damage(enemy_index, entry.operands[1], false))
+					damaged = true
+				success = damaged
+				cursor += 1
+			# 按最大 HP 的十分比复活，并清除三级以下毒与临时状态。
+			0x0022:
+				var revived := false
+				for party_index in _battle_player_targets(target_index, entry.operands[0] != 0):
+					revived = _revive_player(party_index, entry.operands[1], result) or revived
+				success = revived
+				cursor += 1
+			# 敌我下毒；加入毒槽时立即执行一次毒脚本，后续在回合末重复或推进。
+			0x0028:
+				for enemy_index in _battle_enemy_targets(target_index, entry.operands[0] != 0):
+					_apply_poison_to_enemy(enemy_index, entry.operands[1], actor_is_enemy, result)
+				cursor += 1
+			0x0029:
+				for party_index in _battle_player_targets(target_index, entry.operands[0] != 0):
+					_apply_poison_to_player(party_index, entry.operands[1], actor_is_enemy, result)
+				cursor += 1
+			# 按毒对象或等级清除敌我毒槽。
+			0x002a:
+				for enemy_index in _battle_enemy_targets(target_index, entry.operands[0] != 0):
+					enemies[enemy_index].poisons.erase(entry.operands[1])
+				cursor += 1
+			0x002b:
+				for party_index in _battle_player_targets(target_index, entry.operands[0] != 0):
+					session.cure_role_poison(players[party_index].role_index, entry.operands[1])
+				cursor += 1
+			0x002c:
+				for party_index in _battle_player_targets(target_index, entry.operands[0] != 0):
+					session.cure_role_poisons_by_level(players[party_index].role_index, entry.operands[1], database)
+				cursor += 1
+			# 设置玩家/敌人状态；敌人抵抗时按 operand[2] 跳转。
+			0x002d:
+				var party_index := _battle_player_target(target_index)
+				success = party_index >= 0 and session.set_role_status(players[party_index].role_index, entry.operands[0], entry.operands[1])
+				cursor += 1
+			0x002e:
+				var enemy_index := _battle_enemy_target(target_index)
+				if enemy_index >= 0 and _random.next_int(0, 9) > enemies[enemy_index].definition.poison_resistance:
+					if entry.operands[0] >= 0 and entry.operands[0] < GameSession.STATUS_COUNT:
+						enemies[enemy_index].status_rounds[entry.operands[0]] = entry.operands[1]
+					cursor += 1
+				else:
+					cursor = entry.operands[2]
+			0x002f:
+				var party_index := _battle_player_target(target_index)
+				if party_index >= 0:
+					session.remove_role_status(players[party_index].role_index, entry.operands[0])
+				cursor += 1
+			# 从目标敌人吸取固定 HP 给当前施法玩家。
+			0x0039:
+				var enemy_index := _battle_enemy_target(target_index)
+				if enemy_index >= 0:
+					result.hits.append(_apply_enemy_damage(enemy_index, entry.operands[0], false))
+					if not actor_is_enemy and result.actor_index >= 0 and result.actor_index < players.size():
+						_apply_player_stat_delta(result.actor_index, entry.operands[0], 0, result)
+				cursor += 1
+			# 指定毒不存在时跳转；005D 检查玩家，005E 检查敌人。
+			0x005d:
+				var party_index := _battle_player_target(target_index)
+				cursor = entry.operands[1] if party_index < 0 or not session.role_has_poison(players[party_index].role_index, entry.operands[0]) else cursor + 1
+			0x005e:
+				var enemy_index := _battle_enemy_target(target_index)
+				cursor = entry.operands[1] if enemy_index < 0 or not enemies[enemy_index].poisons.has(entry.operands[0]) else cursor + 1
+			# 立即击倒玩家或敌人。
+			0x005f:
+				var party_index := _battle_player_target(target_index)
+				if party_index >= 0:
+					_apply_player_stat_delta(party_index, -_role_hp(players[party_index].role_index), 0, result)
+				cursor += 1
+			0x0060:
+				var enemy_index := _battle_enemy_target(target_index)
+				if enemy_index >= 0:
+					result.hits.append(_apply_enemy_damage(enemy_index, enemies[enemy_index].hp, false))
+				cursor += 1
+			# 玩家没有普通毒时跳转；99 级装备持续效果不计入。
+			0x0061:
+				var party_index := _battle_player_target(target_index)
+				cursor = entry.operands[0] if party_index < 0 or not session.role_has_poison_by_level(players[party_index].role_index, 0, database) else cursor + 1
+			# 当前效果由敌方行动触发时跳转，用于敌我共用的成功脚本。
+			0x0068:
+				cursor = entry.operands[0] if actor_is_enemy else cursor + 1
 			_:
-				return
+				return {"cursor": entry_index, "success": false}
+	return {"cursor": cursor, "success": false}
+
+
+func _battle_player_target(target_index: int) -> int:
+	if target_index >= 0 and target_index < players.size():
+		return target_index
+	return 0 if not players.is_empty() else -1
+
+
+func _battle_enemy_target(target_index: int) -> int:
+	return target_index if target_index >= 0 and target_index < enemies.size() and enemies[target_index].is_alive() else -1
+
+
+func _battle_player_targets(target_index: int, apply_all: bool) -> PackedInt32Array:
+	if apply_all:
+		var all_targets := PackedInt32Array()
+		for party_index in range(players.size()):
+			all_targets.append(party_index)
+		return all_targets
+	var target := _battle_player_target(target_index)
+	return PackedInt32Array([target]) if target >= 0 else PackedInt32Array()
+
+
+func _battle_enemy_targets(target_index: int, apply_all: bool) -> PackedInt32Array:
+	if apply_all:
+		return living_enemy_indices()
+	var target := _battle_enemy_target(target_index)
+	return PackedInt32Array([target]) if target >= 0 else PackedInt32Array()
+
+
+func _revive_player(party_index: int, tenths_of_max_hp: int, result: ActionResult) -> bool:
+	if party_index < 0 or party_index >= players.size():
+		return false
+	var role_index := players[party_index].role_index
+	if _role_hp(role_index) > 0:
+		return false
+	var restored := maxi(1, int(session.role_max_hp[role_index] * tenths_of_max_hp / 10.0))
+	session.role_hp[role_index] = mini(session.role_max_hp[role_index], restored)
+	session.cure_role_poisons_by_level(role_index, 3, database)
+	for status_id in range(GameSession.STATUS_COUNT):
+		session.remove_role_status(role_index, status_id)
+	var hit := _player_hit_for_result(result, party_index)
+	hit.healing += session.role_hp[role_index]
+	return true
+
+
+func _apply_poison_to_player(party_index: int, poison_id: int, actor_is_enemy: bool, result: ActionResult) -> bool:
+	if party_index < 0 or party_index >= players.size():
+		return false
+	var role_index := players[party_index].role_index
+	var definition := database.poison_definition(poison_id)
+	if definition == null or session.role_has_poison(role_index, poison_id) or _random.next_int(1, 100) <= session.poison_resistance_for(role_index):
+		return false
+	if not _battle_effect_script_is_supported(definition.player_script) or not session.add_role_poison(role_index, poison_id, definition.player_script):
+		return false
+	var outcome := _run_battle_effect_script(definition.player_script, actor_is_enemy, false, party_index, result)
+	session.set_role_poison_cursor(role_index, poison_id, int(outcome.get("cursor", definition.player_script)))
+	return bool(outcome.get("success", true))
+
+
+func _apply_poison_to_enemy(enemy_index: int, poison_id: int, actor_is_enemy: bool, result: ActionResult) -> bool:
+	if enemy_index < 0 or enemy_index >= enemies.size() or not enemies[enemy_index].is_alive():
+		return false
+	var enemy := enemies[enemy_index]
+	var definition := database.poison_definition(poison_id)
+	if definition == null or enemy.poisons.has(poison_id) or enemy.poisons.size() >= GameSession.MAX_POISONS or _random.next_int(0, 9) < enemy.definition.poison_resistance:
+		return false
+	if not _battle_effect_script_is_supported(definition.enemy_script):
+		return false
+	enemy.poisons[poison_id] = definition.enemy_script
+	var outcome := _run_battle_effect_script(definition.enemy_script, actor_is_enemy, true, enemy_index, result)
+	if enemy.poisons.has(poison_id):
+		enemy.poisons[poison_id] = int(outcome.get("cursor", definition.enemy_script))
+	return bool(outcome.get("success", true))
 
 
 func _execute_player_use_item(player: PlayerState, result: ActionResult) -> void:
@@ -870,14 +1148,11 @@ func _execute_player_use_item(player: PlayerState, result: ActionResult) -> void
 	result.item_object_id = player.action_id
 	result.target_index = player.target_index
 	_release_player_item_reservation(player)
-	if item == null or session.item_count(player.action_id) <= 0 or not _stat_script_is_supported(item.script_on_use):
+	if item == null or session.item_count(player.action_id) <= 0 or not _battle_effect_script_is_supported(item.script_on_use):
 		result.unsupported = true
 		result.summary = "该物品已用完或效果尚未接入"
 		return
-	var event_role := 0xffff
-	if player.target_index >= 0 and player.target_index < players.size():
-		event_role = players[player.target_index].role_index
-	_run_supported_stat_script(item.script_on_use, event_role, result)
+	_run_battle_effect_script(item.script_on_use, false, false, player.target_index, result)
 	if item.is_consuming():
 		session.change_item_count(player.action_id, -1)
 	result.summary = "%s使用%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
@@ -997,25 +1272,26 @@ func _calculate_simulated_magic_damage(base_damage: int, target_index: int, defi
 	return maxi(0, damage)
 
 
-func _apply_player_stat_delta(party_index: int, hp_delta: int, mp_delta: int, result: ActionResult) -> void:
+func _apply_player_stat_delta(party_index: int, hp_delta: int, mp_delta: int, result: ActionResult) -> bool:
 	if party_index < 0 or party_index >= players.size():
-		return
+		return false
 	var role_index := players[party_index].role_index
 	# PAL_IncreaseHPMP 不会让普通治疗复活已经倒下的角色。
 	if _role_hp(role_index) <= 0:
-		return
+		return false
 	var old_hp := session.role_hp[role_index]
 	var old_mp := session.role_mp[role_index]
 	session.increase_role_hp_mp(role_index, hp_delta, mp_delta)
 	var hp_change := session.role_hp[role_index] - old_hp
 	var mp_change := session.role_mp[role_index] - old_mp
 	if hp_change == 0 and mp_change == 0:
-		return
+		return false
 	var hit := _player_hit_for_result(result, party_index)
 	hit.healing += maxi(0, hp_change)
 	hit.damage += maxi(0, -hp_change)
 	hit.mp_restored += maxi(0, mp_change)
 	hit.defeated = session.role_hp[role_index] == 0
+	return true
 
 
 func _player_hit_for_result(result: ActionResult, party_index: int) -> Hit:
@@ -1028,33 +1304,52 @@ func _player_hit_for_result(result: ActionResult, party_index: int) -> Hit:
 	return hit
 
 
-func _party_index_for_role(role_index: int) -> int:
+func _execute_player_attack_mate(actor_index: int, result: ActionResult) -> void:
+	var candidates := PackedInt32Array()
 	for party_index in range(players.size()):
-		if players[party_index].role_index == role_index:
-			return party_index
-	return -1
+		if party_index != actor_index and _role_hp(players[party_index].role_index) > 0:
+			candidates.append(party_index)
+	if candidates.is_empty():
+		result.skipped = true
+		result.summary = "混乱角色没有可攻击的队友"
+		return
+	var target_index := candidates[_random.next_int(0, candidates.size() - 1)]
+	var actor := players[actor_index]
+	var target := players[target_index]
+	var defense := session.defense_for(target.role_index)
+	if target.defending:
+		defense *= 2
+	var damage := calculate_physical_damage(session.attack_strength_for(actor.role_index), defense, 2)
+	if session.status_rounds_for(target.role_index, GameSession.STATUS_PROTECT) > 0:
+		damage /= 2
+	damage = maxi(1, damage)
+	var hit := Hit.new()
+	hit.target_index = target_index
+	hit.damage = mini(_role_hp(target.role_index), damage)
+	session.increase_role_hp_mp(target.role_index, -hit.damage, 0)
+	hit.defeated = _role_hp(target.role_index) == 0
+	result.target_index = target_index
+	result.hits.append(hit)
+	result.summary = "%s混乱中攻击%s" % [_role_name(actor.role_index), _role_name(target.role_index)]
 
 
 func _execute_player_attack_all(player: PlayerState, result: ActionResult) -> void:
-	var critical := _random.next_int(0, 5) == 0
-	var division := 1
-	# SDLPal 固定按中、次前、最前、最后、次后的次序结算全体普攻。
-	for enemy_index in [2, 1, 0, 4, 3]:
-		if enemy_index >= enemies.size() or not enemies[enemy_index].is_alive():
-			continue
-		var enemy := enemies[enemy_index]
-		var defense := _effective_enemy_defense(enemy.definition)
-		var damage := calculate_physical_damage(
-			session.attack_strength_for(player.role_index),
-			defense,
-			enemy.definition.physical_resistance
-		)
-		if critical:
-			damage *= 3
-		damage = maxi(1, damage / division)
-		var hit := _apply_enemy_damage(enemy_index, damage, critical)
-		result.hits.append(hit)
-		division *= 2
+	var attack_times := 2 if session.status_rounds_for(player.role_index, GameSession.STATUS_DUAL_ATTACK) > 0 else 1
+	for _attack_index in range(attack_times):
+		var critical := session.status_rounds_for(player.role_index, GameSession.STATUS_BRAVERY) > 0 or _random.next_int(0, 5) == 0
+		var division := 1
+		# SDLPal 固定按中、次前、最前、最后、次后的次序结算全体普攻。
+		for enemy_index in [2, 1, 0, 4, 3]:
+			if enemy_index >= enemies.size() or not enemies[enemy_index].is_alive():
+				continue
+			var enemy := enemies[enemy_index]
+			var defense := _effective_enemy_defense(enemy.definition)
+			var damage := calculate_physical_damage(session.attack_strength_for(player.role_index), defense, enemy.definition.physical_resistance)
+			if critical:
+				damage *= 3
+			damage = maxi(1, damage / division)
+			result.hits.append(_apply_enemy_damage(enemy_index, damage, critical))
+			division *= 2
 	result.summary = "%s攻击全体敌人" % _role_name(player.role_index)
 
 
@@ -1068,7 +1363,7 @@ func _player_single_hit(player: PlayerState, target_index: int) -> Hit:
 	)
 	damage += _random.next_int(1, 2)
 	var critical := false
-	if _random.next_int(0, 5) == 0:
+	if session.status_rounds_for(player.role_index, GameSession.STATUS_BRAVERY) > 0 or _random.next_int(0, 5) == 0:
 		damage *= 3
 		critical = true
 	if player.role_index == 0 and _random.next_int(0, 11) == 0:
@@ -1112,21 +1407,60 @@ func _execute_enemy_action(entry: QueueEntry) -> ActionResult:
 		result.skipped = true
 		result.summary = "已被击倒的敌人无法行动"
 		return result
+	if enemy_status_rounds(entry.combatant_index, GameSession.STATUS_SLEEP) > 0 or enemy_status_rounds(entry.combatant_index, GameSession.STATUS_PARALYZED) > 0:
+		result.skipped = true
+		result.summary = "敌人因异常状态无法行动"
+		return result
+	if enemy_status_rounds(entry.combatant_index, GameSession.STATUS_CONFUSED) > 0:
+		_execute_confused_enemy_attack(entry.combatant_index, result)
+		return result
 	var target_index := _select_random_living_player()
 	if target_index < 0:
 		result.skipped = true
 		result.summary = "敌人没有可攻击目标"
 		return result
-	if enemy.definition.magic != 0 and _random.next_int(0, 9) < enemy.definition.magic_rate:
+	if enemy.definition.magic != 0 and enemy_status_rounds(entry.combatant_index, GameSession.STATUS_SILENCE) == 0 and _random.next_int(0, 9) < enemy.definition.magic_rate:
 		_execute_enemy_magic(entry.combatant_index, target_index, result)
 		return result
 	var hit := _enemy_physical_hit(entry.combatant_index, target_index)
 	result.hits.append(hit)
+	# fight.c 在普通攻击未被自动防御或代挡后，按敌人 DATA 概率执行附带物品脚本。
+	# 原版在进入脚本前还会额外做一次玩家毒抗检查，脚本中的 0029 会继续保留自身检查。
+	if not hit.auto_defended and enemy.definition.attack_equivalent_item > 0 and enemy.definition.attack_equivalent_item_rate >= _random.next_int(1, 10) and session.poison_resistance_for(players[target_index].role_index) < _random.next_int(1, 100):
+		var equivalent_item := database.item_definition(enemy.definition.attack_equivalent_item)
+		if equivalent_item != null and _battle_effect_script_is_supported(equivalent_item.script_on_use):
+			_run_battle_effect_script(equivalent_item.script_on_use, true, false, target_index, result)
 	result.summary = "敌人攻击%s：%s" % [
 		_role_name(players[target_index].role_index),
 		"自动防御" if hit.auto_defended else "%d点伤害" % hit.damage,
 	]
 	return result
+
+
+func _execute_confused_enemy_attack(enemy_index: int, result: ActionResult) -> void:
+	var candidates := living_enemy_indices()
+	if candidates.size() <= 1:
+		result.skipped = true
+		result.summary = "混乱敌人没有可攻击的同伴"
+		return
+	var target_index := enemy_index
+	for _attempt in range(enemies.size() * 4):
+		target_index = candidates[_random.next_int(0, candidates.size() - 1)]
+		if target_index != enemy_index:
+			break
+	if target_index == enemy_index:
+		result.skipped = true
+		return
+	var actor := enemies[enemy_index].definition
+	var target := enemies[target_index].definition
+	var attack := _signed_word(actor.attack_strength) + (actor.level + 6) * 6
+	var defense := _signed_word(target.defense) + (target.level + 6) * 4
+	var damage := calculate_base_damage(maxi(0, attack), maxi(0, defense)) * 2
+	damage /= target.physical_resistance if target.physical_resistance != 0 else 1
+	result.action_type = ActionType.ATTACK_MATE
+	result.target_index = target_index
+	result.hits.append(_apply_enemy_damage(target_index, maxi(1, damage), false))
+	result.summary = "混乱敌人攻击同伴"
 
 
 func _execute_enemy_magic(enemy_index: int, selected_target_index: int, result: ActionResult) -> void:
@@ -1144,8 +1478,13 @@ func _execute_enemy_magic(enemy_index: int, selected_target_index: int, result: 
 		result.unsupported = true
 		result.summary = "该敌人仙术的状态或脚本效果尚未接入"
 		return
-	var target_all := definition.magic_type != PalMagicDefinition.TYPE_NORMAL
+	var target_all := definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY]
 	result.target_index = -1 if target_all else selected_target_index
+	var use_outcome := _run_battle_effect_script(object.script_on_use, true, false, selected_target_index, result)
+	if not bool(use_outcome.get("success", true)):
+		result.summary = "敌人施展%s失败" % database.get_word(magic_object_id)
+		return
+	_run_battle_effect_script(object.script_on_success, true, false, selected_target_index, result)
 	var target_indices := PackedInt32Array()
 	if target_all:
 		for party_index in range(players.size()):
@@ -1153,17 +1492,22 @@ func _execute_enemy_magic(enemy_index: int, selected_target_index: int, result: 
 				target_indices.append(party_index)
 	elif selected_target_index >= 0:
 		target_indices.append(selected_target_index)
-	for party_index in target_indices:
-		var auto_defended := _random.next_int(0, 2) == 0
-		var damage := _calculate_enemy_magic_damage(enemy_index, party_index, definition)
-		var divisor := (2 if players[party_index].defending else 1) + (1 if auto_defended else 0)
-		damage = maxi(0, int(damage / maxi(1, divisor)))
-		result.hits.append(_apply_player_magic_damage(party_index, damage, auto_defended))
+	if _signed_word(definition.base_damage) > 0:
+		for party_index in target_indices:
+			var auto_defended := _random.next_int(0, 2) == 0
+			var damage := _calculate_enemy_magic_damage(enemy_index, party_index, definition)
+			var role_index := players[party_index].role_index
+			var divisor := (2 if players[party_index].defending else 1) * (2 if session.status_rounds_for(role_index, GameSession.STATUS_PROTECT) > 0 else 1) + (1 if auto_defended else 0)
+			damage = maxi(0, int(damage / maxi(1, divisor)))
+			result.hits.append(_apply_player_magic_damage(party_index, damage, auto_defended))
 	result.summary = "敌人施展%s" % database.get_word(magic_object_id)
 
 
 func _enemy_magic_effect_is_supported(object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> bool:
-	return _signed_word(definition.base_damage) > 0 and object.script_on_use == 0 and object.script_on_success == 0 and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]
+	if not _battle_effect_script_is_supported(object.script_on_use) or not _battle_effect_script_is_supported(object.script_on_success):
+		return false
+	var supported_type := definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY]
+	return supported_type and (_signed_word(definition.base_damage) > 0 or object.script_on_use > 0 or object.script_on_success > 0)
 
 
 func _calculate_enemy_magic_damage(enemy_index: int, party_index: int, definition: PalMagicDefinition) -> int:
@@ -1213,6 +1557,8 @@ func _enemy_physical_hit(enemy_index: int, target_index: int) -> Hit:
 		defense *= 2
 	var damage := calculate_physical_damage(attack + _random.next_int(0, 2), defense, 2)
 	damage += _random.next_int(0, 1)
+	if session.status_rounds_for(player.role_index, GameSession.STATUS_PROTECT) > 0:
+		damage /= 2
 	damage = maxi(1, damage)
 	var current_hp := _role_hp(player.role_index)
 	hit.damage = mini(current_hp, damage)
@@ -1221,11 +1567,41 @@ func _enemy_physical_hit(enemy_index: int, target_index: int) -> Hit:
 	return hit
 
 
-func _finish_turn() -> void:
+func _finish_turn() -> ActionResult:
+	var result := ActionResult.new()
+	result.action_type = ActionType.POISON
+	result.poison_tick = true
+	result.summary = "回合结束"
 	for player in players:
 		player.defending = false
-	turn_number += 1
-	_prepare_command_phase()
+	# fight.c 经典模式固定按“玩家毒/玩家状态/敌人毒/敌人状态”的次序结算。
+	for party_index in range(players.size()):
+		var role_index := players[party_index].role_index
+		var player_poisons := session.poison_entries_for(role_index)
+		for poison_id in player_poisons:
+			var cursor := int(player_poisons.get(poison_id, 0))
+			var outcome := _run_battle_effect_script(cursor, false, false, party_index, result)
+			session.set_role_poison_cursor(role_index, int(poison_id), int(outcome.get("cursor", cursor)))
+		session.decrement_role_statuses(role_index)
+	for enemy_index in range(enemies.size()):
+		for poison_id in enemies[enemy_index].poisons.keys():
+			var cursor := int(enemies[enemy_index].poisons.get(poison_id, 0))
+			var outcome := _run_battle_effect_script(cursor, true, true, enemy_index, result)
+			if enemies[enemy_index].poisons.has(poison_id):
+				enemies[enemy_index].poisons[poison_id] = int(outcome.get("cursor", cursor))
+		for status_id in range(GameSession.STATUS_COUNT):
+			if enemies[enemy_index].status_rounds[status_id] > 0:
+				enemies[enemy_index].status_rounds[status_id] -= 1
+	_check_battle_result()
+	if not result.hits.is_empty():
+		result.summary = "毒性发作"
+	else:
+		result.skipped = true
+	if battle_result == BattleResult.ONGOING:
+		turn_number += 1
+		_prepare_command_phase()
+	result.turn_finished = true
+	return result
 
 
 #endregion
@@ -1300,6 +1676,14 @@ func _check_battle_result() -> void:
 			return
 	battle_result = BattleResult.DEFEAT
 	_accepting_commands = false
+
+
+func _apply_battle_cleanup_if_needed() -> void:
+	if _battle_cleanup_applied or battle_result == BattleResult.ONGOING:
+		return
+	# 原版战斗结束会移除临时状态，但中毒属于跨战斗角色状态，必须继续保留。
+	session.clear_temporary_role_statuses()
+	_battle_cleanup_applied = true
 
 
 func _find_alive_enemy_from(begin: int) -> int:

@@ -5,6 +5,8 @@
 class_name PalContentDatabase
 extends RefCounted
 
+const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
+
 # 原版脚本没有附带标题或肖像、但可由剧情明确确认的角色台词。
 # 键为当前 DOS 数据集的 M.MSG 索引，值为 PLAYERROLES 角色索引。
 const MESSAGE_SPEAKER_ROLE_OVERRIDES: Dictionary = {
@@ -27,6 +29,8 @@ var items: Array[PalItemDefinition] = []
 var enemy_objects: Array[PalEnemyObjectDefinition] = []
 ## DOS OBJECT 表按仙术结构解释后的定义；索引与对象编号一致。
 var magic_objects: Array[PalMagicObjectDefinition] = []
+## DOS OBJECT 表按毒结构解释后的定义；索引与对象编号一致。
+var poisons: Array = []
 ## `DATA.MKF #1` 中的敌人基础属性。
 var enemies: Array[PalEnemyDefinition] = []
 ## `DATA.MKF #2` 中的敌队编组。
@@ -74,6 +78,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	items.clear()
 	enemy_objects.clear()
 	magic_objects.clear()
+	poisons.clear()
 	enemies.clear()
 	enemy_teams.clear()
 	battlefields.clear()
@@ -126,6 +131,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		items.append(PalItemDefinition.from_bytes(object_bytes, offset, object_id))
 		enemy_objects.append(PalEnemyObjectDefinition.from_bytes(object_bytes, offset, object_id))
 		magic_objects.append(PalMagicObjectDefinition.from_bytes(object_bytes, offset, object_id))
+		poisons.append(PoisonDefinition.from_bytes(object_bytes, offset, object_id))
 	for offset in range(0, enemy_bytes.size(), PalEnemyDefinition.BYTE_SIZE):
 		enemies.append(PalEnemyDefinition.from_bytes(enemy_bytes, offset, enemies.size()))
 	for offset in range(0, enemy_team_bytes.size(), PalEnemyTeam.BYTE_SIZE):
@@ -328,6 +334,11 @@ func enemy_object_definition(object_id: int) -> PalEnemyObjectDefinition:
 ## 返回 OBJECT 表中的仙术视图，编号越界时返回 `null`。
 func magic_object_definition(object_id: int) -> PalMagicObjectDefinition:
 	return magic_objects[object_id] if object_id >= 0 and object_id < magic_objects.size() else null
+
+
+## 返回 OBJECT 表中的毒定义视图，编号越界时返回 `null`。
+func poison_definition(object_id: int) -> RefCounted:
+	return poisons[object_id] if object_id >= 0 and object_id < poisons.size() else null
 
 
 ## 通过仙术对象编号返回 DATA.MKF 属性；映射无效时返回 `null`。

@@ -44,7 +44,7 @@ sword/
 
 ### `src/battle`
 
-`PalBattleRandom` 复现 SDLPal 的固定随机序列；`PalBattleController` 持有单场敌人体力、指令、物品预留、逃跑、敌人施法 AI 和行动队列，并把玩家 HP/MP、库存、经验、金钱与升级写回 `GameSession`；`PalBattlePreview` 编排双方 Sprite、敌我目标、物理攻击、物品、逃跑和 FIRE 仙术动画；`PalBattleUI` 使用原版 UI Sprite 绘制角色状态框、四向指令、其他/物品菜单、仙术列表、上浮数字和战后成长页。静态敌人、物品、仙术与成长规则仍属于 `src/content`，场景节点不直接计算伤害。
+`PalBattleRandom` 复现 SDLPal 的固定随机序列；`PalBattleController` 持有单场敌人体力、敌人毒/状态、指令、物品预留、逃跑、敌人施法 AI 和行动队列，并把玩家 HP/MP、毒/状态、库存、经验、金钱与升级写回 `GameSession`；`PalBattlePreview` 编排双方 Sprite、敌我目标、物理攻击、毒性结算、物品、逃跑和 FIRE 仙术动画；`PalBattleUI` 使用原版 UI Sprite 绘制角色状态框、四向指令、其他/物品菜单、仙术列表、上浮数字和战后成长页。静态敌人、物品、毒、仙术与成长规则仍属于 `src/content`，场景节点不直接计算伤害。
 
 ### `src/import`
 
@@ -52,11 +52,11 @@ sword/
 
 ### `src/content`
 
-将导入后的二进制结构转换为游戏可用的场景、事件、角色、物品、脚本和成长规则对象。`PalLevelProgression` 解析 DATA.MKF #6/#14，`PalContentDatabase` 是运行时读取内容的统一入口；它们都不保存玩家进度。
+将导入后的二进制结构转换为游戏可用的场景、事件、角色、物品、毒、脚本和成长规则对象。`PalPoisonDefinition` 解释 OBJECT 中的毒等级、颜色和敌我脚本，`PalLevelProgression` 解析 DATA.MKF #6/#14，`PalContentDatabase` 是运行时读取内容的统一入口；它们都不保存玩家进度。
 
 ### `src/game`
 
-`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、主经验、等级、成长属性、六槽装备、装备效果、仙术、调色板和场景索引。`PalEquipmentManager` 解释装备脚本并维护背包交换与加成；`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
+`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、毒与九种状态、主经验、等级、成长属性、六槽装备、装备效果、仙术、调色板和场景索引。`PalEquipmentManager` 解释装备脚本并维护背包交换与加成；`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
 
 ### `src/world`
 

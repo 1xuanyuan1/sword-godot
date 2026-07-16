@@ -346,6 +346,32 @@ keywords:
   - `docs/CLASSIC_UI.md`
   - `docs/BATTLE.md`
 
+---
+
+### [FT-036] [feat] 接通经典战斗毒、异常状态与回合末结算
+
+- **关联需求**: M3 法术与状态系统、M4 经典战斗
+- **关联 TODO**: TD-003、TD-005（阶段性）
+- **功能描述**: 解析 OBJECT 毒等级、颜色和敌我脚本，将玩家跨战斗毒/状态保存到 `GameSession`，敌人毒/状态保存到单场控制器；新增战斗效果脚本解释器，接入概率/条件分支、HP/MP、固定伤害、复活、敌我下毒、按种类/等级解毒、状态设置/移除、吸血和立即击倒。经典回合末严格按玩家毒→玩家状态递减→敌人毒→敌人状态递减结算，并让毒杀进入真实胜负/奖励路径。混乱、定身、昏睡、封咒、傀儡、勇气、防护、加速、双击全部进入指令限制、队列和伤害行为；装备双击保持为不被普通递减/解咒清除的持久效果。敌人物理攻击的附带物品毒脚本、状态敌术、毒性受击色偏、数字和提示也已接通。
+- **验证情况**: 273 项基础合成检查、20 项装备系统检查、93 项经典战斗逻辑、10 项剧情战斗桥接和中文文档检查通过；真实资源确认 60/85 个已接入/全部敌术、68/49 个使用/投掷物品脚本可执行，551 号基础毒在经典回合末造成 7 点伤害，首战普攻 40 点、52 经验/96 文、敌术 312、止血草、梅花镖与逃跑继续通过；OpenGL 回归新增毒性结算截图。
+- **涉及文件**:
+  - `src/content/pal_poison_definition.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/game/game_session.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_logic_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/EQUIPMENT.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

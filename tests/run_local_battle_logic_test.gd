@@ -144,7 +144,23 @@ func _init() -> void:
 	if flee_result == null or not flee_result.flee_succeeded or flee_controller.battle_result != PalBattleController.BattleResult.FLED:
 		_fail("真实首战敌队没有按经典逃跑公式返回 FLED")
 		return
-	print("PASS: 李逍遥对绿叶小妖普攻 %d 点；首战样板结果 %d、%d 次行动/%d 次伤害；奖励 %d 经验/%d 文；敌术 %d、止血草、梅花镖和逃跑均可结算" % [leaf_damage, controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash, magic_result.magic_object_id])
+	var poison := database.poison_definition(551)
+	var poison_session := GameSession.new()
+	poison_session.party_roles = PackedInt32Array([0])
+	var poison_controller := PalBattleController.new()
+	if poison == null or not poison_controller.start_battle(database, poison_session, 16, 0, 20260723):
+		_fail("真实基础毒或绿叶小妖回合无法初始化")
+		return
+	poison_session.add_role_poison(0, 551, poison.player_script)
+	poison_controller.submit_defend()
+	var poison_tick_found := false
+	for poison_result in poison_controller.execute_remaining_actions():
+		if poison_result.action_type == PalBattleController.ActionType.POISON and poison_result.hits.any(func(hit: PalBattleController.Hit) -> bool: return not hit.target_is_enemy and hit.damage == 7):
+			poison_tick_found = true
+	if not poison_tick_found:
+		_fail("真实 551 号毒没有在经典回合末造成 7 点伤害")
+		return
+	print("PASS: 李逍遥对绿叶小妖普攻 %d 点；首战样板结果 %d、%d 次行动/%d 次伤害；奖励 %d 经验/%d 文；敌术 %d、止血草、梅花镖、基础毒和逃跑均可结算" % [leaf_damage, controller.battle_result, resolved_actions, damage_events, reward.experience, reward.cash, magic_result.magic_object_id])
 	quit(0)
 
 

@@ -4,6 +4,8 @@
 ## 本测试不读取 `Data/` 或 `generated/`，可直接在 GitHub CI 运行。
 extends SceneTree
 
+const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
+
 var _checks: int = 0
 var _failures: Array[String] = []
 
@@ -18,10 +20,18 @@ func _init() -> void:
 	_test_victory_rewards_and_level_up()
 	_test_single_target_healing_magic()
 	_test_offensive_magic_damage()
-	_test_unsupported_status_magic_is_disabled()
+	_test_player_status_magic_and_silence()
+	_test_player_action_statuses()
+	_test_protect_and_haste_modifiers()
+	_test_enemy_status_magic()
+	_test_enemy_target_status_magic()
 	_test_enemy_offensive_magic()
 	_test_enemy_attack_all_magic()
-	_test_unsupported_enemy_status_magic()
+	_test_empty_enemy_magic_is_unsupported()
+	_test_enemy_attack_equivalent_poison()
+	_test_player_poison_and_cure()
+	_test_enemy_poison_turn_victory()
+	_test_revive_clears_conditions()
 	_test_consuming_healing_item()
 	_test_throw_item_magic_damage()
 	_test_flee_success_and_boss_failure()
@@ -152,6 +162,7 @@ func _test_victory_rewards_and_level_up() -> void:
 	var session := _session_for(database, PackedInt32Array([0, 1]))
 	session.role_experience[0] = 9
 	session.role_hp[0] = 20
+	session.set_role_status(0, GameSession.STATUS_PROTECT, 3)
 	var controller := PalBattleController.new()
 	controller.start_battle(database, session, 0, 0, 37)
 	# 战斗结束时倒下的队员不获得经验，但经典战后半恢复仍会让其恢复。
@@ -159,6 +170,7 @@ func _test_victory_rewards_and_level_up() -> void:
 	controller.submit_attack(0)
 	var action := controller.execute_next_action()
 	_expect(action != null and controller.battle_result == PalBattleController.BattleResult.VICTORY and controller.experience_gained == 2 and controller.cash_gained == 7, "defeated enemies contribute their DATA experience and cash exactly once")
+	_expect(session.status_rounds_for(0, GameSession.STATUS_PROTECT) == 0, "battle end clears temporary player statuses")
 	var reward := controller.claim_victory_rewards()
 	_expect(reward != null and reward.experience == 2 and reward.cash == 7 and session.cash == 7, "victory reward adds total cash to the persistent session")
 	_expect(session.role_levels[0] == 2 and session.role_experience[0] == 1 and reward.level_ups.size() == 1, "primary experience consumes the current-level threshold and reports level up")
@@ -209,19 +221,132 @@ func _test_offensive_magic_damage() -> void:
 	_expect(session.role_mp[0] == 45 and controller.enemies[0].hp == 999 - result.hits[0].damage, "offensive magic consumes MP and updates enemy HP")
 
 
-func _test_unsupported_status_magic_is_disabled() -> void:
+func _test_player_status_magic_and_silence() -> void:
 	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
 	var status_script := PalScriptEntry.new()
 	status_script.operation = 0x002d
-	status_script.operands = PackedInt32Array([6, 7, 0])
-	database.scripts = [PalScriptEntry.new(), status_script]
+	status_script.operands = PackedInt32Array([GameSession.STATUS_PROTECT, 3, 0])
+	database.scripts = [PalScriptEntry.new(), status_script, _script_entry(0x0000)]
 	_add_magic(database, 102, PalMagicDefinition.TYPE_APPLY_TO_PLAYER, 5, 0, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE, 1)
+	database.player_roles.dexterities[0] = 999
 	var session := _session_for(database, PackedInt32Array([0]))
 	session.learned_magics_by_role[0] = PackedInt32Array([102])
 	var controller := PalBattleController.new()
 	controller.start_battle(database, session, 0, 0, 31)
-	_expect(not controller.can_pending_player_use_magic(102) and not controller.submit_magic(102, 0), "status magic stays disabled until its success opcode is implemented")
-	_expect(session.role_mp[0] == 50, "rejecting an unsupported status magic does not consume MP")
+	_expect(controller.can_pending_player_use_magic(102) and controller.submit_magic(102, 0), "supported player status magic can be selected for a living ally")
+	var magic_result := controller.execute_next_action()
+	_expect(magic_result != null and not magic_result.unsupported and session.status_rounds_for(0, GameSession.STATUS_PROTECT) == 3, "002D applies the selected player status for its configured duration")
+	controller.execute_remaining_actions()
+	_expect(session.status_rounds_for(0, GameSession.STATUS_PROTECT) == 2 and controller.turn_number == 2, "classic end-turn phase decrements player status duration once")
+	session.set_role_status(0, GameSession.STATUS_SILENCE, 2)
+	_expect(not controller.can_pending_player_use_magic(102) and not controller.submit_magic(102, 0), "silence prevents selecting magic without consuming MP")
+	_expect(session.role_mp[0] == 45, "only the successful status cast consumes MP")
+
+
+func _test_player_action_statuses() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	database.player_roles.dexterities[0] = 999
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	session.set_role_status(0, GameSession.STATUS_CONFUSED, 2)
+	session.set_role_status(1, GameSession.STATUS_SLEEP, 2)
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 33)
+	_expect(not controller.is_accepting_commands() and controller.players[0].action_type == PalBattleController.ActionType.ATTACK_MATE and controller.players[1].action_type == PalBattleController.ActionType.PASS, "confusion assigns ally attack while sleep skips command selection")
+	var confused_result: PalBattleController.ActionResult
+	for result in controller.execute_remaining_actions():
+		if result.action_type == PalBattleController.ActionType.ATTACK_MATE:
+			confused_result = result
+	_expect(confused_result != null and confused_result.hits.size() == 1 and confused_result.hits[0].target_index == 1, "confused player attacks another living party member")
+
+	var dual_session := _session_for(database, PackedInt32Array([0]))
+	dual_session.set_role_status(0, GameSession.STATUS_DUAL_ATTACK, 2)
+	dual_session.set_role_status(0, GameSession.STATUS_BRAVERY, 2)
+	var dual_controller := PalBattleController.new()
+	dual_controller.start_battle(database, dual_session, 0, 0, 35)
+	dual_controller.submit_attack(0)
+	var dual_result := dual_controller.execute_next_action()
+	_expect(dual_result != null and dual_result.hits.size() == 2, "dual-attack status executes two physical hits")
+	_expect(dual_result != null and dual_result.hits.all(func(hit: PalBattleController.Hit) -> bool: return hit.critical), "bravery makes every physical hit critical")
+
+	var puppet_session := _session_for(database, PackedInt32Array([0, 1]))
+	var puppet_controller := PalBattleController.new()
+	puppet_controller.start_battle(database, puppet_session, 0, 0, 36)
+	puppet_session.role_hp[0] = 0
+	puppet_session.set_role_status(0, GameSession.STATUS_PUPPET, 2)
+	puppet_controller._prepare_command_phase()
+	_expect(puppet_controller.pending_party_index() == 1 and puppet_controller.players[0].action_type == PalBattleController.ActionType.ATTACK, "puppet status lets a down player auto-attack without requesting a command")
+	puppet_controller.submit_defend()
+	var puppet_attack_found := false
+	for result in puppet_controller.execute_remaining_actions():
+		if not result.actor_is_enemy and result.actor_index == 0 and result.action_type == PalBattleController.ActionType.ATTACK and not result.hits.is_empty():
+			puppet_attack_found = true
+	_expect(puppet_attack_found, "down puppet executes its queued physical attack while another player remains alive")
+
+
+func _test_enemy_status_magic() -> void:
+	var enemy := _enemy_definition(999, 1, 1, 0, 999, false)
+	enemy.magic = 103
+	enemy.magic_rate = 10
+	var database := _synthetic_database([enemy])
+	var status_script := _script_entry(0x002d, PackedInt32Array([GameSession.STATUS_SILENCE, 3, 0]))
+	database.scripts = [PalScriptEntry.new(), status_script, _script_entry(0x0000)]
+	_add_magic(database, 103, PalMagicDefinition.TYPE_APPLY_TO_PLAYER, 0, 0, 0, 1)
+	var session := _session_for(database, PackedInt32Array([0]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 37)
+	controller.submit_attack(0)
+	var result := controller.execute_next_action()
+	_expect(result != null and result.actor_is_enemy and not result.unsupported and session.status_rounds_for(0, GameSession.STATUS_SILENCE) == 3, "enemy status magic executes its 002D success script on the selected player")
+
+
+func _test_protect_and_haste_modifiers() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 20, 0, 0, false)])
+	var normal_session := _session_for(database, PackedInt32Array([0]))
+	var protected_session := _session_for(database, PackedInt32Array([0]))
+	protected_session.set_role_status(0, GameSession.STATUS_PROTECT, 3)
+	var normal_controller := PalBattleController.new()
+	var protected_controller := PalBattleController.new()
+	normal_controller.start_battle(database, normal_session, 0, 0, 1)
+	protected_controller.start_battle(database, protected_session, 0, 0, 1)
+	var compared_damage := false
+	for seed_value in range(1, 64):
+		normal_session.role_hp[0] = 100
+		protected_session.role_hp[0] = 100
+		normal_controller.set_random_seed(seed_value)
+		protected_controller.set_random_seed(seed_value)
+		var normal_hit := normal_controller._enemy_physical_hit(0, 0)
+		var protected_hit := protected_controller._enemy_physical_hit(0, 0)
+		if normal_hit.damage > 1:
+			compared_damage = true
+			_expect(protected_hit.damage <= maxi(1, normal_hit.damage / 2), "protect status halves enemy physical damage after defense")
+			break
+	_expect(compared_damage, "fixed seeds find a non-auto-defended hit for protect comparison")
+
+	var haste_session := _session_for(database, PackedInt32Array([0]))
+	var haste_controller := PalBattleController.new()
+	haste_controller.start_battle(database, haste_session, 0, 0, 77)
+	haste_controller.set_random_seed(91)
+	var normal_dexterity := haste_controller._player_queue_entry(0).dexterity
+	haste_session.set_role_status(0, GameSession.STATUS_HASTE, 3)
+	haste_controller.set_random_seed(91)
+	var haste_dexterity := haste_controller._player_queue_entry(0).dexterity
+	_expect(haste_dexterity > normal_dexterity * 2, "haste triples player dexterity before the queue random factor")
+
+
+func _test_enemy_target_status_magic() -> void:
+	var enemy := _enemy_definition(999, 1, 1, 0, 0, false)
+	enemy.poison_resistance = -1
+	var database := _synthetic_database([enemy])
+	database.player_roles.dexterities[0] = 999
+	database.scripts = [PalScriptEntry.new(), _script_entry(0x002e, PackedInt32Array([GameSession.STATUS_SLEEP, 3, 0])), _script_entry(0x0000)]
+	_add_magic(database, 104, PalMagicDefinition.TYPE_NORMAL, 4, 0, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE | PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 1)
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.learned_magics_by_role[0] = PackedInt32Array([104])
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 39)
+	_expect(controller.submit_magic(104, 0), "enemy-target status magic is accepted when its script graph is supported")
+	var result := controller.execute_next_action()
+	_expect(result != null and not result.unsupported and controller.enemy_status_rounds(0, GameSession.STATUS_SLEEP) == 3, "002E applies status to the selected enemy after resistance succeeds")
 
 
 func _test_enemy_offensive_magic() -> void:
@@ -260,7 +385,7 @@ func _test_enemy_attack_all_magic() -> void:
 	_expect(result != null and result.hits.all(func(hit: PalBattleController.Hit) -> bool: return hit.damage > 0), "enemy attack-all magic exposes one positive damage hit per living player")
 
 
-func _test_unsupported_enemy_status_magic() -> void:
+func _test_empty_enemy_magic_is_unsupported() -> void:
 	var enemy := _enemy_definition(999, 5, 1, 0, 999, false)
 	enemy.magic = 103
 	enemy.magic_rate = 10
@@ -272,8 +397,115 @@ func _test_unsupported_enemy_status_magic() -> void:
 	controller.start_battle(database, session, 0, 0, 47)
 	controller.submit_attack(0)
 	var result := controller.execute_next_action()
-	_expect(result != null and result.unsupported and result.action_type == PalBattleController.ActionType.MAGIC, "enemy status magic remains explicit until its battle script effects are implemented")
-	_expect(session.role_hp[0] == 100, "unsupported enemy status magic does not fabricate damage")
+	_expect(result != null and result.unsupported and result.action_type == PalBattleController.ActionType.MAGIC, "enemy magic with neither damage nor effect script remains explicitly unsupported")
+	_expect(session.role_hp[0] == 100, "empty unsupported enemy magic does not fabricate damage")
+
+
+func _test_enemy_attack_equivalent_poison() -> void:
+	var enemy := _enemy_definition(999, 1, 20, 0, 999, false)
+	enemy.attack_equivalent_item = 130
+	enemy.attack_equivalent_item_rate = 10
+	var database := _synthetic_database([enemy])
+	database.scripts = [PalScriptEntry.new(), _script_entry(0x0029, PackedInt32Array([0, 551, 0])), _script_entry(0x0000)]
+	_add_poison(database, 551, 1, 0, 0)
+	_add_item(database, 130, 1, 0, PalItemDefinition.FLAG_USABLE)
+	var session := _session_for(database, PackedInt32Array([0]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 1)
+	var applied := false
+	for seed_value in range(1, 64):
+		session.role_hp[0] = 100
+		session.cure_role_poison(0, 551)
+		controller.set_random_seed(seed_value)
+		var entry := PalBattleController.QueueEntry.new()
+		entry.is_enemy = true
+		entry.combatant_index = 0
+		var result := controller._execute_enemy_action(entry)
+		if not result.hits.is_empty() and not result.hits[0].auto_defended and session.role_has_poison(0, 551):
+			applied = true
+			break
+	_expect(applied, "enemy physical attack runs its attack-equivalent item poison script after resistance checks")
+
+
+func _test_player_poison_and_cure() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 0, 0, 0, false)])
+	database.player_roles.dexterities[0] = 999
+	database.scripts = [
+		PalScriptEntry.new(),
+		_script_entry(0x0029, PackedInt32Array([0, 551, 0])),
+		_script_entry(0x0000),
+		_script_entry(0x001b, PackedInt32Array([0, 0xfff9, 0])),
+		_script_entry(0x0000),
+		_script_entry(0x002b, PackedInt32Array([0, 551, 0])),
+		_script_entry(0x0000),
+	]
+	_add_poison(database, 551, 1, 3, 0)
+	_add_item(database, 120, 1, 0, PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_CONSUMING)
+	_add_item(database, 121, 5, 0, PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_CONSUMING)
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.set_item_count(120, 1)
+	session.set_item_count(121, 1)
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 49)
+	_expect(controller.submit_use_item(120, 0), "poison-applying battle item can be selected")
+	var apply_result := controller.execute_next_action()
+	_expect(apply_result != null and session.role_has_poison(0, 551) and apply_result.hits.size() == 1 and apply_result.hits[0].damage == 7, "0029 applies poison and immediately runs its player script")
+	var end_results := controller.execute_remaining_actions()
+	var poison_result: PalBattleController.ActionResult
+	for candidate in end_results:
+		if candidate.action_type == PalBattleController.ActionType.POISON:
+			poison_result = candidate
+	_expect(poison_result != null and poison_result.poison_tick and poison_result.hits.any(func(hit: PalBattleController.Hit) -> bool: return not hit.target_is_enemy and hit.damage == 7), "player poison script repeats during the classic end-turn phase")
+	_expect(controller.submit_use_item(121, 0), "specific antidote can be selected on the next turn")
+	controller.execute_next_action()
+	_expect(not session.role_has_poison(0, 551), "002B cures the selected player poison by object ID")
+
+	var resistant_session := _session_for(database, PackedInt32Array([0]))
+	resistant_session.role_poison_resistance[0] = 100
+	var resistant_controller := PalBattleController.new()
+	resistant_controller.start_battle(database, resistant_session, 0, 0, 51)
+	var direct_result := PalBattleController.ActionResult.new()
+	resistant_controller._run_battle_effect_script(1, true, false, 0, direct_result)
+	_expect(not resistant_session.role_has_poison(0, 551) and direct_result.hits.is_empty(), "100 percent poison resistance rejects player poison and its immediate damage")
+
+
+func _test_enemy_poison_turn_victory() -> void:
+	var enemy := _enemy_definition(14, 1, 0, 0, 0, false)
+	enemy.experience = 5
+	enemy.cash = 6
+	var database := _synthetic_database([enemy])
+	database.player_roles.dexterities[0] = 999
+	database.scripts = [PalScriptEntry.new(), _script_entry(0x0021, PackedInt32Array([0, 7, 0])), _script_entry(0x0000)]
+	_add_poison(database, 551, 1, 0, 1)
+	var session := _session_for(database, PackedInt32Array([0]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 55)
+	controller.enemies[0].poisons[551] = 1
+	controller.submit_defend()
+	var first_turn := controller.execute_remaining_actions()
+	_expect(first_turn.any(func(result: PalBattleController.ActionResult) -> bool: return result.action_type == PalBattleController.ActionType.POISON and result.hits.any(func(hit: PalBattleController.Hit) -> bool: return hit.target_is_enemy and hit.damage == 7)) and controller.enemies[0].hp == 7, "enemy poison damages its target once at first turn end")
+	controller.submit_defend()
+	controller.execute_remaining_actions()
+	_expect(controller.battle_result == PalBattleController.BattleResult.VICTORY and controller.experience_gained == 5 and controller.cash_gained == 6, "end-turn poison can defeat the last enemy and grants its rewards exactly once")
+
+
+func _test_revive_clears_conditions() -> void:
+	var database := _synthetic_database([_enemy_definition(999, 1, 0, 0, 0, false)])
+	database.scripts = [PalScriptEntry.new(), _script_entry(0x0022, PackedInt32Array([0, 5, 0])), _script_entry(0x0000)]
+	_add_poison(database, 551, 2, 0, 0)
+	_add_poison(database, 552, 4, 0, 0)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 57)
+	session.role_hp[1] = 0
+	session.add_role_poison(1, 551, 0)
+	session.add_role_poison(1, 552, 0)
+	session.role_status_rounds_by_role[1][GameSession.STATUS_SLEEP] = 3
+	var result := PalBattleController.ActionResult.new()
+	controller._run_battle_effect_script(1, false, false, 1, result)
+	_expect(session.role_hp[1] == 50 and result.hits.size() == 1 and result.hits[0].healing == 50, "0022 revives a down player by tenths of maximum HP")
+	_expect(not session.role_has_poison(1, 551) and session.role_has_poison(1, 552), "revival cures poisons through level three but preserves stronger poison")
+	_expect(session.status_rounds_for(1, GameSession.STATUS_SLEEP) == 0, "revival removes temporary player statuses")
 
 
 func _test_consuming_healing_item() -> void:
@@ -521,6 +753,24 @@ func _add_item(database: PalContentDatabase, object_id: int, use_script: int, th
 	item.script_on_throw = throw_script
 	item.flags = flags
 	database.items[object_id] = item
+
+
+func _add_poison(database: PalContentDatabase, object_id: int, poison_level: int, player_script: int, enemy_script: int) -> void:
+	while database.poisons.size() <= object_id:
+		database.poisons.append(null)
+	var poison := PoisonDefinition.PoisonData.new()
+	poison.object_id = object_id
+	poison.poison_level = poison_level
+	poison.player_script = player_script
+	poison.enemy_script = enemy_script
+	database.poisons[object_id] = poison
+
+
+func _script_entry(operation: int, operands: PackedInt32Array = PackedInt32Array([0, 0, 0])) -> PalScriptEntry:
+	var entry := PalScriptEntry.new()
+	entry.operation = operation
+	entry.operands = operands
+	return entry
 
 
 func _session_for(database: PalContentDatabase, party_roles: PackedInt32Array) -> GameSession:

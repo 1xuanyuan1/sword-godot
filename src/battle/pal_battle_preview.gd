@@ -667,6 +667,9 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 		_battle_ui.show_message(result.summary, 800)
 		await _wait_frames(6)
 		return
+	if result.action_type == PalBattleController.ActionType.POISON:
+		await _play_poison_result(result)
+		return
 	if result.action_type == PalBattleController.ActionType.DEFEND and not result.actor_is_enemy:
 		_set_player_frame(result.actor_index, 3)
 		await _wait_frames(4)
@@ -691,6 +694,39 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 		await _play_enemy_attack(result)
 	else:
 		await _play_player_attack(result)
+
+
+func _play_poison_result(result: PalBattleController.ActionResult) -> void:
+	_battle_ui.show_message(result.summary, 650)
+	for hit in result.hits:
+		if hit.target_is_enemy:
+			if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
+				continue
+			var enemy_foot := _enemy_foot_positions[hit.target_index]
+			_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 6)
+			if hit.damage > 0:
+				_battle_ui.show_number(hit.damage, Vector2i(enemy_foot.x - 9, maxi(10, enemy_foot.y - 115)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
+		else:
+			if hit.target_index < 0 or hit.target_index >= _player_nodes.size():
+				continue
+			var player_foot := _player_foot_positions[hit.target_index]
+			_set_player_frame(hit.target_index, 4 if hit.damage > 0 else _resting_player_frame(hit.target_index), player_foot, 6)
+			if hit.damage > 0:
+				_battle_ui.show_number(hit.damage, Vector2i(player_foot.x - 9, maxi(10, player_foot.y - 75)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
+			if hit.healing > 0:
+				_battle_ui.show_number(hit.healing, Vector2i(player_foot.x - 9, maxi(10, player_foot.y - 75)), PalBattleUI.UI_FRAME_NUMBER_YELLOW)
+			if hit.mp_restored > 0:
+				_battle_ui.show_number(hit.mp_restored, Vector2i(player_foot.x - 9, maxi(10, player_foot.y - 67)), PalBattleUI.UI_FRAME_NUMBER_CYAN)
+	await _wait_frames(4)
+	for hit in result.hits:
+		if hit.target_is_enemy and hit.target_index >= 0 and hit.target_index < _enemy_nodes.size():
+			if hit.defeated:
+				_enemy_nodes[hit.target_index].hide()
+			else:
+				_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 0)
+		elif not hit.target_is_enemy and hit.target_index >= 0 and hit.target_index < _player_nodes.size():
+			_set_player_frame(hit.target_index, _resting_player_frame(hit.target_index), _player_foot_positions[hit.target_index])
+	await _wait_frames(2)
 
 
 func _play_player_attack(result: PalBattleController.ActionResult) -> void:
@@ -1106,6 +1142,11 @@ func _enemy_magic_effect_positions(definition: PalMagicDefinition, result: PalBa
 			positions.append(Vector2i(240, 150))
 		PalMagicDefinition.TYPE_ATTACK_FIELD:
 			positions.append(Vector2i(160, 200))
+		PalMagicDefinition.TYPE_APPLY_TO_PLAYER:
+			if result.target_index >= 0 and result.target_index < _player_foot_positions.size():
+				positions.append(_player_foot_positions[result.target_index])
+		PalMagicDefinition.TYPE_APPLY_TO_PARTY:
+			positions = _player_foot_positions.duplicate()
 	for index in range(positions.size()):
 		positions[index] += Vector2i(definition.x_offset, definition.y_offset)
 	return positions
@@ -1197,7 +1238,7 @@ func _resting_player_frame(player_index: int) -> int:
 	if role_index < 0 or role_index >= _session.role_hp.size():
 		return 0
 	if _session.role_hp[role_index] <= 0:
-		return 2
+		return 0 if _session.status_rounds_for(role_index, GameSession.STATUS_PUPPET) > 0 else 2
 	if _session.role_hp[role_index] < mini(100, _session.role_max_hp[role_index] / 5):
 		return 1
 	return 0

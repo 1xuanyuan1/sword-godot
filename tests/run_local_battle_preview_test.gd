@@ -317,6 +317,25 @@ func _run() -> void:
 	await create_timer(0.6).timeout
 
 	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	var poison_result := PalBattleController.ActionResult.new()
+	poison_result.action_type = PalBattleController.ActionType.POISON
+	poison_result.poison_tick = true
+	poison_result.summary = "毒性发作"
+	var poison_hit := PalBattleController.Hit.new()
+	poison_hit.target_index = 0
+	poison_hit.damage = 7
+	poison_result.hits.append(poison_hit)
+	preview._session.increase_role_hp_mp(preview._controller.players[0].role_index, -7, 0)
+	preview._play_poison_result(poison_result)
+	await create_timer(0.08).timeout
+	var poison_image := viewport.get_texture().get_image()
+	var poison_path := output_directory.path_join("battle_poison_tick.png")
+	if poison_image == null or poison_image.save_png(poison_path) != OK:
+		_fail("无法写入回合末毒性结算截图")
+		return
+	await create_timer(0.5).timeout
+
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
 	preview._session.role_hp[0] = 100
 	for enemy_index in range(preview._controller.enemies.size()):
 		var enemy := preview._controller.enemies[enemy_index]
@@ -342,7 +361,7 @@ func _run() -> void:
 	if level_image == null or level_image.save_png(level_path) != OK:
 		_fail("无法写入原版布局升级数值截图")
 		return
-	print("PASS: 经典指令、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 
 

@@ -24,6 +24,17 @@ const DIR_SOUTH := 0
 const DIR_WEST := 1
 const DIR_NORTH := 2
 const DIR_EAST := 3
+const STATUS_CONFUSED := 0
+const STATUS_PARALYZED := 1
+const STATUS_SLEEP := 2
+const STATUS_SILENCE := 3
+const STATUS_PUPPET := 4
+const STATUS_BRAVERY := 5
+const STATUS_PROTECT := 6
+const STATUS_HASTE := 7
+const STATUS_DUAL_ATTACK := 8
+const STATUS_COUNT := 9
+const MAX_POISONS := 16
 
 ## 从 0 开始的当前剧情场景索引。
 var scene_index: int = 0
@@ -90,6 +101,10 @@ var equipment_effects_ready: bool = false
 var role_poison_resistance: PackedInt32Array = PackedInt32Array()
 ## 每名角色的基础五灵抗性；装备加成另存于效果槽。
 var role_elemental_resistances_by_role: Array[PackedInt32Array] = []
+## 每名角色九种经典战斗状态的剩余回合数；大于 999 的装备效果不会被解咒清除。
+var role_status_rounds_by_role: Array[PackedInt32Array] = []
+## 每名角色当前毒对象编号到递进脚本游标的映射，最多同时保存 16 种毒。
+var role_poisons_by_role: Array[Dictionary] = []
 ## 每名角色已学会的仙术对象编号。
 var learned_magics_by_role: Array[PackedInt32Array] = []
 ## SDLPal 五格队伍轨迹的世界位置。
@@ -228,6 +243,7 @@ func initialize_role_state(roles: PalPlayerRoles) -> bool:
 	if roles == null or not roles.is_valid():
 		return false
 	if role_hp.size() == PalPlayerRoles.ROLE_COUNT and role_experience.size() == PalPlayerRoles.ROLE_COUNT and role_attack_strength.size() == PalPlayerRoles.ROLE_COUNT and role_equipments_by_role.size() == PalPlayerRoles.ROLE_COUNT and learned_magics_by_role.size() == PalPlayerRoles.ROLE_COUNT:
+		_ensure_role_conditions()
 		return true
 	role_levels = roles.levels.duplicate()
 	role_max_hp = roles.max_hp.duplicate()
@@ -252,6 +268,7 @@ func initialize_role_state(roles: PalPlayerRoles) -> bool:
 	learned_magics_by_role.clear()
 	for role_index in range(PalPlayerRoles.ROLE_COUNT):
 		learned_magics_by_role.append(roles.magics_for(role_index))
+	_ensure_role_conditions()
 	return true
 
 
@@ -460,6 +477,126 @@ func elemental_resistance_for(role_index: int, element_index: int) -> int:
 	var total := (resistances[element_index] + equipment_effect_total(role_index, EQUIPMENT_EFFECT_ELEMENT_FIRST + element_index)) & 0xffff
 	return mini(100, total)
 
+
+## 返回角色指定经典状态的剩余回合数；角色或状态越界时返回 0。
+func status_rounds_for(role_index: int, status_id: int) -> int:
+	if role_index < 0 or role_index >= role_status_rounds_by_role.size() or status_id < 0 or status_id >= STATUS_COUNT:
+		return 0
+	var rounds := role_status_rounds_by_role[role_index][status_id]
+	# 装备脚本 002D 的时长保存在独立槽中，避免普通回合递减或解咒误删持久效果。
+	for statuses in equipment_statuses_by_slot:
+		var durations: PackedInt32Array = statuses.get(status_id, PackedInt32Array())
+		if role_index < durations.size():
+			rounds = maxi(rounds, durations[role_index])
+	return rounds
+
+
+## 按 SDLPal `PAL_SetPlayerStatus()` 规则设置角色状态并返回是否允许施加。
+## 负面状态不刷新已有时长；正面状态取较长时长；傀儡只允许施加给倒下角色。
+func set_role_status(role_index: int, status_id: int, rounds: int) -> bool:
+	if role_index < 0 or role_index >= role_status_rounds_by_role.size() or status_id < 0 or status_id >= STATUS_COUNT:
+		return false
+	var statuses := role_status_rounds_by_role[role_index]
+	var duration := maxi(0, rounds)
+	if status_id in [STATUS_CONFUSED, STATUS_PARALYZED, STATUS_SLEEP, STATUS_SILENCE]:
+		if statuses[status_id] == 0:
+			statuses[status_id] = duration
+		return true
+	if status_id == STATUS_PUPPET:
+		if role_index >= role_hp.size() or role_hp[role_index] > 0:
+			return false
+		statuses[status_id] = maxi(statuses[status_id], duration)
+		return true
+	if status_id in [STATUS_BRAVERY, STATUS_PROTECT, STATUS_HASTE, STATUS_DUAL_ATTACK]:
+		if role_index >= role_hp.size() or role_hp[role_index] <= 0:
+			return false
+		statuses[status_id] = maxi(statuses[status_id], duration)
+		return true
+	return false
+
+
+## 清除角色指定状态；大于 999 的装备效果按官方规则保留。
+func remove_role_status(role_index: int, status_id: int) -> void:
+	if status_rounds_for(role_index, status_id) <= 999 and role_index >= 0 and role_index < role_status_rounds_by_role.size() and status_id >= 0 and status_id < STATUS_COUNT:
+		role_status_rounds_by_role[role_index][status_id] = 0
+
+
+## 战斗结束时清除全部非装备角色状态。
+func clear_temporary_role_statuses() -> void:
+	for role_index in range(role_status_rounds_by_role.size()):
+		for status_id in range(STATUS_COUNT):
+			remove_role_status(role_index, status_id)
+
+
+## 经典回合结束时把角色所有非零状态时长减一。
+func decrement_role_statuses(role_index: int) -> void:
+	if role_index < 0 or role_index >= role_status_rounds_by_role.size():
+		return
+	for status_id in range(STATUS_COUNT):
+		if role_status_rounds_by_role[role_index][status_id] > 0:
+			role_status_rounds_by_role[role_index][status_id] -= 1
+
+
+## 给角色加入一种毒及其下一回合脚本游标；重复毒或超过 16 种时返回 `false`。
+func add_role_poison(role_index: int, poison_id: int, script_cursor: int) -> bool:
+	if role_index < 0 or role_index >= role_poisons_by_role.size() or poison_id <= 0:
+		return false
+	var poisons := role_poisons_by_role[role_index]
+	if poisons.has(poison_id) or poisons.size() >= MAX_POISONS:
+		return false
+	poisons[poison_id] = script_cursor
+	return true
+
+
+## 更新角色某种毒的递进脚本游标；未中该毒时不新增。
+func set_role_poison_cursor(role_index: int, poison_id: int, script_cursor: int) -> void:
+	if role_index >= 0 and role_index < role_poisons_by_role.size() and role_poisons_by_role[role_index].has(poison_id):
+		role_poisons_by_role[role_index][poison_id] = script_cursor
+
+
+## 清除角色指定毒并返回是否实际移除。
+func cure_role_poison(role_index: int, poison_id: int) -> bool:
+	if role_index < 0 or role_index >= role_poisons_by_role.size() or not role_poisons_by_role[role_index].has(poison_id):
+		return false
+	role_poisons_by_role[role_index].erase(poison_id)
+	return true
+
+
+## 返回角色是否中了指定对象编号的毒。
+func role_has_poison(role_index: int, poison_id: int) -> bool:
+	return role_index >= 0 and role_index < role_poisons_by_role.size() and role_poisons_by_role[role_index].has(poison_id)
+
+
+## 清除角色所有等级不高于 `max_level` 的毒，并返回实际清除数量。
+## 毒等级来自只读内容数据库；缺失定义不会被误删，99 级装备效果也不会被普通解毒清除。
+func cure_role_poisons_by_level(role_index: int, max_level: int, database: PalContentDatabase) -> int:
+	if role_index < 0 or role_index >= role_poisons_by_role.size() or database == null:
+		return 0
+	var removed := 0
+	for poison_id in role_poisons_by_role[role_index].keys():
+		var definition := database.poison_definition(int(poison_id))
+		if definition != null and definition.poison_level <= max_level:
+			role_poisons_by_role[role_index].erase(poison_id)
+			removed += 1
+	return removed
+
+
+## 返回角色是否中了等级不低于 `min_level` 的普通毒。
+## 与 SDLPal 一致，99 级装备持续效果不视为可触发“已中毒”分支的普通毒。
+func role_has_poison_by_level(role_index: int, min_level: int, database: PalContentDatabase) -> bool:
+	if role_index < 0 or role_index >= role_poisons_by_role.size() or database == null:
+		return false
+	for poison_id in role_poisons_by_role[role_index]:
+		var definition := database.poison_definition(int(poison_id))
+		if definition != null and definition.poison_level < 99 and definition.poison_level >= min_level:
+			return true
+	return false
+
+
+## 返回角色当前毒对象及脚本游标的副本，供战斗回合安全遍历。
+func poison_entries_for(role_index: int) -> Dictionary:
+	return role_poisons_by_role[role_index].duplicate() if role_index >= 0 and role_index < role_poisons_by_role.size() else {}
+
 ## 返回指定物品数量，背包中不存在时为 0。
 func item_count(item_id: int) -> int:
 	return int(inventory.get(item_id, 0))
@@ -515,6 +652,8 @@ func reset_new_game() -> void:
 	equipment_effects_ready = false
 	role_poison_resistance = PackedInt32Array()
 	role_elemental_resistances_by_role.clear()
+	role_status_rounds_by_role.clear()
+	role_poisons_by_role.clear()
 	learned_magics_by_role.clear()
 	clear_party_gestures()
 	_initialize_trail(party_world_position())
@@ -548,6 +687,16 @@ func change_sound_volume(delta: int) -> int:
 
 
 #endregion
+
+
+func _ensure_role_conditions() -> void:
+	while role_status_rounds_by_role.size() < PalPlayerRoles.ROLE_COUNT:
+		var statuses := PackedInt32Array()
+		statuses.resize(STATUS_COUNT)
+		statuses.fill(0)
+		role_status_rounds_by_role.append(statuses)
+	while role_poisons_by_role.size() < PalPlayerRoles.ROLE_COUNT:
+		role_poisons_by_role.append({})
 
 
 func _initialize_trail(world_position: Vector2i) -> void:
