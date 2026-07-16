@@ -43,6 +43,7 @@ var _background: TextureRect
 var _fighter_root: Node2D
 var _magic_root: Node2D
 var _battle_ui: PalBattleUI
+var _script_dialog_box: PalDialogBox
 var _error_label: Label
 var _enemy_team_id: int = 18
 var _battlefield_id: int = 21
@@ -92,7 +93,7 @@ func _process(delta: float) -> void:
 		return
 	if not _animation_in_progress:
 		_refresh_enemy_target_flash()
-	if _controller.battle_result != PalBattleController.BattleResult.ONGOING or _controller.is_accepting_commands() or _animation_in_progress:
+	if (_controller.battle_result != PalBattleController.BattleResult.ONGOING and not _controller.has_pending_script_results()) or _controller.is_accepting_commands() or _animation_in_progress:
 		return
 	_action_timer -= delta
 	if _action_timer <= 0.0:
@@ -197,7 +198,8 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 		_show_error("无法开始战斗：%s" % _controller.error_message)
 		return false
 	_battle_ui.configure(_database, _session, _controller, _player_foot_positions)
-	_selected_enemy_index = _controller.living_enemy_indices()[0]
+	var living_enemies := _controller.living_enemy_indices()
+	_selected_enemy_index = living_enemies[0] if not living_enemies.is_empty() else -1
 	_selected_party_index = 0
 	_selected_action = 0
 	_pending_magic_object_id = 0
@@ -206,7 +208,11 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 	_pending_item_throwable = false
 	_action_timer = 0.0
 	_animation_in_progress = false
-	_enter_command_mode()
+	if _controller.is_accepting_commands():
+		_enter_command_mode()
+	else:
+		_input_mode = InputMode.WAITING
+		_battle_ui.set_mode(PalBattleUI.Mode.WAITING)
 	return true
 
 
@@ -270,6 +276,11 @@ func _build_interface() -> void:
 	# 战斗角色按脚底 Y 值使用 100–180 的 z_index；官方菜单必须整体压在角色之上。
 	_battle_ui.z_index = 1000
 	add_child(_battle_ui)
+	_script_dialog_box = PalDialogBox.new()
+	_script_dialog_box.name = "BattleScriptDialog"
+	_script_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_script_dialog_box.z_index = 1100
+	add_child(_script_dialog_box)
 	_error_label = Label.new()
 	_error_label.position = Vector2(8, 82)
 	_error_label.size = Vector2(304, 36)
@@ -672,6 +683,8 @@ func _execute_next_action() -> void:
 	_select_first_living_enemy()
 	if _controller.battle_result == PalBattleController.BattleResult.VICTORY:
 		var reward := _controller.claim_victory_rewards()
+		if reward != null and not reward.script_events.is_empty():
+			await _play_script_events(reward.script_events)
 		_input_mode = InputMode.REWARD
 		_battle_ui.show_reward(reward)
 		if _audio_player != null:
@@ -684,6 +697,10 @@ func _execute_next_action() -> void:
 		_input_mode = InputMode.RESULT
 		_battle_ui.set_mode(PalBattleUI.Mode.RESULT)
 		_battle_ui.show_message("逃跑成功")
+	elif _controller.battle_result == PalBattleController.BattleResult.TERMINATED:
+		_input_mode = InputMode.RESULT
+		_battle_ui.set_mode(PalBattleUI.Mode.RESULT)
+		_battle_ui.show_message("敌人离开了战斗")
 	elif _controller.is_accepting_commands():
 		_enter_command_mode()
 	else:
@@ -691,12 +708,18 @@ func _execute_next_action() -> void:
 
 
 func _play_action_result(result: PalBattleController.ActionResult) -> void:
-	if result.skipped:
-		await _wait_frames(2)
-		return
+	if not result.script_events.is_empty():
+		await _play_script_events(result.script_events)
+	if not result.script_hits.is_empty():
+		await _play_script_hits(result)
 	if result.unsupported:
 		_battle_ui.show_message(result.summary, 800)
 		await _wait_frames(6)
+		return
+	if result.action_type == PalBattleController.ActionType.SCRIPT:
+		return
+	if result.skipped:
+		await _wait_frames(2)
 		return
 	if result.action_type == PalBattleController.ActionType.POISON:
 		await _play_poison_result(result)
@@ -728,6 +751,106 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 		await _play_enemy_attack(result)
 	else:
 		await _play_player_attack(result)
+
+
+func _play_script_events(events: Array[PalBattleController.ScriptEvent]) -> void:
+	for event in events:
+		match event.type:
+			PalBattleController.ScriptEventType.DIALOG_START:
+				var portrait_texture: Texture2D
+				if event.tertiary > 0:
+					portrait_texture = _texture_for_indexed(_database.load_rgm_portrait(event.tertiary), _palette)
+				_script_dialog_box.begin(event.value, event.secondary, portrait_texture)
+			PalBattleController.ScriptEventType.DIALOG_MESSAGE:
+				if not _script_dialog_box.visible:
+					_script_dialog_box.begin(event.secondary, event.tertiary)
+				var message := _database.get_message(event.value)
+				_script_dialog_box.show_message(message)
+				# 战斗脚本仍然阻塞行动；逐字显示完后额外保留约半秒供阅读。
+				await _wait_frames(maxi(18, ceili(float(message.length()) / 28.0 / BATTLE_FRAME_SECONDS) + 12))
+			PalBattleController.ScriptEventType.CLEAR_DIALOG:
+				_script_dialog_box.hide_dialog()
+			PalBattleController.ScriptEventType.SOUND:
+				if _audio_player != null:
+					_audio_player.play_sound(event.value)
+			PalBattleController.ScriptEventType.MUSIC:
+				if _audio_player != null:
+					_audio_player.play_music(event.value, event.secondary != 0, float(event.tertiary) / 1000.0)
+			PalBattleController.ScriptEventType.DELAY:
+				await _wait_frames(maxi(1, event.value * 2))
+			PalBattleController.ScriptEventType.SUMMON:
+				if _audio_player != null:
+					_audio_player.play_sound(212)
+				_sync_enemy_fighters()
+				await _wait_frames(8)
+			PalBattleController.ScriptEventType.TRANSFORM:
+				if _audio_player != null:
+					_audio_player.play_sound(47)
+				_sync_enemy_fighters()
+				await _wait_frames(8)
+			PalBattleController.ScriptEventType.ENEMY_ESCAPE:
+				await _play_enemy_escape()
+			PalBattleController.ScriptEventType.ITEM_GAIN:
+				# 随机掉落脚本随后通常带 003E/FFFF；这里只保证背包和提示时序一致。
+				pass
+	if _script_dialog_box.visible:
+		_script_dialog_box.hide_dialog()
+
+
+func _play_script_hits(result: PalBattleController.ActionResult) -> void:
+	for hit in result.script_hits:
+		if not hit.target_is_enemy or hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
+			continue
+		var foot := _enemy_foot_positions[hit.target_index]
+		_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 6)
+		if hit.damage > 0:
+			_battle_ui.show_number(hit.damage, Vector2i(foot.x - 9, maxi(10, foot.y - 115)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
+	await _wait_frames(4)
+	for hit in result.script_hits:
+		if not hit.target_is_enemy or hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
+			continue
+		if hit.defeated:
+			_enemy_nodes[hit.target_index].hide()
+		else:
+			_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 0)
+
+
+func _play_enemy_escape() -> void:
+	if _audio_player != null:
+		_audio_player.play_sound(45)
+	for _frame in range(56):
+		for enemy_index in range(_enemy_nodes.size()):
+			var node := _enemy_nodes[enemy_index]
+			if node != null and node.visible:
+				node.position.x -= 5
+		await _wait_frames(1)
+	for node in _enemy_nodes:
+		if node != null:
+			node.hide()
+
+
+func _sync_enemy_fighters() -> void:
+	for node in _enemy_nodes:
+		if node != null:
+			node.free()
+	_enemy_nodes.clear()
+	_enemy_sprites.clear()
+	_enemy_foot_positions.clear()
+	_enemy_current_frames.clear()
+	var enemy_count := mini(5, _controller.enemies.size())
+	for enemy_index in range(enemy_count):
+		var state := _controller.enemies[enemy_index]
+		var sprite := _database.load_enemy_battle_sprite(state.definition.enemy_id)
+		var foot := _database.enemy_positions.position_for(enemy_index, enemy_count)
+		foot.y += state.definition.y_position_offset
+		_enemy_sprites.append(sprite)
+		_enemy_foot_positions.append(foot)
+		_enemy_current_frames.append(0)
+		var node := _add_fighter(sprite, foot, "Enemy%d" % enemy_index)
+		_enemy_nodes.append(node)
+		if node != null and not state.is_alive():
+			node.hide()
+	_last_enemy_flash_phase = -1
 
 
 func _play_poison_result(result: PalBattleController.ActionResult) -> void:

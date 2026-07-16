@@ -399,6 +399,26 @@ keywords:
   - `docs/PROJECT_STRUCTURE.md`
   - `docs/DEVELOPMENT_WORKFLOW.md`
 
+---
+
+### [FT-038] [feat] 接通敌人回合、就绪与战后脚本上下文
+
+- **关联需求**: M4 经典战斗
+- **关联 TODO**: TD-003、TD-005（阶段性）
+- **功能描述**: 为每个单场敌人复制 `script_on_turn_start`、`script_on_ready`、`script_on_battle_end` 游标和可变仙术字段，新增专用敌人战斗脚本解释路径；在玩家选指令前、敌人行动前和胜利结算时按 SDLPal 顺序执行，支持流程/概率分支、战斗内上下/下方/居中对白、音效与音乐、减半体力、HP 百分比分支、动态换仙术、立即击倒、敌人逃跑、队伍成员/重复敌人条件、召唤、分裂、变身及随机掉落。逻辑副作用通过类型化 `ScriptEvent` 交给战斗画面，复用既有对话框、音频和 Sprite 阵列播放；敌人脚本终止使用独立结果，不误走玩家逃跑或胜利奖励。
+- **验证情况**: 274 项基础合成检查、22 项装备系统检查、123 项经典战斗逻辑、10 项剧情战斗桥接和早期主线回归通过；真实资源确认 27/22/10 个敌人回合/就绪/战后入口的可达操作码全部受支持，敌队 22 对白、敌队 25 脚本逃跑和敌队 46 双掉落可执行，60/85 个敌术与 68/49 个使用/投掷物品脚本继续可加载；OpenGL 新增敌队 22 战斗对白截图，原有合击、保护、仙术、物品、毒性和奖励截图全部通过。
+- **涉及文件**:
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

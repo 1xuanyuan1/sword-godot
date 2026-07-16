@@ -13,6 +13,12 @@ var _failures: Array[String] = []
 func _init() -> void:
 	_test_random_reproducibility()
 	_test_damage_formula()
+	_test_enemy_turn_start_script()
+	_test_enemy_ready_script_and_hp_branch()
+	_test_enemy_summon_script()
+	_test_enemy_division_and_transform_script()
+	_test_enemy_escape_script()
+	_test_enemy_post_battle_drop_script()
 	_test_defend_and_dual_move_queue()
 	_test_minimum_damage()
 	_test_dead_party_member_revives_for_battle()
@@ -81,6 +87,135 @@ func _test_damage_formula() -> void:
 	_expect(PalBattleController.calculate_physical_damage(100, 50, 3) == 40, "physical resistance divides base damage")
 	var wrapped_enemy := _enemy_definition(40, 0, 0, 0xfffa, 0, false)
 	_expect(PalBattleController.new()._effective_enemy_defense(wrapped_enemy) == 18, "enemy defense preserves SDLPal WORD wraparound after the level bonus")
+
+
+func _test_enemy_turn_start_script() -> void:
+	var definition := _enemy_definition(100, 1, 20, 5, 5, false)
+	var database := _synthetic_database([definition])
+	database.scripts = [
+		PalScriptEntry.new(),
+		_script_entry(0x0067, PackedInt32Array([77, 3, 0])),
+		_script_entry(0x0047, PackedInt32Array([12, 0, 0])),
+		_script_entry(0xffff, PackedInt32Array([0, 0, 0])),
+		_script_entry(0x0001),
+	]
+	database.enemy_objects[1].script_on_turn_start = 1
+	var controller := PalBattleController.new()
+	_expect(controller.start_battle(database, _session_for(database, PackedInt32Array([0])), 0, 0, 101), "battle starts while a pre-battle enemy script is pending")
+	_expect(not controller.is_accepting_commands() and controller.has_pending_script_results(), "turn-start script blocks command entry until its visible events are consumed")
+	_expect(controller.enemies[0].magic == 77 and controller.enemies[0].magic_rate == 3, "0067 changes the current enemy magic without mutating static DATA")
+	var result := controller.execute_next_action()
+	_expect(result != null and result.action_type == PalBattleController.ActionType.SCRIPT and result.script_events.size() == 2, "turn-start sound and dialogue are returned as typed battle script events")
+	_expect(controller.enemies[0].script_on_turn_start == 5 and controller.is_accepting_commands(), "0001 advances the persistent turn script cursor before command selection resumes")
+
+
+func _test_enemy_ready_script_and_hp_branch() -> void:
+	var definition := _enemy_definition(100, 1, 20, 5, 999, false)
+	definition.magic = 66
+	definition.magic_rate = 10
+	var database := _synthetic_database([definition])
+	database.scripts = [
+		PalScriptEntry.new(),
+		_script_entry(0x005b, PackedInt32Array([1000, 0, 0])),
+		_script_entry(0x0064, PackedInt32Array([40, 5, 0])),
+		_script_entry(0x0067, PackedInt32Array([77, 0, 0])),
+		_script_entry(0x0001),
+		_script_entry(0x0067, PackedInt32Array([88, 4, 0])),
+		_script_entry(0x0001),
+	]
+	database.enemy_objects[1].script_on_ready = 1
+	var controller := PalBattleController.new()
+	controller.start_battle(database, _session_for(database, PackedInt32Array([0])), 0, 0, 102)
+	controller.submit_defend()
+	var result := controller.execute_next_action()
+	_expect(result != null and not result.script_hits.is_empty() and result.script_hits[0].damage == 51 and controller.enemies[0].hp == 49, "005B halves current enemy HP using the original rounded rule")
+	_expect(controller.enemies[0].magic == 88 and controller.enemies[0].magic_rate == 4, "0064 branches by base max-HP percentage before the enemy acts")
+	_expect(controller.enemies[0].script_on_ready == 7, "ready scripts persist the cursor returned by 0001")
+
+
+func _test_enemy_summon_script() -> void:
+	var summoner := _enemy_definition(200, 1, 20, 5, 999, false)
+	var summoned := _enemy_definition(30, 1, 10, 2, 1, false)
+	var database := _synthetic_database([summoner])
+	summoned.enemy_id = 1
+	database.enemies.append(summoned)
+	var summoned_object := PalEnemyObjectDefinition.new()
+	summoned_object.object_id = 2
+	summoned_object.enemy_id = 1
+	database.enemy_objects.append(summoned_object)
+	database.scripts = [
+		PalScriptEntry.new(),
+		_script_entry(0x009e, PackedInt32Array([2, 2, 0])),
+		_script_entry(0x0067, PackedInt32Array([0xffff, 0, 0])),
+		_script_entry(0x0001),
+	]
+	database.enemy_objects[1].script_on_ready = 1
+	var controller := PalBattleController.new()
+	controller.start_battle(database, _session_for(database, PackedInt32Array([0])), 0, 0, 103)
+	controller.submit_defend()
+	var result := controller.execute_next_action()
+	_expect(controller.enemies.size() == 3 and controller.enemies[1].object_id == 2 and controller.enemies[2].object_id == 2, "009E fills free enemy slots with the requested summoned object")
+	_expect(result != null and result.script_events.any(func(event: PalBattleController.ScriptEvent) -> bool: return event.type == PalBattleController.ScriptEventType.SUMMON), "summoning produces a visual synchronization event")
+
+
+func _test_enemy_division_and_transform_script() -> void:
+	var source := _enemy_definition(90, 1, 20, 5, 999, false)
+	var transformed := _enemy_definition(300, 2, 25, 8, 2, false)
+	var database := _synthetic_database([source])
+	transformed.enemy_id = 1
+	database.enemies.append(transformed)
+	var transformed_object := PalEnemyObjectDefinition.new()
+	transformed_object.object_id = 2
+	transformed_object.enemy_id = 1
+	database.enemy_objects.append(transformed_object)
+	database.scripts = [
+		PalScriptEntry.new(),
+		_script_entry(0x009c, PackedInt32Array([2, 0, 0])),
+		_script_entry(0x009f, PackedInt32Array([2, 0, 0])),
+		_script_entry(0x0067, PackedInt32Array([0xffff, 0, 0])),
+		_script_entry(0x0001),
+	]
+	database.enemy_objects[1].script_on_ready = 1
+	var controller := PalBattleController.new()
+	controller.start_battle(database, _session_for(database, PackedInt32Array([0])), 0, 0, 106)
+	controller.enemies[0].status_rounds[GameSession.STATUS_PROTECT] = 3
+	controller.submit_defend()
+	var result := controller.execute_next_action()
+	_expect(controller.enemies.size() == 3 and controller.enemies.all(func(enemy: PalBattleController.EnemyState) -> bool: return enemy.hp == 30), "009C divides the sole enemy HP evenly among the original and two clones")
+	_expect(controller.enemies[0].object_id == 2 and controller.enemies[0].max_hp == 300, "009F replaces the acting enemy definition while preserving its current HP")
+	_expect(controller.enemies[0].status_rounds[GameSession.STATUS_PROTECT] == 3, "enemy transformation preserves existing battle statuses")
+	_expect(result != null and result.script_events.size() == 2, "division and transformation each request one fighter-layout synchronization")
+
+
+func _test_enemy_escape_script() -> void:
+	var database := _synthetic_database([_enemy_definition(100, 1, 20, 5, 5, false)])
+	database.scripts = [PalScriptEntry.new(), _script_entry(0x0069), _script_entry(0x0000)]
+	database.enemy_objects[1].script_on_turn_start = 1
+	var controller := PalBattleController.new()
+	_expect(controller.start_battle(database, _session_for(database, PackedInt32Array([0])), 0, 0, 104), "script-terminated battles still initialize so their final animation can play")
+	var result := controller.execute_next_action()
+	_expect(controller.battle_result == PalBattleController.BattleResult.TERMINATED, "0069 terminates battle without awarding victory rewards or using the player-flee branch")
+	_expect(result != null and result.script_events.any(func(event: PalBattleController.ScriptEvent) -> bool: return event.type == PalBattleController.ScriptEventType.ENEMY_ESCAPE), "enemy escape exposes its dedicated animation event")
+
+
+func _test_enemy_post_battle_drop_script() -> void:
+	var database := _synthetic_database([_enemy_definition(1, 1, 1, 0, 0, false)])
+	database.scripts = [
+		PalScriptEntry.new(),
+		_script_entry(0x001f, PackedInt32Array([99, 0, 0])),
+		_script_entry(0x003e),
+		_script_entry(0xffff, PackedInt32Array([0, 0, 0])),
+		_script_entry(0x0000),
+	]
+	database.enemy_objects[1].script_on_battle_end = 1
+	var session := _session_for(database, PackedInt32Array([0]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 105)
+	controller.submit_attack(0)
+	controller.execute_remaining_actions()
+	var reward := controller.claim_victory_rewards()
+	_expect(reward != null and session.item_count(99) == 1, "001F gives one item when the post-battle script amount is zero")
+	_expect(reward != null and reward.script_events.size() == 3, "post-battle item, centered-dialog start and message events remain available to the battle UI")
 
 
 func _test_defend_and_dual_move_queue() -> void:

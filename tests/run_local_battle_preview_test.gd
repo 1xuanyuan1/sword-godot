@@ -416,7 +416,34 @@ func _run() -> void:
 	if level_image == null or level_image.save_png(level_path) != OK:
 		_fail("无法写入原版布局升级数值截图")
 		return
-	print("PASS: 经典指令、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
+
+	preview.load_battle(22, 21, PackedInt32Array([0, 1]))
+	preview.set_process(false)
+	var battle_script_result := preview._controller.execute_next_action()
+	if battle_script_result == null or battle_script_result.action_type != PalBattleController.ActionType.SCRIPT:
+		_fail("敌队 22 没有在玩家选指令前返回真实回合开始脚本")
+		return
+	var dialog_start: PalBattleController.ScriptEvent
+	var dialog_message: PalBattleController.ScriptEvent
+	for script_event in battle_script_result.script_events:
+		if dialog_start == null and script_event.type == PalBattleController.ScriptEventType.DIALOG_START:
+			dialog_start = script_event
+		elif dialog_message == null and script_event.type == PalBattleController.ScriptEventType.DIALOG_MESSAGE:
+			dialog_message = script_event
+	if dialog_start == null or dialog_message == null:
+		_fail("敌队 22 的真实战斗脚本没有解析出对白位置和 M.MSG 消息")
+		return
+	var portrait_texture: Texture2D = preview._texture_for_indexed(preview._database.load_rgm_portrait(dialog_start.tertiary), preview._palette) if dialog_start.tertiary > 0 else null
+	preview._script_dialog_box.begin(dialog_start.value, dialog_start.secondary, portrait_texture)
+	preview._script_dialog_box.show_message(preview._database.get_message(dialog_message.value))
+	await process_frame
+	var script_dialog_image := viewport.get_texture().get_image()
+	var script_dialog_path := output_directory.path_join("battle_enemy_script_dialog.png")
+	if script_dialog_image == null or script_dialog_image.save_png(script_dialog_path) != OK:
+		_fail("无法写入敌人回合脚本对白截图")
+		return
+	preview._script_dialog_box.hide_dialog()
+	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 
 
