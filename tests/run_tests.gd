@@ -322,7 +322,7 @@ func _test_music_reference_collection() -> void:
 	for values in [[0x0043, 31, 0, 0], [0x0045, 37, 0, 0], [0x0043, 31, 1, 0], [0x0000, 0, 0, 0]]:
 		for value in values:
 			PalBinary.append_u16_le(bytes, value)
-	_expect(PalDataImporter._music_track_numbers(bytes) == [4, 5, 31, 37], "RIX import collects unique scene/battle tracks plus preview music")
+	_expect(PalDataImporter._music_track_numbers(bytes) == [2, 3, 4, 5, 31, 37], "RIX import collects victory, scene, battle and preview music")
 
 
 func _test_content_structures() -> void:
@@ -641,6 +641,20 @@ func _test_battle_content_structures() -> void:
 	var positions := PalBattlefield.EnemyPositions.from_bytes(position_bytes)
 	_expect(positions.is_valid() and positions.position_for(2, 3) == Vector2i(12, 112), "enemy position matrix uses enemy index and count minus one")
 	_expect(positions.position_for(5, 3) == Vector2i.ZERO and not PalBattlefield.EnemyPositions.from_bytes(PackedByteArray()).is_valid(), "enemy position matrix rejects invalid ranges and lengths")
+
+	var level_magic_bytes := PackedByteArray()
+	level_magic_bytes.resize(PalLevelProgression.MAGIC_RECORD_SIZE)
+	level_magic_bytes.encode_u16(0, 2)
+	level_magic_bytes.encode_u16(2, 100)
+	level_magic_bytes.encode_u16(4, 3)
+	level_magic_bytes.encode_u16(6, 101)
+	var level_experience_bytes := PackedByteArray()
+	level_experience_bytes.resize((PalLevelProgression.MAX_LEVEL + 1) * 2)
+	for level in range(PalLevelProgression.MAX_LEVEL + 1):
+		level_experience_bytes.encode_u16(level * 2, 10 + level)
+	var progression := PalLevelProgression.from_bytes(level_magic_bytes, level_experience_bytes)
+	_expect(progression.is_valid() and progression.experience_for_level(2) == 12, "DATA level progression parses per-level experience thresholds")
+	_expect(progression.magic_objects_for_level(0, 2) == PackedInt32Array([100]) and progression.magic_objects_for_level(1, 2).is_empty(), "DATA level progression filters learned magic by role and required level")
 
 
 func _test_scene_draw_item_anchors() -> void:

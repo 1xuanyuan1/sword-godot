@@ -35,6 +35,8 @@ var enemy_teams: Array[PalEnemyTeam] = []
 var battlefields: Array[PalBattlefield] = []
 ## `DATA.MKF #4` 中的仙术特效、类型、消耗和基础数值。
 var magics: Array[PalMagicDefinition] = []
+## `DATA.MKF #6/#14` 中的升级经验和按角色习得仙术规则。
+var level_progression: PalLevelProgression
 ## `DATA.MKF #13` 中按敌人数排列的五槽站位矩阵。
 var enemy_positions: PalBattlefield.EnemyPositions
 ## 角色肖像、场景 Sprite、名字和步态字段。
@@ -76,6 +78,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	enemy_teams.clear()
 	battlefields.clear()
 	magics.clear()
+	level_progression = null
 	enemy_positions = null
 	player_roles = null
 	words.clear()
@@ -102,7 +105,9 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	var enemy_team_bytes := _read_file(root_path.path_join("data/02.bin"))
 	var magic_bytes := _read_file(root_path.path_join("data/04.bin"))
 	var battlefield_bytes := _read_file(root_path.path_join("data/05.bin"))
+	var level_magic_bytes := _read_file(root_path.path_join("data/06.bin"))
 	var enemy_position_bytes := _read_file(root_path.path_join("data/13.bin"))
+	var level_experience_bytes := _read_file(root_path.path_join("data/14.bin"))
 	if not error_message.is_empty():
 		return false
 	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0 or enemy_bytes.size() % PalEnemyDefinition.BYTE_SIZE != 0 or enemy_team_bytes.size() % PalEnemyTeam.BYTE_SIZE != 0 or magic_bytes.size() % PalMagicDefinition.BYTE_SIZE != 0 or battlefield_bytes.size() % PalBattlefield.BYTE_SIZE != 0:
@@ -129,6 +134,10 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		magics.append(PalMagicDefinition.from_bytes(magic_bytes, offset, magics.size()))
 	for offset in range(0, battlefield_bytes.size(), PalBattlefield.BYTE_SIZE):
 		battlefields.append(PalBattlefield.from_bytes(battlefield_bytes, offset, battlefields.size()))
+	level_progression = PalLevelProgression.from_bytes(level_magic_bytes, level_experience_bytes)
+	if not level_progression.is_valid():
+		error_message = level_progression.error_message
+		return false
 	enemy_positions = PalBattlefield.EnemyPositions.from_bytes(enemy_position_bytes)
 	if not enemy_positions.is_valid():
 		error_message = enemy_positions.error_message

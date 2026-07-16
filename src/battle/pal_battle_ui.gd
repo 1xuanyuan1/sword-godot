@@ -12,6 +12,7 @@ enum Mode {
 	ENEMY_TARGET,
 	PLAYER_TARGET,
 	MAGIC_LIST,
+	REWARD,
 	RESULT,
 }
 
@@ -72,6 +73,8 @@ var _magic_entries: Array[Dictionary] = []
 var _floating_numbers: Array[Dictionary] = []
 var _message: String = ""
 var _message_until: int = 0
+var _reward: PalBattleController.RewardResult
+var _reward_page: int = 0
 
 
 func _ready() -> void:
@@ -184,6 +187,26 @@ func clear_message() -> void:
 	queue_redraw()
 
 
+## 打开经典战后结算页；第 0 页为总经验/金钱，之后依次显示升级和习得仙术。
+## 只读取已由控制器结算的报告，不会再次修改 `GameSession`。
+func show_reward(reward: PalBattleController.RewardResult) -> void:
+	_reward = reward
+	_reward_page = 0
+	mode = Mode.REWARD
+	clear_message()
+	queue_redraw()
+
+
+## 推进一个战后结算页面；已越过最后一页时返回 `true`，调用方可以退出战斗。
+func advance_reward_page() -> bool:
+	if _reward == null:
+		return true
+	_reward_page += 1
+	var page_count := 1 + _reward.level_ups.size() + _reward.learned_magics.size()
+	queue_redraw()
+	return _reward_page >= page_count
+
+
 ## 返回官方 UI Sprite、点阵字和调色板是否全部成功载入。
 func has_classic_resources() -> bool:
 	return _ui_sprite != null and _ui_sprite.is_valid() and _ui_sprite.frame_count() > UI_FRAME_MAGIC_CURSOR and _font_texture != null and not _font_glyphs.is_empty()
@@ -212,6 +235,8 @@ func _draw() -> void:
 		_draw_action_icons()
 	elif mode == Mode.MAGIC_LIST:
 		_draw_magic_menu()
+	elif mode == Mode.REWARD:
+		_draw_reward_page()
 	_draw_floating_numbers()
 	if not _message.is_empty():
 		_draw_message_box(_message)
@@ -284,6 +309,70 @@ func _draw_magic_menu() -> void:
 			_draw_ui_frame(UI_FRAME_MAGIC_CURSOR, position + Vector2i(25, 10))
 	if _magic_entries.is_empty():
 		_draw_pal_text("没有可用仙术", Vector2i(35, 54), _palette_color(COLOR_MENU_INACTIVE), true)
+
+
+func _draw_reward_page() -> void:
+	if _reward == null:
+		return
+	if _reward_page == 0:
+		_draw_reward_summary()
+		return
+	var detail_index := _reward_page - 1
+	if detail_index < _reward.level_ups.size():
+		_draw_level_up(_reward.level_ups[detail_index])
+		return
+	detail_index -= _reward.level_ups.size()
+	if detail_index >= 0 and detail_index < _reward.learned_magics.size():
+		_draw_learned_magic(_reward.learned_magics[detail_index])
+
+
+func _draw_reward_summary() -> void:
+	var experience_label := database.get_word(30)
+	var label_width := _pal_text_width(experience_label)
+	var box_length := maxi(6, ceili((label_width + 54) / 16.0))
+	var box_x := 160 - (box_length * 16 + 16) / 2
+	_draw_single_line_box(Vector2i(box_x, 60), box_length, 0)
+	_draw_pal_text(experience_label, Vector2i(box_x + 10, 70), _palette_color(COLOR_MENU_NORMAL), true)
+	_draw_number(_reward.experience, 5, Vector2i(box_x + box_length * 16 - 34, 74), UI_FRAME_NUMBER_YELLOW)
+	_draw_single_line_box(Vector2i(65, 105), 10, 0)
+	_draw_pal_text(database.get_word(9), Vector2i(77, 115), _palette_color(COLOR_MENU_NORMAL), true)
+	_draw_number(_reward.cash, 5, Vector2i(132, 119), UI_FRAME_NUMBER_YELLOW)
+	_draw_pal_text(database.get_word(10), Vector2i(197, 115), _palette_color(COLOR_MENU_NORMAL), true)
+
+
+func _draw_level_up(level_up: PalBattleController.LevelUpResult) -> void:
+	var role_name := database.get_word(database.player_roles.name_word_for(level_up.role_index))
+	var title := role_name + database.get_word(48) + database.get_word(32)
+	_draw_single_line_box(Vector2i(50, 0), 13, 0)
+	_draw_pal_text(title, Vector2i(160 - _pal_text_width(title) / 2, 10), _palette_color(COLOR_MENU_NORMAL), true)
+	_draw_classic_box(Vector2i(50, 32), 7, 12, 1)
+	var labels := [48, 49, 50, 51, 52, 53, 54, 55]
+	for stat_index in range(labels.size()):
+		var y := 44 + stat_index * 18
+		_draw_pal_text(database.get_word(labels[stat_index]), Vector2i(62, y), _palette_color(0xbb), true)
+		_draw_ui_frame(47, Vector2i(174, y + 4))
+		if stat_index in [PalBattleController.REWARD_STAT_MAX_HP, PalBattleController.REWARD_STAT_MAX_MP]:
+			var old_current := level_up.old_hp if stat_index == PalBattleController.REWARD_STAT_MAX_HP else level_up.old_mp
+			var new_current := level_up.new_hp if stat_index == PalBattleController.REWARD_STAT_MAX_HP else level_up.new_mp
+			_draw_number(old_current, 4, Vector2i(112, y + 3), UI_FRAME_NUMBER_YELLOW)
+			_draw_ui_frame(UI_FRAME_SLASH, Vector2i(134, y + 5))
+			_draw_number(level_up.old_stats[stat_index], 4, Vector2i(142, y + 7), UI_FRAME_NUMBER_BLUE)
+			_draw_number(new_current, 4, Vector2i(194, y + 3), UI_FRAME_NUMBER_YELLOW)
+			_draw_ui_frame(UI_FRAME_SLASH, Vector2i(216, y + 5))
+			_draw_number(level_up.new_stats[stat_index], 4, Vector2i(226, y + 7), UI_FRAME_NUMBER_BLUE)
+		else:
+			_draw_number(level_up.old_stats[stat_index], 4, Vector2i(132, y + 3), UI_FRAME_NUMBER_YELLOW)
+			_draw_number(level_up.new_stats[stat_index], 4, Vector2i(212, y + 3), UI_FRAME_NUMBER_YELLOW)
+
+
+func _draw_learned_magic(learned: PalBattleController.LearnedMagicResult) -> void:
+	var role_name := database.get_word(database.player_roles.name_word_for(learned.role_index))
+	var message := role_name + database.get_word(33) + database.get_word(learned.magic_object_id)
+	var width := _pal_text_width(message)
+	var box_length := maxi(8, ceili(width / 16.0))
+	var box_x := 160 - (box_length * 16 + 16) / 2
+	_draw_single_line_box(Vector2i(box_x, 105), box_length, 0)
+	_draw_pal_text(message, Vector2i(box_x + 10, 115), _palette_color(COLOR_MENU_NORMAL), true)
 
 
 func _draw_floating_numbers() -> void:

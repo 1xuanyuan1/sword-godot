@@ -13,6 +13,9 @@ func _init() -> void:
 	if database.enemies.size() != 154 or database.enemy_teams.size() != 380 or database.battlefields.size() != 65 or not database.enemy_positions.is_valid():
 		_fail("战斗 DATA 结构数量不符：敌人 %d、敌队 %d、战场 %d" % [database.enemies.size(), database.enemy_teams.size(), database.battlefields.size()])
 		return
+	if database.level_progression == null or database.level_progression.experience_for_level(1) != 15 or 349 not in database.level_progression.magic_objects_for_level(0, 7):
+		_fail("升级经验或李逍遥 7 级习得仙术规则与本地 DATA.MKF 不符")
+		return
 	var referenced_teams: Dictionary = {}
 	var referenced_battlefields: Dictionary = {}
 	var out_of_range_teams := PackedInt32Array()
@@ -60,7 +63,7 @@ func _init() -> void:
 	if first_team == null or first_team.active_object_ids() != PackedInt32Array([495, 495]) or not database.load_battle_background(21).is_valid():
 		_fail("前期首场强制战斗没有解析为战场 21、敌队 18 的两个敌人")
 		return
-	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色及 %d 组 FIRE 仙术特效均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size()])
+	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、升级规则及 %d 组 FIRE 仙术特效均可加载；首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size()])
 	quit(0)
 
 

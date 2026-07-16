@@ -1,6 +1,6 @@
 # 经典战斗系统
 
-Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `ENABLE_REVISIED_BATTLE` 蓄力模式。静态资源、普攻回合、首批玩家仙术和 `ScriptVM 004A/0007` 剧情桥接已经接通；敌人法术、物品、毒与状态及奖励结算仍在开发。
+Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `ENABLE_REVISIED_BATTLE` 蓄力模式。静态资源、普攻回合、首批玩家仙术、主经验成长和 `ScriptVM 004A/0007` 剧情桥接已经接通；敌人法术、物品、毒与状态仍在开发。
 
 ## 原版资源映射
 
@@ -11,8 +11,10 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 | 角色属性和战斗 Sprite 编号 | `DATA.MKF #3` | 保留为 `content/data/03.bin`，由 `PalPlayerRoles` 解析 |
 | 仙术特效、类型、MP 和基础伤害 | `DATA.MKF #4` | 保留为 `content/data/04.bin`，由 `PalMagicDefinition` 解析 |
 | 战场波动和五灵修正 | `DATA.MKF #5` | 保留为 `content/data/05.bin`，由 `PalBattlefield` 解析 |
+| 按角色升级习得仙术 | `DATA.MKF #6` | 保留为 `content/data/06.bin`，由 `PalLevelProgression` 解析 |
 | 状态框、四向图标和数字 | `DATA.MKF #9` | 由 `PalBattleUI` 运行时解码 |
 | 五种敌人数站位 | `DATA.MKF #13` | 保留为 `content/data/13.bin`，由敌人位置矩阵解析 |
+| 每级主经验阈值 | `DATA.MKF #14` | 保留为 `content/data/14.bin`，由 `PalLevelProgression` 解析 |
 | 敌人对象到属性索引 | `SSS.MKF #2` | `content/core/objects_dos.bin` |
 | 仙术对象到属性与脚本 | `SSS.MKF #2` | `PalMagicObjectDefinition` 按同一 OBJECT 项解释 |
 | 敌人战斗 Sprite | `ABC.MKF` | `content/battle/sprites/enemies/*.spr` |
@@ -91,6 +93,21 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 固定随机种子使用移植自 `util.c` 的 32 位 LCG。这样测试可以精确复现行动顺序和伤害，同时正式运行仍会使用当前时间生成种子。
 
+## 战后奖励与成长
+
+敌人 HP 第一次降到零时，控制器按 `fight.c::PAL_BattlePostActionCheck()` 累计其经验和金钱；胜利后 `claim_victory_rewards()` 只允许领取一次，重复确认不会重复加钱或升级。结算顺序对齐 `battle.c::PAL_BattleWon()` 的主成长路径：
+
+1. 金钱加入 `GameSession.cash`；
+2. 战斗结束时仍存活的队员获得本场全部主经验，倒下角色跳过；
+3. 按 `DATA.MKF #14` 当前等级阈值逐级扣除经验；
+4. 每升一级随机增加最大 HP `10–17`、最大 MP `8–13`、攻击/灵力 `4–5`、防御/身法 `2–3`、逃跑值 `2`，并把 HP/MP 回满；
+5. 按 `DATA.MKF #6` 学会当前等级已满足且尚未拥有的仙术；
+6. 全队按经典模式恢复“当前值到上限差额”的一半，倒下角色也会因此恢复。
+
+普通胜利播放 RIX 3，Boss 胜利播放 RIX 2。奖励总览使用原版“获得经验值／打败敌人得文钱”双窗口；升级页显示等级、体力、真气、武术、灵力、防御、身法和吉运的前后值。真实首战敌队 18 固定结算为 52 经验、96 文，李逍遥从 1 级升到 2 级。
+
+当前报告已保留每个敌人的 `script_on_battle_end` 入口，但不会错误地交给地图事件 VM。原版隐藏经验（按本场攻击、防御、施法等次数分配的七类成长）以及使用敌人索引的战斗上下文脚本，待专用战斗脚本上下文完成后接入。
+
 ## 剧情战斗桥接
 
 `004A` 把战场编号写入 `GameSession.battlefield_number`。执行 `0007` 时，VM 保存战败和逃跑分支，进入 `waiting_for_battle` 并向 `MapExplorer` 请求敌队、战场和 Boss 标志。探索输入、菜单、接触事件和 10 FPS 自动脚本在等待期间全部暂停。
@@ -108,7 +125,7 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
 
 - 敌人法术、召唤、合击、使用/投掷物品、逃跑和自动战斗；
 - 中毒、异常状态、装备加成、保护与替队员承伤；
-- 经验、金钱、升级、掉落和战后脚本；
+- 隐藏经验成长、偷取/掉落及敌人战后脚本；
 - 状态类仙术、完整死亡与逃跑动画，以及普攻动作音效；
 - 逃跑、自动战斗和战斗中脚本事件的完整执行。
 
@@ -145,4 +162,4 @@ Godot 版以固定 SDLPal 的经典回合制路径为行为基准，不启用 `E
   --script res://tests/run_local_battle_preview_test.gd
 ```
 
-截图只写入 `generated/pal/visual_tests/`。当前真实资源验收覆盖 154 条敌人属性、380 个敌队、65 个战场定义、43 个脚本引用战场、六名角色战斗 Sprite、55 组 FIRE 仙术 Sprite，以及敌队 18 / 战场 21 的气疗术、风咒、普攻画面和自动普攻到胜负。
+截图只写入 `generated/pal/visual_tests/`。当前真实资源验收覆盖 154 条敌人属性、380 个敌队、65 个战场定义、43 个脚本引用战场、六名角色战斗 Sprite、55 组 FIRE 仙术 Sprite，以及敌队 18 / 战场 21 的气疗术、风咒、普攻、52 经验/96 文奖励页和李逍遥升级页。

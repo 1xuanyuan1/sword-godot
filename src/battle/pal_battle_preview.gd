@@ -15,6 +15,7 @@ enum InputMode {
 	PLAYER_TARGET,
 	MAGIC_LIST,
 	WAITING,
+	REWARD,
 	RESULT,
 }
 
@@ -40,6 +41,7 @@ var _battle_ui: PalBattleUI
 var _error_label: Label
 var _enemy_team_id: int = 18
 var _battlefield_id: int = 21
+var _is_boss: bool = false
 var _party_roles: PackedInt32Array = PackedInt32Array([0, 1])
 var _enemy_nodes: Array[Sprite2D] = []
 var _player_nodes: Array[Sprite2D] = []
@@ -67,6 +69,9 @@ func _ready() -> void:
 	if not lab_mode:
 		hide()
 		return
+	_audio_player = PalAudioPlayer.new()
+	_audio_player.name = "BattleLabAudio"
+	add_child(_audio_player)
 	_database = PalContentDatabase.new()
 	if not _database.load_generated():
 		_show_error("战斗资源不可用：%s" % _database.error_message)
@@ -97,16 +102,20 @@ func load_battle(enemy_team_id: int, battlefield_id: int, party_roles: PackedInt
 		for role_index in preview_session.party_roles:
 			preview_session.role_hp[role_index] = preview_session.role_max_hp[role_index]
 			preview_session.role_mp[role_index] = preview_session.role_max_mp[role_index]
-	return _start_battle_view(_database, preview_session, enemy_team_id, battlefield_id)
+	var started := _start_battle_view(_database, preview_session, enemy_team_id, battlefield_id, false)
+	if started and lab_mode and _audio_player != null:
+		_audio_player.configure(_database, _session)
+	return started
 
 
-## 使用探索场景现有数据库和会话打开剧情战斗；玩家 HP 会由控制器直接写回该会话。
+## 使用探索场景现有数据库和会话打开剧情战斗；玩家 HP 和胜利奖励会写回该会话。
+## `is_boss` 决定胜利音乐，并继续表示该战斗不允许逃跑。
 ## 失败时返回 `false` 并显示具体原因，不自行伪造胜负。
-func begin_battle(content_database: PalContentDatabase, game_session: GameSession, enemy_team_id: int, battlefield_id: int) -> bool:
+func begin_battle(content_database: PalContentDatabase, game_session: GameSession, enemy_team_id: int, battlefield_id: int, is_boss: bool = false) -> bool:
 	_database = content_database
 	_session = game_session
 	show()
-	return _start_battle_view(content_database, game_session, enemy_team_id, battlefield_id)
+	return _start_battle_view(content_database, game_session, enemy_team_id, battlefield_id, is_boss)
 
 
 ## 注入探索场景的统一音频播放器，供仙术特效播放 DATA.MKF 定义的 VOC 音效。
@@ -115,7 +124,7 @@ func configure_audio_player(audio_player: PalAudioPlayer) -> void:
 	_audio_player = audio_player
 
 
-func _start_battle_view(content_database: PalContentDatabase, game_session: GameSession, enemy_team_id: int, battlefield_id: int) -> bool:
+func _start_battle_view(content_database: PalContentDatabase, game_session: GameSession, enemy_team_id: int, battlefield_id: int, is_boss: bool) -> bool:
 	_database = content_database
 	_session = game_session
 	error_message = ""
@@ -136,6 +145,7 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 		return false
 	_enemy_team_id = enemy_team_id
 	_battlefield_id = battlefield_id
+	_is_boss = is_boss
 	_party_roles = party_roles.slice(0, mini(3, party_roles.size()))
 	_clear_fighters()
 	_palette = _database.load_palette(_session.palette_index, _session.night_palette)
@@ -372,6 +382,10 @@ func _select_player(step: int) -> void:
 func _confirm_current_selection() -> void:
 	if _controller == null or _animation_in_progress:
 		return
+	if _input_mode == InputMode.REWARD:
+		if _battle_ui.advance_reward_page():
+			_confirm_battle_result()
+		return
 	if _input_mode == InputMode.RESULT:
 		_confirm_battle_result()
 		return
@@ -516,10 +530,16 @@ func _execute_next_action() -> void:
 	await _play_action_result(result)
 	_animation_in_progress = false
 	_select_first_living_enemy()
-	if _controller.battle_result != PalBattleController.BattleResult.ONGOING:
+	if _controller.battle_result == PalBattleController.BattleResult.VICTORY:
+		var reward := _controller.claim_victory_rewards()
+		_input_mode = InputMode.REWARD
+		_battle_ui.show_reward(reward)
+		if _audio_player != null:
+			_audio_player.play_music(2 if _is_boss else 3, false, 0.0)
+	elif _controller.battle_result == PalBattleController.BattleResult.DEFEAT:
 		_input_mode = InputMode.RESULT
 		_battle_ui.set_mode(PalBattleUI.Mode.RESULT)
-		_battle_ui.show_message("战斗胜利" if _controller.battle_result == PalBattleController.BattleResult.VICTORY else "全队倒下")
+		_battle_ui.show_message("全队倒下")
 	elif _controller.is_accepting_commands():
 		_enter_command_mode()
 	else:

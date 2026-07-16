@@ -6,6 +6,15 @@
 class_name PalBattleController
 extends RefCounted
 
+const REWARD_STAT_LEVEL := 0
+const REWARD_STAT_MAX_HP := 1
+const REWARD_STAT_MAX_MP := 2
+const REWARD_STAT_ATTACK := 3
+const REWARD_STAT_MAGIC := 4
+const REWARD_STAT_DEFENSE := 5
+const REWARD_STAT_DEXTERITY := 6
+const REWARD_STAT_FLEE := 7
+
 enum BattleResult {
 	ONGOING,
 	VICTORY,
@@ -78,6 +87,32 @@ class ActionResult extends RefCounted:
 	var hits: Array[Hit] = []
 
 
+## 一名角色在本次战斗结算中的升级前后数值。
+class LevelUpResult extends RefCounted:
+	var role_index: int = 0
+	var old_hp: int = 0
+	var old_mp: int = 0
+	var new_hp: int = 0
+	var new_mp: int = 0
+	var old_stats: PackedInt32Array = PackedInt32Array()
+	var new_stats: PackedInt32Array = PackedInt32Array()
+
+
+## 一名角色因升级规则新习得的仙术。
+class LearnedMagicResult extends RefCounted:
+	var role_index: int = 0
+	var magic_object_id: int = 0
+
+
+## 胜利后只允许领取一次的经验、金钱、升级和习得仙术报告。
+class RewardResult extends RefCounted:
+	var experience: int = 0
+	var cash: int = 0
+	var level_ups: Array[LevelUpResult] = []
+	var learned_magics: Array[LearnedMagicResult] = []
+	var post_battle_scripts: PackedInt32Array = PackedInt32Array()
+
+
 ## 本场使用的只读内容数据库。
 var database: PalContentDatabase
 ## 玩家跨战斗状态的所有者。
@@ -90,6 +125,12 @@ var battlefield_id: int = 0
 var turn_number: int = 1
 ## 当前胜负状态。
 var battle_result: int = BattleResult.ONGOING
+## 本场已击倒敌人累计的主经验。
+var experience_gained: int = 0
+## 本场已击倒敌人累计的金钱。
+var cash_gained: int = 0
+## 已领取的胜利结算；尚未胜利或未领取时为 `null`。
+var reward_result: RewardResult
 ## 最近一次初始化失败原因。
 var error_message: String = ""
 ## 按敌队有效槽位压紧后的单场敌人状态。
@@ -116,6 +157,9 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	battlefield_id = field_id
 	turn_number = 1
 	battle_result = BattleResult.ONGOING
+	experience_gained = 0
+	cash_gained = 0
+	reward_result = null
 	error_message = ""
 	enemies.clear()
 	players.clear()
@@ -325,6 +369,55 @@ func execute_remaining_actions(max_actions: int = 32) -> Array[ActionResult]:
 	return results
 
 
+## 按 SDLPal `PAL_BattleWon()` 领取一次胜利奖励并修改正式会话。
+## 只有胜利后可调用；重复调用返回同一报告，不会重复增加金钱、经验或恢复数值。
+func claim_victory_rewards() -> RewardResult:
+	if battle_result != BattleResult.VICTORY:
+		return null
+	if reward_result != null:
+		return reward_result
+	var reward := RewardResult.new()
+	reward.experience = experience_gained
+	reward.cash = cash_gained
+	session.cash += cash_gained
+	for enemy in enemies:
+		var object := database.enemy_object_definition(enemy.object_id)
+		if object != null and object.script_on_battle_end > 0:
+			reward.post_battle_scripts.append(object.script_on_battle_end)
+	for player in players:
+		var role_index := player.role_index
+		# PAL_BattleWon 不给战斗结束时仍倒下的角色经验、升级仙术或隐藏成长。
+		if _role_hp(role_index) <= 0:
+			continue
+		var old_hp := session.role_hp[role_index]
+		var old_mp := session.role_mp[role_index]
+		var old_stats := _role_stats_snapshot(role_index)
+		session.role_experience[role_index] += experience_gained
+		_apply_primary_level_ups(role_index)
+		var new_stats := _role_stats_snapshot(role_index)
+		if old_stats[0] != new_stats[0]:
+			var level_up := LevelUpResult.new()
+			level_up.role_index = role_index
+			level_up.old_hp = old_hp
+			level_up.old_mp = old_mp
+			level_up.new_hp = session.role_hp[role_index]
+			level_up.new_mp = session.role_mp[role_index]
+			level_up.old_stats = old_stats
+			level_up.new_stats = new_stats
+			reward.level_ups.append(level_up)
+		if database.level_progression != null:
+			for magic_object_id in database.level_progression.magic_objects_for_level(role_index, session.role_levels[role_index]):
+				if not session.add_magic(role_index, magic_object_id):
+					continue
+				var learned := LearnedMagicResult.new()
+				learned.role_index = role_index
+				learned.magic_object_id = magic_object_id
+				reward.learned_magics.append(learned)
+	_recover_party_after_victory()
+	reward_result = reward
+	return reward
+
+
 ## 计算 SDLPal 三段式基础伤害；结果可以为 0。
 static func calculate_base_damage(attack_strength: int, defense: int) -> int:
 	if attack_strength > defense:
@@ -393,7 +486,7 @@ func _player_queue_entry(party_index: int) -> QueueEntry:
 	if _role_hp(player.role_index) <= 0:
 		entry.dexterity = 0
 		return entry
-	var dexterity := database.player_roles.dexterity_for(player.role_index)
+	var dexterity := session.dexterity_for(player.role_index)
 	if player.action_type == ActionType.DEFEND:
 		dexterity *= 5
 	if _is_player_dying(player.role_index):
@@ -488,7 +581,7 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 
 func _calculate_player_magic_damage(role_index: int, target_index: int, definition: PalMagicDefinition) -> int:
 	var enemy := enemies[target_index].definition
-	var magic_strength := database.player_roles.magic_strength_for(role_index)
+	var magic_strength := session.magic_strength_for(role_index)
 	magic_strength = int(magic_strength * _random.next_float(10.0, 11.0) / 10.0)
 	var defense := enemy.defense + (enemy.level + 6) * 4
 	var damage := calculate_base_damage(magic_strength, defense) / 4
@@ -605,7 +698,7 @@ func _execute_player_attack_all(player: PlayerState, result: ActionResult) -> vo
 		var enemy := enemies[enemy_index]
 		var defense := enemy.definition.defense + (enemy.definition.level + 6) * 4
 		var damage := calculate_physical_damage(
-			database.player_roles.attack_strength_for(player.role_index),
+			session.attack_strength_for(player.role_index),
 			defense,
 			enemy.definition.physical_resistance
 		)
@@ -622,7 +715,7 @@ func _player_single_hit(player: PlayerState, target_index: int) -> Hit:
 	var enemy := enemies[target_index]
 	var defense := enemy.definition.defense + (enemy.definition.level + 6) * 4
 	var damage := calculate_physical_damage(
-		database.player_roles.attack_strength_for(player.role_index),
+		session.attack_strength_for(player.role_index),
 		defense,
 		enemy.definition.physical_resistance
 	)
@@ -645,8 +738,12 @@ func _apply_enemy_damage(target_index: int, damage: int, critical: bool) -> Hit:
 	hit.target_index = target_index
 	hit.damage = mini(enemy.hp, maxi(0, damage))
 	hit.critical = critical
+	var was_alive := enemy.hp > 0
 	enemy.hp = maxi(0, enemy.hp - damage)
 	hit.defeated = enemy.hp == 0
+	if was_alive and hit.defeated:
+		experience_gained += enemy.definition.experience
+		cash_gained += enemy.definition.cash
 	return hit
 
 
@@ -691,7 +788,7 @@ func _enemy_physical_hit(enemy_index: int, target_index: int) -> Hit:
 		return hit
 	var attack := _signed_word(enemy.definition.attack_strength) + (enemy.definition.level + 6) * 6
 	attack = maxi(0, attack)
-	var defense := database.player_roles.defense_for(player.role_index)
+	var defense := session.defense_for(player.role_index)
 	if player.defending:
 		defense *= 2
 	var damage := calculate_physical_damage(attack + _random.next_int(0, 2), defense, 2)
@@ -714,6 +811,61 @@ func _finish_turn() -> void:
 #endregion
 
 #region Helpers
+
+func _apply_primary_level_ups(role_index: int) -> void:
+	var progression := database.level_progression
+	if progression == null or not progression.is_valid() or role_index < 0 or role_index >= session.role_levels.size():
+		return
+	session.role_levels[role_index] = clampi(session.role_levels[role_index], 0, PalLevelProgression.MAX_LEVEL)
+	var leveled_up := false
+	# 正常数据最多跨越少量等级；固定上限只防止损坏阈值造成无限循环。
+	for _step in range(256):
+		var level := session.role_levels[role_index]
+		var threshold := progression.experience_for_level(level)
+		if threshold <= 0 or session.role_experience[role_index] < threshold:
+			break
+		session.role_experience[role_index] -= threshold
+		if level >= PalLevelProgression.MAX_LEVEL:
+			continue
+		_level_up_role_once(role_index)
+		leveled_up = true
+	if leveled_up:
+		# 原版每次主等级提升后会把当前 HP/MP 恢复到新的上限。
+		session.role_hp[role_index] = session.role_max_hp[role_index]
+		session.role_mp[role_index] = session.role_max_mp[role_index]
+
+
+func _level_up_role_once(role_index: int) -> void:
+	session.role_levels[role_index] = mini(PalLevelProgression.MAX_LEVEL, session.role_levels[role_index] + 1)
+	session.role_max_hp[role_index] = mini(999, session.role_max_hp[role_index] + 10 + _random.next_int(0, 7))
+	session.role_max_mp[role_index] = mini(999, session.role_max_mp[role_index] + 8 + _random.next_int(0, 5))
+	session.role_attack_strength[role_index] = mini(999, session.role_attack_strength[role_index] + 4 + _random.next_int(0, 1))
+	session.role_magic_strength[role_index] = mini(999, session.role_magic_strength[role_index] + 4 + _random.next_int(0, 1))
+	session.role_defense[role_index] = mini(999, session.role_defense[role_index] + 2 + _random.next_int(0, 1))
+	session.role_dexterity[role_index] = mini(999, session.role_dexterity[role_index] + 2 + _random.next_int(0, 1))
+	session.role_flee_rate[role_index] = mini(999, session.role_flee_rate[role_index] + 2)
+
+
+func _recover_party_after_victory() -> void:
+	# PAL_CLASSIC 在战后把当前值与上限的差额恢复一半；倒下角色也会因此恢复。
+	for player in players:
+		var role_index := player.role_index
+		var hp_delta := int((session.role_max_hp[role_index] - session.role_hp[role_index]) / 2.0)
+		var mp_delta := int((session.role_max_mp[role_index] - session.role_mp[role_index]) / 2.0)
+		session.increase_role_hp_mp(role_index, hp_delta, mp_delta)
+
+
+func _role_stats_snapshot(role_index: int) -> PackedInt32Array:
+	return PackedInt32Array([
+		session.role_levels[role_index],
+		session.role_max_hp[role_index],
+		session.role_max_mp[role_index],
+		session.role_attack_strength[role_index],
+		session.role_magic_strength[role_index],
+		session.role_defense[role_index],
+		session.role_dexterity[role_index],
+		session.role_flee_rate[role_index],
+	])
 
 func _check_battle_result() -> void:
 	if living_enemy_indices().is_empty():

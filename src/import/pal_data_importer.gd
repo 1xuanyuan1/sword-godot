@@ -654,8 +654,8 @@ static func _convert_rix_audio(mus_path: String, absolute_output: String, report
 
 
 static func _music_track_numbers(script_bytes: PackedByteArray) -> Array[int]:
-	# 曲目 4/5 供启动与资源预览；其余只导出 ScriptVM 真正引用的场景/战斗音乐。
-	var numbers: Dictionary = {4: true, 5: true}
+	# 曲目 2/3 是 Boss/普通胜利音乐，4/5 供启动与资源预览；其余来自剧情脚本。
+	var numbers: Dictionary = {2: true, 3: true, 4: true, 5: true}
 	for offset in range(0, script_bytes.size() - PalScriptEntry.BYTE_SIZE + 1, PalScriptEntry.BYTE_SIZE):
 		var entry := PalScriptEntry.from_bytes(script_bytes, offset)
 		if entry != null and entry.operation in [0x0043, 0x0045] and entry.operands[0] > 0:

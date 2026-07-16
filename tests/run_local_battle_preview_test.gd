@@ -136,7 +136,34 @@ func _run() -> void:
 	if preview._player_nodes[0].position.distance_to(expected_position) > 0.1:
 		_fail("玩家普攻动画结束后没有回到原始战位")
 		return
-	print("PASS: 敌队 18 / 战场 21 的经典指令、目标选择、气疗术/风咒结算、FIRE 特效和普攻动画均可绘制：%s、%s、%s、%s、%s" % [output_path, magic_path, healing_path, offensive_path, attack_path])
+
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview._session.role_hp[0] = 100
+	for enemy_index in range(preview._controller.enemies.size()):
+		var enemy := preview._controller.enemies[enemy_index]
+		preview._controller._apply_enemy_damage(enemy_index, enemy.hp, false)
+	preview._controller._check_battle_result()
+	var reward := preview._controller.claim_victory_rewards()
+	if reward == null or reward.experience != 52 or reward.cash != 96 or reward.level_ups.size() != 1:
+		_fail("首战真实奖励应为 52 经验、96 文并让李逍遥升级一次")
+		return
+	preview._battle_ui.show_reward(reward)
+	await process_frame
+	var reward_image := viewport.get_texture().get_image()
+	var reward_path := output_directory.path_join("battle_reward.png")
+	if reward_image == null or reward_image.save_png(reward_path) != OK:
+		_fail("无法写入原版布局战斗奖励截图")
+		return
+	if preview._battle_ui.advance_reward_page():
+		_fail("首战奖励总览后没有进入李逍遥升级页")
+		return
+	await process_frame
+	var level_image := viewport.get_texture().get_image()
+	var level_path := output_directory.path_join("battle_level_up.png")
+	if level_image == null or level_image.save_png(level_path) != OK:
+		_fail("无法写入原版布局升级数值截图")
+		return
+	print("PASS: 敌队 18 / 战场 21 的经典指令、仙术、普攻及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s" % [output_path, magic_path, healing_path, offensive_path, attack_path, reward_path, level_path])
 	quit(0)
 
 

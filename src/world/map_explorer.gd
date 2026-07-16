@@ -627,12 +627,12 @@ func _on_rng_playback_finished() -> void:
 		_script_vm.complete_rng_animation()
 
 
-func _on_battle_requested(enemy_team_id: int, battlefield_id: int, _is_boss: bool) -> void:
+func _on_battle_requested(enemy_team_id: int, battlefield_id: int, is_boss: bool) -> void:
 	_game_menu.close_menu()
 	_dialog_box.hide_dialog()
 	if _audio_player != null and _session.battle_music_number > 0:
 		_audio_player.play_music(_session.battle_music_number, true, 0.0)
-	if _battle_view == null or not _battle_view.begin_battle(_database, _session, enemy_team_id, battlefield_id):
+	if _battle_view == null or not _battle_view.begin_battle(_database, _session, enemy_team_id, battlefield_id, is_boss):
 		var reason := _battle_view.error_message if _battle_view != null and not _battle_view.error_message.is_empty() else "战斗覆盖层不可用"
 		_status.text = "敌队 %d / 战场 %d 无法开始：%s" % [enemy_team_id, battlefield_id, reason]
 		if _battle_view != null:

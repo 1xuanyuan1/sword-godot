@@ -15,6 +15,7 @@ func _init() -> void:
 	_test_minimum_damage()
 	_test_dead_party_member_revives_for_battle()
 	_test_dead_target_reselection_and_victory()
+	_test_victory_rewards_and_level_up()
 	_test_single_target_healing_magic()
 	_test_offensive_magic_damage()
 	_test_unsupported_status_magic_is_disabled()
@@ -122,6 +123,41 @@ func _test_dead_target_reselection_and_victory() -> void:
 			resolved_targets.append(result.hits[0].target_index)
 	_expect(resolved_targets == PackedInt32Array([0, 1]), "later player retargets from a defeated enemy to the next living slot")
 	_expect(controller.battle_result == PalBattleController.BattleResult.VICTORY, "defeating the last enemy ends the battle in victory")
+
+
+func _test_victory_rewards_and_level_up() -> void:
+	var enemy := _enemy_definition(1, 1, 1, 0, 0, false)
+	enemy.experience = 2
+	enemy.cash = 7
+	var database := _synthetic_database([enemy])
+	database.player_roles.attack_strengths[0] = 200
+	database.player_roles.dexterities[0] = 999
+	database.level_progression = _synthetic_progression(10)
+	var learning := PalLevelProgression.MagicLearning.new()
+	learning.role_index = 0
+	learning.required_level = 2
+	learning.magic_object_id = 100
+	database.level_progression.magic_learning_by_role[0].append(learning)
+	database.enemy_objects[1].script_on_battle_end = 88
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	session.role_experience[0] = 9
+	session.role_hp[0] = 20
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 37)
+	# 战斗结束时倒下的队员不获得经验，但经典战后半恢复仍会让其恢复。
+	session.role_hp[1] = 0
+	controller.submit_attack(0)
+	var action := controller.execute_next_action()
+	_expect(action != null and controller.battle_result == PalBattleController.BattleResult.VICTORY and controller.experience_gained == 2 and controller.cash_gained == 7, "defeated enemies contribute their DATA experience and cash exactly once")
+	var reward := controller.claim_victory_rewards()
+	_expect(reward != null and reward.experience == 2 and reward.cash == 7 and session.cash == 7, "victory reward adds total cash to the persistent session")
+	_expect(session.role_levels[0] == 2 and session.role_experience[0] == 1 and reward.level_ups.size() == 1, "primary experience consumes the current-level threshold and reports level up")
+	_expect(session.role_max_hp[0] >= 110 and session.role_max_hp[0] <= 117 and session.role_attack_strength[0] >= 204 and session.role_attack_strength[0] <= 205, "level up applies SDLPal random HP and attack growth ranges")
+	_expect(session.role_hp[0] == session.role_max_hp[0] and session.role_mp[0] == session.role_max_mp[0], "main level up fully restores HP and MP")
+	_expect(session.role_experience[1] == 0 and session.role_hp[1] == 50, "down party member skips experience then receives classic half recovery")
+	_expect(session.has_magic(0, 100) and reward.learned_magics.size() == 1, "level-up magic table teaches newly eligible magic")
+	_expect(reward.post_battle_scripts == PackedInt32Array([88]), "reward report preserves enemy post-battle scripts for the battle-context VM")
+	_expect(controller.claim_victory_rewards() == reward and session.cash == 7, "victory rewards are idempotent")
 
 
 func _test_single_target_healing_magic() -> void:
@@ -246,6 +282,15 @@ func _synthetic_roles() -> PalPlayerRoles:
 		roles.magics_by_role.append(PackedInt32Array())
 		roles.walk_frames.append(3)
 	return roles
+
+
+func _synthetic_progression(experience_per_level: int) -> PalLevelProgression:
+	var progression := PalLevelProgression.new()
+	for _role_index in range(PalPlayerRoles.ROLE_COUNT):
+		progression.magic_learning_by_role.append([])
+	for _level in range(PalLevelProgression.MAX_LEVEL + 1):
+		progression.experience_thresholds.append(experience_per_level)
+	return progression
 
 
 func _enemy_definition(health: int, level: int, attack: int, defense: int, dexterity: int, dual_move: bool) -> PalEnemyDefinition:

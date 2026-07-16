@@ -85,6 +85,7 @@ keywords:
   - `src/battle/pal_battle_preview.gd`
   - `src/game/game_session.gd`
   - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
   - `tests/run_local_battle_logic_test.gd`
   - `.github/workflows/ci.yml`
   - `README.md`
@@ -187,6 +188,34 @@ keywords:
   - `docs/BATTLE.md`
   - `docs/ARCHITECTURE.md`
   - `docs/PROJECT_STRUCTURE.md`
+
+---
+
+### [FT-028] [feat] 接通战后主经验、金钱与升级结算
+
+- **关联需求**: M3 角色成长、M4 经典战斗
+- **关联 TODO**: TD-005、TD-006（阶段性）
+- **功能描述**: 新增 `PalLevelProgression` 解析 `DATA.MKF #6/#14` 的升级仙术和每级经验阈值；`GameSession` 持有主经验及升级后攻击、灵力、防御、身法和逃跑值。敌人首次倒下时累计经验/金钱，胜利后只结算一次；存活队员按官方随机范围升级、回满 HP/MP、习得当前等级仙术，全队随后执行经典差额半恢复。普通/Boss 胜利分别播放 RIX 3/2，`PalBattleUI` 使用原版窗口和点阵字显示奖励总览及八项升级前后数值。敌人战后脚本入口已保留在报告中，但在专用战斗脚本上下文完成前不会错误交给地图 VM。
+- **验证情况**: 254 项合成格式测试、39 项经典战斗逻辑检查和 10 项剧情战斗桥接检查通过；真实资源确认首战敌队 18 固定获得 52 经验、96 文并让李逍遥升到 2 级，OpenGL 截图验证原版奖励与升级页面，普通/Boss 胜利音乐已本地生成且继续隔离在 `generated/`。
+- **涉及文件**:
+  - `src/content/pal_level_progression.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/game/game_session.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_logic_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
 
 ## 2026-07-15
 

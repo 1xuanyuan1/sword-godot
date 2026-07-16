@@ -53,6 +53,18 @@ var role_max_mp: PackedInt32Array = PackedInt32Array()
 var role_hp: PackedInt32Array = PackedInt32Array()
 ## 每名角色当前真气。
 var role_mp: PackedInt32Array = PackedInt32Array()
+## 每名角色当前等级内尚未消耗的主经验。
+var role_experience: PackedInt32Array = PackedInt32Array()
+## 每名角色当前基础攻击力；升级会修改本数组，不改写只读 PLAYERROLES。
+var role_attack_strength: PackedInt32Array = PackedInt32Array()
+## 每名角色当前基础灵力。
+var role_magic_strength: PackedInt32Array = PackedInt32Array()
+## 每名角色当前基础防御。
+var role_defense: PackedInt32Array = PackedInt32Array()
+## 每名角色当前基础身法。
+var role_dexterity: PackedInt32Array = PackedInt32Array()
+## 每名角色当前基础逃跑值。
+var role_flee_rate: PackedInt32Array = PackedInt32Array()
 ## 每名角色已学会的仙术对象编号。
 var learned_magics_by_role: Array[PackedInt32Array] = []
 ## SDLPal 五格队伍轨迹的世界位置。
@@ -190,13 +202,20 @@ func clear_party_gestures() -> void:
 func initialize_role_state(roles: PalPlayerRoles) -> bool:
 	if roles == null or not roles.is_valid():
 		return false
-	if role_hp.size() == PalPlayerRoles.ROLE_COUNT and learned_magics_by_role.size() == PalPlayerRoles.ROLE_COUNT:
+	if role_hp.size() == PalPlayerRoles.ROLE_COUNT and role_experience.size() == PalPlayerRoles.ROLE_COUNT and role_attack_strength.size() == PalPlayerRoles.ROLE_COUNT and learned_magics_by_role.size() == PalPlayerRoles.ROLE_COUNT:
 		return true
 	role_levels = roles.levels.duplicate()
 	role_max_hp = roles.max_hp.duplicate()
 	role_max_mp = roles.max_mp.duplicate()
 	role_hp = roles.hp.duplicate()
 	role_mp = roles.mp.duplicate()
+	role_experience.resize(PalPlayerRoles.ROLE_COUNT)
+	role_experience.fill(0)
+	role_attack_strength = roles.attack_strengths.duplicate()
+	role_magic_strength = roles.magic_strengths.duplicate()
+	role_defense = roles.defenses.duplicate()
+	role_dexterity = roles.dexterities.duplicate()
+	role_flee_rate = roles.flee_rates.duplicate()
 	learned_magics_by_role.clear()
 	for role_index in range(PalPlayerRoles.ROLE_COUNT):
 		learned_magics_by_role.append(roles.magics_for(role_index))
@@ -230,6 +249,31 @@ func add_magic(role_index: int, magic_id: int) -> bool:
 ## 返回指定角色是否已经学会该仙术对象。
 func has_magic(role_index: int, magic_id: int) -> bool:
 	return role_index >= 0 and role_index < learned_magics_by_role.size() and magic_id in learned_magics_by_role[role_index]
+
+
+## 返回角色当前攻击力；状态未初始化或编号越界时返回 0。
+func attack_strength_for(role_index: int) -> int:
+	return role_attack_strength[role_index] if role_index >= 0 and role_index < role_attack_strength.size() else 0
+
+
+## 返回角色当前灵力；状态未初始化或编号越界时返回 0。
+func magic_strength_for(role_index: int) -> int:
+	return role_magic_strength[role_index] if role_index >= 0 and role_index < role_magic_strength.size() else 0
+
+
+## 返回角色当前防御；状态未初始化或编号越界时返回 0。
+func defense_for(role_index: int) -> int:
+	return role_defense[role_index] if role_index >= 0 and role_index < role_defense.size() else 0
+
+
+## 返回角色当前身法；状态未初始化或编号越界时返回 0。
+func dexterity_for(role_index: int) -> int:
+	return role_dexterity[role_index] if role_index >= 0 and role_index < role_dexterity.size() else 0
+
+
+## 返回角色当前逃跑值；状态未初始化或编号越界时返回 0。
+func flee_rate_for(role_index: int) -> int:
+	return role_flee_rate[role_index] if role_index >= 0 and role_index < role_flee_rate.size() else 0
 
 ## 返回指定物品数量，背包中不存在时为 0。
 func item_count(item_id: int) -> int:
@@ -274,6 +318,12 @@ func reset_new_game() -> void:
 	role_max_mp = PackedInt32Array()
 	role_hp = PackedInt32Array()
 	role_mp = PackedInt32Array()
+	role_experience = PackedInt32Array()
+	role_attack_strength = PackedInt32Array()
+	role_magic_strength = PackedInt32Array()
+	role_defense = PackedInt32Array()
+	role_dexterity = PackedInt32Array()
+	role_flee_rate = PackedInt32Array()
 	learned_magics_by_role.clear()
 	clear_party_gestures()
 	_initialize_trail(party_world_position())
