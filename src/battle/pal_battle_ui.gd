@@ -44,8 +44,8 @@ const COLOR_MENU_NORMAL := 0x4f
 const COLOR_MENU_INACTIVE := 0x18
 const COLOR_MENU_SELECTED_INACTIVE := 0x1c
 const COLOR_MENU_SELECTED_FIRST := 0xf9
-const ENEMY_VITALS_RECT := Rect2(8, 8, 148, 40)
-const ENEMY_VITALS_BAR_RECT := Rect2(14, 38, 136, 5)
+const ENEMY_VITALS_RECT := Rect2(8, 8, 82, 40)
+const ENEMY_VITALS_BAR_RECT := Rect2(14, 38, 70, 5)
 
 ## 战斗使用的只读内容数据库。
 var database: PalContentDatabase
@@ -315,16 +315,14 @@ func _draw_enemy_vitals() -> void:
 	draw_rect(ENEMY_VITALS_RECT, _palette_color(COLOR_MENU_NORMAL), false, 1.0)
 	var enemy_name := str(vitals.get("name", ""))
 	_draw_pal_text(enemy_name if not enemy_name.is_empty() else "敌人", Vector2i(14, 13), _palette_color(COLOR_MENU_NORMAL), true)
-	_draw_pal_text("HP", Vector2i(14, 26), _palette_color(0xbb), true)
-	_draw_number(hp, 5, Vector2i(37, 28), UI_FRAME_NUMBER_YELLOW)
-	_draw_ui_frame(UI_FRAME_SLASH, Vector2i(68, 27))
-	_draw_number(max_hp, 5, Vector2i(76, 30), UI_FRAME_NUMBER_BLUE)
+	_draw_number(hp, 5, Vector2i(14, 28), UI_FRAME_NUMBER_YELLOW)
+	_draw_ui_frame(UI_FRAME_SLASH, Vector2i(45, 27))
+	_draw_number(max_hp, 5, Vector2i(52, 30), UI_FRAME_NUMBER_BLUE)
 	draw_rect(ENEMY_VITALS_BAR_RECT, Color(0, 0, 0, 0.92), true)
 	var inner := Rect2(ENEMY_VITALS_BAR_RECT.position + Vector2(1, 1), ENEMY_VITALS_BAR_RECT.size - Vector2(2, 2))
 	draw_rect(inner, Color(0.14, 0.14, 0.16, 1.0), true)
 	if hp > 0:
-		var health_color := Color8(88, 208, 96) if ratio > 0.5 else (Color8(232, 176, 48) if ratio > 0.25 else Color8(224, 72, 64))
-		draw_rect(Rect2(inner.position, Vector2(maxf(1.0, floorf(inner.size.x * ratio)), inner.size.y)), health_color, true)
+		draw_rect(Rect2(inner.position, Vector2(maxf(1.0, floorf(inner.size.x * ratio)), inner.size.y)), Color8(224, 64, 64), true)
 
 
 func _draw_magic_menu() -> void:
