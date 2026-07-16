@@ -263,6 +263,21 @@ keywords:
   - `src/battle/pal_battle_ui.gd`
   - `docs/BATTLE.md`
 
+---
+
+### [FT-032] [feat] 接通双方普通攻击原版音效
+
+- **关联需求**: M4 经典战斗音画同步
+- **关联 TODO**: TD-005（阶段性）
+- **功能描述**: 扩展 `PLAYERROLES` 解析角色攻击、武器、暴击、格挡和死亡音效字段；玩家普攻在起手和命中帧分别播放角色原版音效，暴击使用独立编号。敌人物理攻击同步播放敌人属性中的攻击、动作及命中音效，自动格挡和角色倒下改用对应角色音效，不再出现只有动作没有声音的普攻。
+- **验证情况**: 255 项合成检查和 45 项经典战斗逻辑检查通过；本地 DOS 数据确认李逍遥攻击／武器／暴击音效分别解析为 37／1／5，战斗 Debug 已重启供实际听感验证。
+- **涉及文件**:
+  - `src/content/pal_player_roles.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `docs/BATTLE.md`
+
 ## 2026-07-15
 
 ### [FT-005] [feat] 增加剧情测试检查点

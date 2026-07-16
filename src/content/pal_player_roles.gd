@@ -29,6 +29,13 @@ const ELEMENT_COUNT := 5
 const MAGIC_WORD_OFFSET := 192
 const MAGIC_SLOT_COUNT := 32
 const WALK_FRAMES_WORD_OFFSET := 384
+const DEATH_SOUND_WORD_OFFSET := 408
+const ATTACK_SOUND_WORD_OFFSET := 414
+const WEAPON_SOUND_WORD_OFFSET := 420
+const CRITICAL_SOUND_WORD_OFFSET := 426
+const MAGIC_SOUND_WORD_OFFSET := 432
+const COVER_SOUND_WORD_OFFSET := 438
+const DYING_SOUND_WORD_OFFSET := 444
 
 ## 每名角色在 `RGM.MKF` 中的默认肖像编号。
 var avatar_numbers: PackedInt32Array = PackedInt32Array()
@@ -40,6 +47,20 @@ var scene_sprite_numbers: PackedInt32Array = PackedInt32Array()
 var name_word_indices: PackedInt32Array = PackedInt32Array()
 ## 每个方向的行走帧数；原版零值按三帧处理。
 var walk_frames: PackedInt32Array = PackedInt32Array()
+## 每名角色倒下时播放的音效编号。
+var death_sounds: PackedInt32Array = PackedInt32Array()
+## 每名角色普通攻击起手时播放的语音／挥击音效编号。
+var attack_sounds: PackedInt32Array = PackedInt32Array()
+## 每名角色武器命中时播放的音效编号。
+var weapon_sounds: PackedInt32Array = PackedInt32Array()
+## 每名角色暴击起手时播放的音效编号。
+var critical_sounds: PackedInt32Array = PackedInt32Array()
+## 每名角色施法起手时播放的音效编号。
+var magic_sounds: PackedInt32Array = PackedInt32Array()
+## 每名角色自动格挡或保护队友时播放的音效编号。
+var cover_sounds: PackedInt32Array = PackedInt32Array()
+## 每名角色濒死时播放的音效编号。
+var dying_sounds: PackedInt32Array = PackedInt32Array()
 ## 每名角色的新游戏初始等级。
 var levels: PackedInt32Array = PackedInt32Array()
 ## 每名角色的最大体力。
@@ -100,6 +121,13 @@ static func from_bytes(data: PackedByteArray) -> PalPlayerRoles:
 			elemental_resistances.append(PalBinary.u16_le(data, (ELEMENT_RESISTANCE_WORD_OFFSET + element_index * ROLE_COUNT + role_index) * 2))
 		roles.elemental_resistances_by_role.append(elemental_resistances)
 		roles.walk_frames.append(PalBinary.u16_le(data, (WALK_FRAMES_WORD_OFFSET + role_index) * 2))
+		roles.death_sounds.append(PalBinary.u16_le(data, (DEATH_SOUND_WORD_OFFSET + role_index) * 2))
+		roles.attack_sounds.append(PalBinary.u16_le(data, (ATTACK_SOUND_WORD_OFFSET + role_index) * 2))
+		roles.weapon_sounds.append(PalBinary.u16_le(data, (WEAPON_SOUND_WORD_OFFSET + role_index) * 2))
+		roles.critical_sounds.append(PalBinary.u16_le(data, (CRITICAL_SOUND_WORD_OFFSET + role_index) * 2))
+		roles.magic_sounds.append(PalBinary.u16_le(data, (MAGIC_SOUND_WORD_OFFSET + role_index) * 2))
+		roles.cover_sounds.append(PalBinary.u16_le(data, (COVER_SOUND_WORD_OFFSET + role_index) * 2))
+		roles.dying_sounds.append(PalBinary.u16_le(data, (DYING_SOUND_WORD_OFFSET + role_index) * 2))
 		var role_magics := PackedInt32Array()
 		for slot in range(MAGIC_SLOT_COUNT):
 			var magic := PalBinary.u16_le(data, (MAGIC_WORD_OFFSET + slot * ROLE_COUNT + role_index) * 2)
@@ -111,7 +139,7 @@ static func from_bytes(data: PackedByteArray) -> PalPlayerRoles:
 
 ## 返回结构是否通过长度和字段校验。
 func is_valid() -> bool:
-	return error_message.is_empty() and avatar_numbers.size() == ROLE_COUNT and battle_sprite_numbers.size() == ROLE_COUNT and scene_sprite_numbers.size() == ROLE_COUNT and name_word_indices.size() == ROLE_COUNT and attack_all.size() == ROLE_COUNT and levels.size() == ROLE_COUNT and max_hp.size() == ROLE_COUNT and max_mp.size() == ROLE_COUNT and hp.size() == ROLE_COUNT and mp.size() == ROLE_COUNT and attack_strengths.size() == ROLE_COUNT and magic_strengths.size() == ROLE_COUNT and defenses.size() == ROLE_COUNT and dexterities.size() == ROLE_COUNT and flee_rates.size() == ROLE_COUNT and poison_resistances.size() == ROLE_COUNT and elemental_resistances_by_role.size() == ROLE_COUNT and magics_by_role.size() == ROLE_COUNT and walk_frames.size() == ROLE_COUNT
+	return error_message.is_empty() and avatar_numbers.size() == ROLE_COUNT and battle_sprite_numbers.size() == ROLE_COUNT and scene_sprite_numbers.size() == ROLE_COUNT and name_word_indices.size() == ROLE_COUNT and attack_all.size() == ROLE_COUNT and levels.size() == ROLE_COUNT and max_hp.size() == ROLE_COUNT and max_mp.size() == ROLE_COUNT and hp.size() == ROLE_COUNT and mp.size() == ROLE_COUNT and attack_strengths.size() == ROLE_COUNT and magic_strengths.size() == ROLE_COUNT and defenses.size() == ROLE_COUNT and dexterities.size() == ROLE_COUNT and flee_rates.size() == ROLE_COUNT and poison_resistances.size() == ROLE_COUNT and elemental_resistances_by_role.size() == ROLE_COUNT and magics_by_role.size() == ROLE_COUNT and walk_frames.size() == ROLE_COUNT and attack_sounds.size() == ROLE_COUNT and weapon_sounds.size() == ROLE_COUNT and critical_sounds.size() == ROLE_COUNT and cover_sounds.size() == ROLE_COUNT and death_sounds.size() == ROLE_COUNT
 
 
 ## 返回角色的默认 RGM 肖像编号，越界时返回 0。
@@ -182,6 +210,33 @@ func dexterity_for(role_index: int) -> int:
 ## 返回角色基础逃跑值，越界时返回 0。
 func flee_rate_for(role_index: int) -> int:
 	return flee_rates[role_index] if role_index >= 0 and role_index < flee_rates.size() else 0
+
+
+## 返回角色普通攻击起手音效，越界时返回 0。
+func attack_sound_for(role_index: int) -> int:
+	return attack_sounds[role_index] if role_index >= 0 and role_index < attack_sounds.size() else 0
+
+
+## 返回角色武器命中音效，越界时返回 0。
+func weapon_sound_for(role_index: int) -> int:
+	return weapon_sounds[role_index] if role_index >= 0 and role_index < weapon_sounds.size() else 0
+
+
+## 返回角色暴击起手音效，越界或零值时退回普通攻击音效。
+func critical_sound_for(role_index: int) -> int:
+	if role_index < 0 or role_index >= critical_sounds.size() or critical_sounds[role_index] == 0:
+		return attack_sound_for(role_index)
+	return critical_sounds[role_index]
+
+
+## 返回角色自动格挡／保护音效，越界时返回 0。
+func cover_sound_for(role_index: int) -> int:
+	return cover_sounds[role_index] if role_index >= 0 and role_index < cover_sounds.size() else 0
+
+
+## 返回角色倒下音效，越界时返回 0。
+func death_sound_for(role_index: int) -> int:
+	return death_sounds[role_index] if role_index >= 0 and role_index < death_sounds.size() else 0
 
 
 ## 返回角色初始仙术列表的副本，调用方修改它不会污染内容定义。

@@ -575,6 +575,10 @@ func _play_player_attack(result: PalBattleController.ActionResult) -> void:
 	if result.actor_index < 0 or result.actor_index >= _player_nodes.size():
 		return
 	var actor_index := result.actor_index
+	var role_index := _controller.players[actor_index].role_index
+	var critical := result.hits.any(func(hit: PalBattleController.Hit) -> bool: return hit.critical)
+	if _audio_player != null:
+		_audio_player.play_sound(_database.player_roles.critical_sound_for(role_index) if critical else _database.player_roles.attack_sound_for(role_index))
 	var original_foot := _player_foot_positions[actor_index]
 	var target_foot := Vector2i(150, 100)
 	if not result.hits.is_empty() and result.hits[0].target_index >= 0 and result.hits[0].target_index < _enemy_foot_positions.size():
@@ -586,6 +590,8 @@ func _play_player_attack(result: PalBattleController.ActionResult) -> void:
 	attack_foot -= Vector2i(10, 2)
 	await _move_player(actor_index, attack_foot, 8, BATTLE_FRAME_SECONDS)
 	_set_player_frame(actor_index, 9, attack_foot)
+	if _audio_player != null:
+		_audio_player.play_sound(_database.player_roles.weapon_sound_for(role_index))
 	await _wait_frames(1)
 	for hit in result.hits:
 		if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
@@ -745,12 +751,16 @@ func _play_enemy_attack(result: PalBattleController.ActionResult) -> void:
 	if hit.target_index < 0 or hit.target_index >= _player_nodes.size():
 		return
 	var definition := _controller.enemies[actor_index].definition
+	if _audio_player != null and definition.sounds.size() > 0:
+		_audio_player.play_sound(definition.sounds[0])
 	var original_foot := _enemy_foot_positions[actor_index]
 	for frame_offset in range(definition.magic_frames):
 		_set_enemy_frame(actor_index, definition.idle_frames + frame_offset)
 		await _wait_frames(2)
 	var target_foot := _player_foot_positions[hit.target_index]
 	var attack_foot := target_foot - Vector2i(44, 16)
+	if _audio_player != null and definition.sounds.size() > 1:
+		_audio_player.play_sound(definition.sounds[1])
 	var first_attack_frame := maxi(0, definition.idle_frames + definition.magic_frames - 1)
 	await _move_enemy(actor_index, attack_foot, first_attack_frame, BATTLE_FRAME_SECONDS * 2.0)
 	var attack_frame_count := maxi(1, definition.attack_frames + 1)
@@ -760,6 +770,12 @@ func _play_enemy_attack(result: PalBattleController.ActionResult) -> void:
 		await _wait_frames(maxi(1, definition.action_wait_frames))
 	var target_frame := 3 if hit.auto_defended else 4
 	_set_player_frame(hit.target_index, target_frame, target_foot, 0 if hit.auto_defended else 6)
+	if _audio_player != null:
+		var target_role := _controller.players[hit.target_index].role_index
+		var hit_sound := _database.player_roles.cover_sound_for(target_role) if hit.auto_defended else (definition.sounds[4] if definition.sounds.size() > 4 else 0)
+		_audio_player.play_sound(hit_sound)
+		if hit.defeated:
+			_audio_player.play_sound(_database.player_roles.death_sound_for(target_role))
 	if hit.damage > 0:
 		_battle_ui.show_number(hit.damage, Vector2i(target_foot.x - 9, maxi(10, target_foot.y - 75)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
 	await _wait_frames(1)

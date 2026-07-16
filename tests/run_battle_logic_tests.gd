@@ -336,6 +336,13 @@ func _synthetic_roles() -> PalPlayerRoles:
 		roles.elemental_resistances_by_role.append(PackedInt32Array([0, 0, 0, 0, 0]))
 		roles.magics_by_role.append(PackedInt32Array())
 		roles.walk_frames.append(3)
+		roles.death_sounds.append(0)
+		roles.attack_sounds.append(0)
+		roles.weapon_sounds.append(0)
+		roles.critical_sounds.append(0)
+		roles.magic_sounds.append(0)
+		roles.cover_sounds.append(0)
+		roles.dying_sounds.append(0)
 	return roles
 
 
