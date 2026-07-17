@@ -1731,6 +1731,10 @@ func _test_game_menu_inventory() -> void:
 	var requested: Array[int] = []
 	menu.item_use_requested.connect(func(item_id: int) -> void: requested.append(item_id))
 	_expect(menu.visible and menu.current_page == PalGameMenu.Page.INVENTORY, "game menu opens the inventory page")
+	menu._inventory_selection = 1
+	menu.close_menu()
+	menu.open_inventory()
+	_expect(menu._inventory_selection == 1 and menu._inventory_ids[menu._inventory_selection] == 272, "inventory keeps its previous cursor for repeated story item use")
 	menu._request_item_use(272, wine)
 	_expect(requested == [272], "usable story item can be selected from the inventory menu")
 	menu.current_page = PalGameMenu.Page.INVENTORY_ACTION
@@ -1746,7 +1750,11 @@ func _test_game_menu_inventory() -> void:
 	menu.open_main()
 	menu._main_selection = 3
 	menu._confirm_selection()
-	_expect(menu.current_page == PalGameMenu.Page.SYSTEM and menu._system_selection == 2, "classic system submenu opens from the fourth main item")
+	_expect(menu.current_page == PalGameMenu.Page.SYSTEM and menu._system_selection == 0, "classic system submenu initially selects the first save entry")
+	menu._system_selection = 3
+	menu.go_back()
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.SYSTEM and menu._system_selection == 3, "classic system submenu remembers the previous cursor after returning")
 	var save_summaries: Array[Dictionary] = []
 	for slot in range(1, PalSaveManager.SLOT_COUNT + 1):
 		save_summaries.append({"slot": slot, "exists": false, "can_load": false, "save_count": 0, "saved_at": "", "scene_index": -1, "map_number": 0, "party": [], "error": ""})

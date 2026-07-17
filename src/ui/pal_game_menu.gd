@@ -102,7 +102,8 @@ var current_page: Page = Page.MAIN
 
 var _main_selection: int = 2
 var _action_selection: int = 1
-var _system_selection: int = 2
+# 对齐 SDLPal 的 iCurSystemMenuItem：首次从第一项“储存进度”开始，之后保留玩家游标。
+var _system_selection: int = 0
 var _inventory_selection: int = 0
 var _inventory_return_page: Page = Page.MAIN
 var _inventory_ids: Array[int] = []
@@ -697,7 +698,6 @@ func _confirm_selection() -> void:
 				_action_selection = 1
 			elif _main_selection == 3:
 				current_page = Page.SYSTEM
-				_system_selection = 2
 		Page.INVENTORY_ACTION:
 			_inventory_for_equipment = _action_selection == 0
 			_inventory_return_page = Page.INVENTORY_ACTION
