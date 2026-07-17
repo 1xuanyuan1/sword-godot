@@ -107,7 +107,7 @@ RNG 剧情动画引用、导入完整性和 HUD 播放回归：
 
 其中楼梯用例必须从真实 EventObject 的接触范围启动，不可绕过 `MapExplorer` 直接调用脚本入口；这样才能同时覆盖触发模式、对象顺序和后续 8 步动画。
 
-桂花酒之后到水月宫惨案、客栈次日、离开余杭并抵达苏州的早期主线回归：
+桂花酒之后到水月宫惨案、客栈次日、离开余杭、林月如城外事件并进入苏州的早期主线回归：
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \

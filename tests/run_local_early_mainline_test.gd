@@ -28,7 +28,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、御剑教学、水月宫惨案、安葬返航、客栈强制战、夜间长剧情、离开余杭与抵达苏州主线完成")
+	print("PASS: 买虾、御剑教学、水月宫惨案、客栈强制战、离开余杭、林月如城外事件与进入苏州主线完成")
 	quit(0)
 
 
@@ -855,6 +855,174 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 		failure = "苏州城外音乐或队伍状态不正确：BGM %d/%d，队伍 %s" % [session.music_number, session.battle_music_number, session.party_roles]
 	elif session.party_world_position() != Vector2i(1104, 1384):
 		failure = "苏州城外进入落点不正确：%s" % session.party_world_position()
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[21].script_on_enter = next_entries[0]
+
+	# 靠近树下事件后，短自动段隐藏远景占位并开启林月如的首次对话对象。
+	messages.clear()
+	next_entries.clear()
+	var distant_event := database.event_objects[411]
+	var yueru_event := database.event_objects[413]
+	if distant_event.state != 2 or distant_event.trigger_script != 10037:
+		vm.free()
+		return "苏州城外没有可触发的林月如远景事件：状态 %d，脚本 %d" % [distant_event.state, distant_event.trigger_script]
+	vm.run_trigger(distant_event.trigger_script, distant_event.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林月如远景切换遇到未支持指令：%s" % [unsupported]
+	elif not messages.is_empty() or next_entries != [10037] or distant_event.state != 0 or yueru_event.state != 2:
+		failure = "林月如远景切换后的消息、入口或事件显隐不正确：消息 %s，入口 %s，状态 %d/%d" % [messages, next_entries, distant_event.state, yueru_event.state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 第一次交锋包含长对话和敌队 21／战场 3 的不可逃跑战斗；胜利后月如被缚在树上。
+	messages.clear()
+	next_entries.clear()
+	battle_requests.clear()
+	vm.run_trigger(yueru_event.trigger_script, yueru_event.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林月如首次交锋战前遇到未支持指令：%s" % [unsupported]
+	elif not vm.waiting_for_battle or battle_requests != [[21, 3, true]]:
+		failure = "林月如首次交锋没有请求敌队 21／战场 3：%s" % [battle_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	vm.complete_battle(ScriptVM.BATTLE_RESULT_VICTORY)
+	_drive_script(vm)
+	var tied_yueru := database.event_objects[419]
+	var city_gate_prompt := database.event_objects[420]
+	if not unsupported.is_empty():
+		failure = "林月如首次交锋战后遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2560, 2638) or next_entries != [10045]:
+		failure = "林月如首次交锋消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif yueru_event.state != 0 or tied_yueru.state != 2 or city_gate_prompt.state != 1 or city_gate_prompt.trigger_script != 10253:
+		failure = "首次交锋后林月如、绑缚或城门折返事件状态不正确：%d/%d/%d，入口 %d" % [yueru_event.state, tied_yueru.state, city_gate_prompt.state, city_gate_prompt.trigger_script]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 第一次接近城门听到呼救，灵儿要求回去看看；同时把树下月如切到对话入口。
+	messages.clear()
+	next_entries.clear()
+	vm.run_trigger(city_gate_prompt.trigger_script, city_gate_prompt.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "苏州城门第一次呼救剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2655, 2667) or next_entries != [10282]:
+		failure = "苏州城门第一次呼救消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif tied_yueru.trigger_script != 10227:
+		failure = "第一次折返后树下林月如没有切换到争执入口：%d" % tied_yueru.trigger_script
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	city_gate_prompt.trigger_script = next_entries[0]
+
+	# 返回树下争执后再次离开；这段脚本把城门提示升级到第二次真实呼救入口。
+	messages.clear()
+	next_entries.clear()
+	vm.run_trigger(tied_yueru.trigger_script, tied_yueru.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "第一次返回树下的争执剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2640, 2653) or next_entries != [10251]:
+		failure = "第一次返回树下的争执消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif city_gate_prompt.trigger_script != 10303:
+		failure = "树下争执后没有安装第二次城门呼救入口：%d" % city_gate_prompt.trigger_script
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	tied_yueru.trigger_script = next_entries[0]
+
+	# 第二次接近城门确认月如真的遇险，随后把树下对象改为可接触的解救入口。
+	messages.clear()
+	next_entries.clear()
+	vm.run_trigger(city_gate_prompt.trigger_script, city_gate_prompt.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "苏州城门第二次呼救剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2668, 2682) or next_entries != [10334]:
+		failure = "苏州城门第二次呼救消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif tied_yueru.trigger_script != 10357 or tied_yueru.trigger_mode != PalEventObject.TRIGGER_TOUCH_FARTHER:
+		failure = "第二次折返后树下林月如没有切换到解救入口：脚本 %d，模式 %d" % [tied_yueru.trigger_script, tied_yueru.trigger_mode]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 返回树下先击退敌队 22，随后完整执行月如刺伤、灵儿施法救治和双人恢复。
+	messages.clear()
+	next_entries.clear()
+	battle_requests.clear()
+	vm.run_trigger(tied_yueru.trigger_script, tied_yueru.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "返回解救林月如的战前剧情遇到未支持指令：%s" % [unsupported]
+	elif not vm.waiting_for_battle or battle_requests != [[22, 3, true]]:
+		failure = "解救林月如没有请求敌队 22／战场 3：%s" % [battle_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	vm.complete_battle(ScriptVM.BATTLE_RESULT_VICTORY)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "解救林月如战后剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2683, 2692) or next_entries != [10357]:
+		failure = "解救林月如战后消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0]) or tied_yueru.state != 0 or database.event_objects[412].state != 1:
+		failure = "解救战后没有暂时移除赵灵儿或开启林月如刺伤事件：队伍 %s，状态 %d/%d" % [session.party_roles, tied_yueru.state, database.event_objects[412].state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 林月如独立事件继续刺伤李逍遥，赵灵儿耗尽真气救治后恢复双人队伍。
+	messages.clear()
+	next_entries.clear()
+	var stabbing_yueru := database.event_objects[412]
+	vm.run_trigger(stabbing_yueru.trigger_script, stabbing_yueru.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林月如刺伤与灵儿救治剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2693, 2753) or next_entries != [10390]:
+		failure = "林月如刺伤与灵儿救治消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0, 1]) or database.player_roles.scene_sprite_numbers[0] != 2 or not session.has_magic(1, 301):
+		failure = "救治后队伍、李逍遥造型或赵灵儿新仙术不正确：队伍 %s，造型 %d，仙术=%s" % [session.party_roles, database.player_roles.scene_sprite_numbers[0], session.has_magic(1, 301)]
+	elif session.role_hp[0] != session.role_max_hp[0] or session.role_hp[1] != session.role_max_hp[1] or session.role_mp[0] != session.role_max_mp[0] or session.role_mp[1] != session.role_max_mp[1]:
+		failure = "灵儿救治后没有按原版恢复双人 HP/MP"
+	elif tied_yueru.state != 0 or database.event_objects[414].state != 1 or stabbing_yueru.state != 0:
+		failure = "救治结束后的林月如相关 EventObject 状态不正确"
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 城门传送进入苏州城，内部场景进入脚本把区域音乐切为 50。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	var city_entrance := database.event_objects[410]
+	vm.run_trigger(city_entrance.trigger_script, city_entrance.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "进入苏州城的传送脚本遇到未支持指令：%s" % [unsupported]
+	elif requested_scenes != [20] or session.scene_index != 20 or session.party_world_position() != Vector2i(448, 1296):
+		failure = "苏州城门没有切到城内正确落点：场景 %s/%d，位置 %s" % [requested_scenes, session.scene_index, session.party_world_position()]
+	elif fade_requests.size() != 1 or not fade_requests[0][0] or not is_equal_approx(fade_requests[0][1], 0.6):
+		failure = "进入苏州城没有请求默认渐隐：%s" % [fade_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[20].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "苏州城内进入脚本遇到未支持指令：%s" % [unsupported]
+	elif not messages.is_empty() or next_entries != [11365] or session.music_number != 50:
+		failure = "苏州城内进入后的消息、稳定入口或 BGM 不正确：消息 %s，入口 %s，BGM %d" % [messages, next_entries, session.music_number]
 	vm.free()
 	return failure
 
