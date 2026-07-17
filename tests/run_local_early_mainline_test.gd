@@ -28,7 +28,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、御剑教学、水月宫惨案、客栈强制战、离开余杭、林月如城外事件与进入苏州主线完成")
+	print("PASS: 买虾、御剑教学、水月宫惨案、离开余杭、林月如城外事件、苏州客栈战与次日同行主线完成")
 	quit(0)
 
 
@@ -1023,6 +1023,81 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 		failure = "苏州城内进入脚本遇到未支持指令：%s" % [unsupported]
 	elif not messages.is_empty() or next_entries != [11365] or session.music_number != 50:
 		failure = "苏州城内进入后的消息、稳定入口或 BGM 不正确：消息 %s，入口 %s，BGM %d" % [messages, next_entries, session.music_number]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 在苏州客栈入口救下刘晋元，战前停止街区音乐并请求敌队 23／战场 21。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	battle_requests.clear()
+	music_requests.clear()
+	fade_requests.clear()
+	var inn_bully := database.event_objects[524]
+	if inn_bully.state != 1 or inn_bully.trigger_script != 11165:
+		vm.free()
+		return "苏州客栈没有可触发的刘晋元解围事件：状态 %d，脚本 %d" % [inn_bully.state, inn_bully.trigger_script]
+	session.scene_index = 27
+	vm.run_trigger(inn_bully.trigger_script, inn_bully.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "苏州客栈解围战前遇到未支持指令：%s" % [unsupported]
+	elif not vm.waiting_for_battle or battle_requests != [[23, 21, true]]:
+		failure = "苏州客栈解围没有请求敌队 23／战场 21：%s" % [battle_requests]
+	elif messages != _message_range(3046, 3050):
+		failure = "苏州客栈解围战前消息不正确：%s" % [messages]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	vm.complete_battle(ScriptVM.BATTLE_RESULT_VICTORY)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "苏州客栈解围战后遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3046, 3052) or next_entries != [11165]:
+		failure = "苏州客栈解围消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [25] or session.scene_index != 25 or database.scenes[25].script_on_enter != 11190:
+		failure = "解围后没有进入刘晋元宴请场景：场景 %s/%d，入口 %d" % [requested_scenes, session.scene_index, database.scenes[25].script_on_enter]
+	elif inn_bully.state != 0 or database.event_objects.slice(438, 453).any(func(event: PalEventObject) -> bool: return event.state != 0):
+		failure = "解围后客栈恶少或苏州围观 EventObject 没有清理"
+	elif session.music_number != 71:
+		failure = "刘晋元宴请前没有恢复苏州区域音乐 71：%d" % session.music_number
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 宴请进入脚本让灵儿先离队休息，跨过夜间调色板后在次日留下睡眠事件。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	vm.run_trigger(database.scenes[25].script_on_enter)
+	_drive_script(vm)
+	var sleeping_linger := database.event_objects[507]
+	if not unsupported.is_empty():
+		failure = "刘晋元宴请与过夜剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3053, 3075) or next_entries != [11274]:
+		failure = "刘晋元宴请与过夜消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0]) or session.night_palette or sleeping_linger.state != 1 or sleeping_linger.trigger_script != 11378:
+		failure = "客栈次日的队伍、调色板或熟睡赵灵儿事件不正确：队伍 %s，night=%s，状态 %d，脚本 %d" % [session.party_roles, session.night_palette, sleeping_linger.state, sleeping_linger.trigger_script]
+	elif database.player_roles.scene_sprite_numbers[0] != 2 or session.party_world_position() != Vector2i(640, 464):
+		failure = "客栈次日李逍遥造型或落点不正确：造型 %d，位置 %s" % [database.player_roles.scene_sprite_numbers[0], session.party_world_position()]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[25].script_on_enter = next_entries[0]
+
+	# 叫醒赵灵儿后隐藏床上两个阶段 Sprite，并恢复双人队伍继续逛苏州。
+	messages.clear()
+	next_entries.clear()
+	vm.run_trigger(sleeping_linger.trigger_script, sleeping_linger.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "客栈次日叫醒赵灵儿遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3116, 3125) or next_entries != [11378]:
+		failure = "客栈次日叫醒赵灵儿消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0, 1]) or sleeping_linger.state != 0 or database.event_objects[508].state != 0:
+		failure = "叫醒赵灵儿后队伍或床上 EventObject 没有恢复：队伍 %s，状态 %d/%d" % [session.party_roles, sleeping_linger.state, database.event_objects[508].state]
 	vm.free()
 	return failure
 
