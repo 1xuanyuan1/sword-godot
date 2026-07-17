@@ -56,6 +56,19 @@ keywords:
 
 ---
 
+### [BF-026] 重启 Debug 时旧菜单输入回调访问空 Viewport
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M3 菜单与调试运行生命周期
+- **问题描述**: 菜单 `_input()` 先执行返回、确认或读取存档，再调用 `get_viewport().set_input_as_handled()`。若该操作在同一回调中关闭或替换当前场景，菜单节点会先脱离 SceneTree，后取 Viewport 得到空值并报错 `Cannot call method 'set_input_as_handled' on a null value`，使 Godot Debug 停在旧进程中。
+- **涉及文件**:
+  - `src/ui/pal_game_menu.gd`
+  - `docs/CLASSIC_UI.md`
+- **修复内容**: 对齐已经用于战斗界面的生命周期保护，在处理可能切换场景的动作前保存有效 Viewport，动作完成后仅通过该引用标记输入；节点已离树时不再访问空值。终止停在旧错误现场的嵌入式进程，并使用最新代码启动独立 Debug。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-15
 
 ### [BF-006] 物品页缺少选中物品说明

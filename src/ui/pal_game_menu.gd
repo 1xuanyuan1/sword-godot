@@ -258,6 +258,9 @@ func go_back() -> void:
 func _input(event: InputEvent) -> void:
 	if not visible or not event.is_pressed() or event.is_echo() or event is not InputEventKey:
 		return
+	# 读取存档或关闭上层场景可能让菜单在同一输入回调中离开 SceneTree。
+	# 与战斗界面采用同一生命周期保护：动作前保存仍有效的 Viewport。
+	var input_viewport := get_viewport()
 	var handled := true
 	match event.keycode:
 		KEY_ESCAPE, KEY_M, KEY_TAB:
@@ -274,8 +277,8 @@ func _input(event: InputEvent) -> void:
 			_confirm_selection()
 		_:
 			handled = false
-	if handled:
-		get_viewport().set_input_as_handled()
+	if handled and input_viewport != null:
+		input_viewport.set_input_as_handled()
 
 
 func _gui_input(event: InputEvent) -> void:
