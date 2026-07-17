@@ -64,6 +64,7 @@ var _location_toast_serial: int = 0
 var _loaded_scene_index: int = -1
 var _pending_location_toast: String = ""
 var _script_camera_offset: Vector2i = Vector2i.ZERO
+var _resume_rng_after_fade_in: bool = false
 
 
 func _ready() -> void:
@@ -835,6 +836,10 @@ func _on_screen_fade_finished(fade_out: bool, complete_vm: bool) -> void:
 	_fade_tween = null
 	if not fade_out and _fade_overlay != null:
 		_fade_overlay.visible = false
+	if not fade_out and _resume_rng_after_fade_in:
+		_resume_rng_after_fade_in = false
+		if _rng_player != null:
+			_rng_player.set_playback_paused(false)
 	if complete_vm and _script_vm != null:
 		_script_vm.complete_screen_fade()
 	# 部分原版脚本先执行 0059 切换场景，再执行 0050 渐隐。此时必须等渐隐的
@@ -848,7 +853,14 @@ func _on_rng_animation_requested(animation_number: int, start_frame: int, end_fr
 	if _rng_player == null:
 		_script_vm.complete_rng_animation()
 		return
-	_rng_player.play(animation_number, start_frame, end_frame, frames_per_second)
+	var started := _rng_player.play(animation_number, start_frame, end_frame, frames_per_second)
+	# 官方 PAL_RNGPlay 会先画出第一帧，再消费 0050 留下的 fNeedToFadeIn，并在
+	# 渐显完成前暂停电影计时。黑色 HUD 遮罩若不在这里渐显，整段 RNG 都会被盖住。
+	if started and _fade_in_after_scene_change:
+		_fade_in_after_scene_change = false
+		_resume_rng_after_fade_in = true
+		_rng_player.set_playback_paused(true)
+		_start_screen_fade(false, _automatic_fade_in_duration, false)
 
 
 func _on_rng_playback_finished() -> void:
@@ -947,6 +959,7 @@ func _reset_transient_state_for_load() -> void:
 	_pending_magic_stage = FIELD_MAGIC_STAGE_USE
 	_pending_location_toast = ""
 	_script_camera_offset = Vector2i.ZERO
+	_resume_rng_after_fade_in = false
 	_hide_fbp_view()
 	_location_toast_serial += 1
 	if _location_toast != null:

@@ -16,6 +16,7 @@ var _frame_index: int = 0
 var _elapsed: float = 0.0
 var _frames_per_second: int = 16
 var _playing: bool = false
+var _paused: bool = false
 
 
 func _ready() -> void:
@@ -67,6 +68,7 @@ func play(animation_number: int, start_frame: int = 0, end_frame: int = -1, fram
 	_frame_index = 0
 	_elapsed = 0.0
 	_playing = true
+	_paused = false
 	_preview.texture = _textures[0]
 	show()
 	return true
@@ -75,6 +77,7 @@ func play(animation_number: int, start_frame: int = 0, end_frame: int = -1, fram
 ## 停止当前播放并清空帧；`notify_vm` 为真时发出完成信号。
 func stop_playback(notify_vm: bool = true) -> void:
 	_playing = false
+	_paused = false
 	_elapsed = 0.0
 	_frame_index = 0
 	_textures.clear()
@@ -85,8 +88,14 @@ func stop_playback(notify_vm: bool = true) -> void:
 		playback_finished.emit()
 
 
+## 暂停或恢复当前 RNG 的逐帧推进，但保持首帧纹理和 HUD 可见。
+## 用于 SDLPal 在第一帧显示后同步执行调色板渐显；未播放时调用不会启动动画。
+func set_playback_paused(paused: bool) -> void:
+	_paused = paused if _playing else false
+
+
 func _process(delta: float) -> void:
-	if not _playing or _textures.is_empty():
+	if not _playing or _paused or _textures.is_empty():
 		return
 	_elapsed += delta
 	var frame_duration := 1.0 / float(_frames_per_second)

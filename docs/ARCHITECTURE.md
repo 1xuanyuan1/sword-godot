@@ -65,7 +65,7 @@ flowchart LR
 
 `PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 默认走该路径，命令行用户参数 `--pal-map-backend=legacy` 可临时启用 CPU 基准。
 
-`Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast、经典菜单和 RNG 过场播放器统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。RNG 播放期间 `ScriptVM.waiting_for_rng` 阻止地图输入和后续指令，播放完成后再恢复。
+`Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast、经典菜单和 RNG 过场播放器统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。屏幕渐变层位于 RNG 之上；RNG 首帧负责消费前置 `0050` 的待渐显状态，播放器在遮罩变透明前暂停帧计时，避免整段电影被黑层覆盖或漏掉开头。RNG 播放期间 `ScriptVM.waiting_for_rng` 阻止地图输入和后续指令，播放完成后再恢复。
 
 经典菜单的状态页只读取 `GameSession` 与内容数据库；场外仙术页选择施法者、仙术和我方目标后，把类型化请求交给 `MapExplorer`。探索控制器关闭菜单，依次执行对象的 `script_on_use`、`script_on_success`，两段成功后才从施法者 MP 扣除 DATA 定义的消耗；脚本等待期间地图输入保持关闭，结束后回到刷新过可用状态的仙术列表。
 

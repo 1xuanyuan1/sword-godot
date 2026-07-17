@@ -81,6 +81,8 @@ RNG 剧情动画引用、导入完整性和 HUD 播放回归：
   --script res://tests/run_local_rng_player_test.gd
 ```
 
+Headless 路径验证全部脚本引用、暂停首帧、渐显状态和 VM 等待；修改 RNG、HUD 层级或屏幕渐变后，还必须去掉 `--headless` 用真实渲染器运行同一测试。带窗口路径会执行山神庙脚本 `6622` 到 RNG #1，确认黑色遮罩渐显后仍从首帧继续，并把非全黑截图写入 `generated/pal/visual_tests/training_rng_001.png`。
+
 全部场景 EventObject 自动行为回归：
 
 ```bash
