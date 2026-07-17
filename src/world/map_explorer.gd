@@ -761,6 +761,14 @@ func _on_fbp_requested(image_number: int, fade_seconds: float) -> void:
 	if _fbp_tween != null and _fbp_tween.is_valid():
 		_fbp_tween.kill()
 	_fbp_tween = null
+	# 0050 已渐隐到纯黑后，0076 FFFF 会提供等价的黑色 FBP 背景。后者位于
+	# 对话框下方，因此应替换已经结束的顶层渐隐遮罩，让“一夜过去”等叙述可见。
+	var replaces_finished_black_fade := (
+		image_number == 0xffff
+		and _fade_overlay != null
+		and _fade_overlay.visible
+		and not _screen_fade_active
+	)
 	_fbp_view.texture = null
 	if image_number != 0xffff:
 		var indexed := _database.load_battle_background(image_number)
@@ -774,9 +782,13 @@ func _on_fbp_requested(image_number: int, fade_seconds: float) -> void:
 		_fbp_tween.tween_property(_fbp_layer, "modulate:a", 1.0, fade_seconds)
 		_fbp_tween.finished.connect(func() -> void:
 			_fbp_tween = null
+			if replaces_finished_black_fade:
+				_fade_overlay.hide()
 			if _script_vm != null and _script_vm.waiting_for_screen_fade:
 				_script_vm.complete_screen_fade()
 		)
+	elif replaces_finished_black_fade:
+		_fade_overlay.hide()
 
 
 func _hide_fbp_view() -> void:

@@ -712,6 +712,13 @@ func _continue_execution() -> int:
 				else:
 					var camera_step := Vector2i(_signed_word(entry.operands[0]), _signed_word(entry.operands[1]))
 					return _wait_for_camera_pan(next_cursor, camera_step, maxi(1, _signed_word(entry.operands[2])))
+			# 在当前编号的日间／夜间调色板之间切换；参考 SDLPal `script.c` 的 0080。
+			0x0080:
+				if session != null:
+					session.night_palette = not session.night_palette
+				# 官方 op0=0 会在调色板渐变期间持续更新场景；当前渲染器先同步最终调色板画面。
+				if entry.operands[0] == 0:
+					redraw_requested.emit(0)
 			# 队伍未面向/接近 operand[0] 事件时跳到 operand[2]；operand[1] 为距离级别。
 			0x0081:
 				if _is_party_facing_event(entry.operands[0], entry.operands[1]):

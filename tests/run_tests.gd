@@ -47,6 +47,7 @@ func _init() -> void:
 	_test_script_vm_screen_fade_wait()
 	_test_script_vm_fbp_and_scene_fade_wait()
 	_test_script_vm_camera_pan()
+	_test_script_vm_palette_toggle()
 	_test_script_vm_rng_and_role_state()
 	_test_script_vm_field_role_effects()
 	_test_script_vm_scene_teleport()
@@ -932,6 +933,26 @@ func _test_script_vm_camera_pan() -> void:
 	vm.free()
 
 
+func _test_script_vm_palette_toggle() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x0080, 0, 0x0080, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	var session := GameSession.new()
+	var redraws: Array[int] = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.redraw_requested.connect(func(delay: int) -> void: redraws.append(delay))
+	vm.run_trigger(1)
+	_expect(session.night_palette, "opcode 0080 switches the current palette from day to night")
+	vm.run_trigger(3)
+	_expect(not session.night_palette, "opcode 0080 switches the current palette from night back to day")
+	_expect(redraws == [0, 0], "opcode 0080 redraws the scene when operand zero requests the official palette update")
+	vm.free()
+
+
 func _test_script_vm_rng_and_role_state() -> void:
 	var roles := PalPlayerRoles.new()
 	for role_index in range(PalPlayerRoles.ROLE_COUNT):
@@ -1653,6 +1674,11 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
 	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index() and explorer._fade_overlay.get_index() > explorer._location_toast.get_index(), "screen fade covers the complete world, location toast and HUD during scene transitions")
+	explorer._fade_overlay.visible = true
+	explorer._fade_overlay.modulate.a = 1.0
+	explorer._screen_fade_active = false
+	explorer._on_fbp_requested(0xffff, 0.0)
+	_expect(explorer._fbp_layer.visible and not explorer._fade_overlay.visible and explorer._fbp_layer.get_index() < explorer._dialog_box.get_index(), "an opaque black FBP replaces a completed fade overlay so overnight narration remains visible")
 	_expect(explorer._tile_world.get_parent() == explorer, "TileMap world remains on the Camera2D world canvas")
 	explorer.free()
 

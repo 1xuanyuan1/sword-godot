@@ -19,6 +19,8 @@ func _init() -> void:
 	if failure.is_empty():
 		failure = _test_island_bath_dialog_presentation(database)
 	if failure.is_empty():
+		failure = _test_palace_marriage_night(database)
+	if failure.is_empty():
 		failure = _test_medicine_return_and_temple_reminder(database)
 	if failure.is_empty():
 		failure = _test_black_miao_night_departure(database)
@@ -30,7 +32,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、仙灵岛洗澡对话、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
+	print("PASS: 买虾、仙灵岛洗澡与水月宫过夜、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
 	quit(0)
 
 
@@ -96,6 +98,41 @@ func _test_island_bath_dialog_presentation(database: PalContentDatabase) -> Stri
 	if not first_controls_ok or not girl_speed_ok or not player_speed_ok:
 		return "仙灵岛洗澡剧情仍显示 M.MSG 速度或停顿控制码"
 	return ""
+
+
+func _test_palace_marriage_night(database: PalContentDatabase) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = 19
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var messages: Array[int] = []
+	var unsupported: Array[String] = []
+	var next_entries: Array[int] = []
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	vm.run_trigger(8992, 343)
+	_drive_script(vm)
+	var marriage_event := database.event_objects[342]
+	var hidden_attendant := database.event_objects[347]
+	var failure := ""
+	if not unsupported.is_empty():
+		failure = "水月宫成亲过夜剧情遇到未支持指令：%s" % ", ".join(unsupported)
+	elif messages != _message_range(2294, 2362):
+		failure = "水月宫成亲、过夜与天亮对白不完整：%s" % [messages]
+	elif next_entries != [8992]:
+		failure = "水月宫过夜剧情没有结束于原触发入口：%s" % [next_entries]
+	elif session.night_palette:
+		failure = "水月宫一夜过去后没有恢复日间调色板"
+	elif database.player_roles.scene_sprite_numbers[0] != 2:
+		failure = "水月宫天亮后李逍遥没有恢复普通场景造型：%d" % database.player_roles.scene_sprite_numbers[0]
+	elif marriage_event.state != 2 or marriage_event.trigger_script != 9187:
+		failure = "水月宫床边事件没有进入稳定后续入口：状态 %d，脚本 %d" % [marriage_event.state, marriage_event.trigger_script]
+	elif hidden_attendant.state != 0:
+		failure = "水月宫过夜后应离场的事件仍然可见：%d" % hidden_attendant.state
+	vm.free()
+	return failure
 
 
 func _test_fish_vendor(database: PalContentDatabase) -> String:
