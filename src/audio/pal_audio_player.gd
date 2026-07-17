@@ -57,6 +57,11 @@ func play_music(number: int, loop: bool = true, fade_seconds: float = 0.0) -> bo
 		_report_missing("BGM", number, path)
 		return false
 	playable.loop_mode = AudioStreamWAV.LOOP_FORWARD if loop else AudioStreamWAV.LOOP_DISABLED
+	if loop:
+		# WAV 导入器在未预设循环点时会保留 loop_end=0。仅把 loop_mode 改为
+		# LOOP_FORWARD 会让 Godot 在第 0 帧立即结束，因此必须显式覆盖完整采样区间。
+		playable.loop_begin = 0
+		playable.loop_end = maxi(1, roundi(playable.get_length() * playable.mix_rate))
 	if current_music_number == number and _music_player.playing:
 		# 官方同曲请求只更新循环标记，不从头重播。
 		var current_stream := _music_player.stream as AudioStreamWAV

@@ -12,6 +12,22 @@ keywords:
 
 ## 修复记录
 
+## 2026-07-17
+
+### [BF-019] 循环 WAV 的零循环终点导致场景与战斗 BGM 立即停止
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M2–M5 场景、战斗与音画同步
+- **问题描述**: 场景曲 31、战斗曲 37 等离线 WAV 都有正常时长和有效振幅，系统菜单音量也为 100，但 `PalAudioPlayer` 只把导入流的 `loop_mode` 改为前向循环。Godot 对没有源循环标记的 WAV 保留 `loop_end = 0`，导致循环播放器在第 0 帧直接结束；既有测试过早读取 `playing`，没有验证 Master 总线波形，因而未能稳定发现实际静音。
+- **涉及文件**:
+  - `src/audio/pal_audio_player.gd`
+  - `tests/run_local_audio_test.gd`
+  - `docs/AUDIO.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/CLASSIC_UI.md`
+- **修复内容**: 每次创建循环 BGM 播放副本时，将循环起点固定为 0，并按 `WAV 时长 × mix_rate` 设置完整采样循环终点。音频回归延长实际混音时间，检查持续播放状态，并用 `AudioEffectCapture` 分别确认场景 BGM 31、战斗 BGM 37 与剧情音效 98 在 Master 总线产生有效峰值。同时核对固定 SDLPal `PAL_BattleMain()` 和随机遇敌脚本：通用遇敌只执行音乐停止、像素切屏和战斗 BGM 起奏，没有可统一映射的额外 VOC，故不加入猜测音效。
+- **状态**: ✅ 已修复
+
 ## 2026-07-16
 
 ### [BF-008] 无依据的脚步与菜单音效过响，剧情检查点未播放 BGM 31
