@@ -981,7 +981,9 @@ func _on_dialog_message(message_index: int) -> void:
 	var message := _database.get_message(message_index)
 	var displayed_message := message if not message.is_empty() else "（文本未导入）"
 	var overridden_role := PalContentDatabase.speaker_role_for_message(message_index)
-	if overridden_role >= 0 and not _dialog_box.visible:
+	# 部分原版脚本用零肖像 003C/003D 输出无标题角色台词；显式开始的空对话框
+	# 已经 visible，仍应按已确认的消息归属补回角色上下文。
+	if overridden_role >= 0 and not _dialog_box.has_portrait():
 		var speaker := _database.get_word(_database.player_roles.name_word_for(overridden_role))
 		var portrait := _database.player_roles.avatar_for(overridden_role)
 		_dialog_box.show_speaker_title(speaker + "：", _load_portrait_texture(portrait))

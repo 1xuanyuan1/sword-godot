@@ -11,6 +11,13 @@ const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 # 键为当前 DOS 数据集的 M.MSG 索引，值为 PLAYERROLES 角色索引。
 const MESSAGE_SPEAKER_ROLE_OVERRIDES: Dictionary = {
 	585: 0, # 李逍遥在客栈密道旁的“嘿嘿．．”
+	2514: 0, # 偷看少女洗澡后，李逍遥询问能否回头。
+	2515: 0,
+	2516: 0,
+	2517: 0,
+	2518: 0,
+	2519: 0,
+	2526: 0, # 少女现身后，李逍遥求饶。
 }
 
 ## 当前内容根目录，默认指向被 Git 忽略的本地导入产物。

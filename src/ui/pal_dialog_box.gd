@@ -6,6 +6,9 @@ class_name PalDialogBox
 extends Control
 
 const TYPEWRITER_CHARACTERS_PER_SECOND := 28.0
+# SDLPal `text.c::TEXT_DisplayText` 把 `$NN` 换算为每字 `NN × 80 / 7` 毫秒。
+const PAL_DELAY_SECONDS_PER_UNIT := 0.08 / 7.0
+const DEFAULT_CHARACTER_DELAY_SECONDS := 1.0 / TYPEWRITER_CHARACTERS_PER_SECOND
 
 var _panel: PanelContainer
 var _dialog_panel: PanelContainer
@@ -24,7 +27,10 @@ var _hint: Label
 var _position_mode: int = 1
 var _full_text: String = ""
 var _visible_characters: int = 0
-var _typing_progress: float = 0.0
+var _character_delays: PackedFloat32Array = PackedFloat32Array()
+var _typing_time_budget: float = 0.0
+var _current_character_delay: float = DEFAULT_CHARACTER_DELAY_SECONDS
+var _pending_pause_seconds: float = 0.0
 var _typing: bool = false
 
 
@@ -38,10 +44,26 @@ func _ready() -> void:
 func _process(delta: float) -> void:
 	if not _typing:
 		return
-	_typing_progress += delta * TYPEWRITER_CHARACTERS_PER_SECOND
-	var target_count := mini(_full_text.length(), floori(_typing_progress))
-	if target_count > _visible_characters:
-		_set_visible_characters(target_count)
+	var remaining := maxf(0.0, delta)
+	while _visible_characters < _full_text.length():
+		var character_delay := (
+			float(_character_delays[_visible_characters])
+			if _visible_characters < _character_delays.size()
+			else DEFAULT_CHARACTER_DELAY_SECONDS
+		)
+		var needed := maxf(0.0, character_delay - _typing_time_budget)
+		if remaining < needed:
+			_typing_time_budget += remaining
+			return
+		remaining -= needed
+		_typing_time_budget = 0.0
+		_set_visible_characters(_visible_characters + 1)
+	if _pending_pause_seconds > 0.0:
+		_pending_pause_seconds = maxf(0.0, _pending_pause_seconds - remaining)
+	if _pending_pause_seconds <= 0.0:
+		_typing = false
+		set_process(false)
+		_hint.text = "▼"
 
 
 ## 开始新的对话上下文并清空旧页面；位置模式与 SDLPal 对话操作码一致。
@@ -54,7 +76,10 @@ func begin(position_mode: int, _color_index: int = 0, portrait_texture: Texture2
 	_toast_panel.visible = is_toast
 	_full_text = ""
 	_visible_characters = 0
-	_typing_progress = 0.0
+	_character_delays.clear()
+	_typing_time_budget = 0.0
+	_current_character_delay = DEFAULT_CHARACTER_DELAY_SECONDS
+	_pending_pause_seconds = 0.0
 	_typing = false
 	set_process(false)
 	_speaker.text = ""
@@ -73,7 +98,10 @@ func begin(position_mode: int, _color_index: int = 0, portrait_texture: Texture2
 func show_message(text: String) -> void:
 	if not visible:
 		begin(_position_mode)
-	var content := text.strip_edges()
+	var decoded := _decode_pal_dialog_text(text.strip_edges())
+	var content := str(decoded.get("text", ""))
+	_current_character_delay = float(decoded.get("character_delay", _current_character_delay))
+	_pending_pause_seconds = float(decoded.get("trailing_pause", _pending_pause_seconds))
 	if _is_speaker_title(content):
 		content = content.trim_suffix(":").trim_suffix("：").trim_suffix("∶")
 		_speaker.text = content
@@ -83,9 +111,10 @@ func show_message(text: String) -> void:
 	if content.is_empty():
 		return
 	_full_text += content
+	var decoded_delays: PackedFloat32Array = decoded.get("character_delays", PackedFloat32Array())
+	_character_delays.append_array(decoded_delays)
 	_message.text = _full_text
-	_typing_progress = float(_visible_characters)
-	_typing = _visible_characters < _full_text.length()
+	_typing = _visible_characters < _full_text.length() or _pending_pause_seconds > 0.0
 	set_process(_typing)
 	_hint.text = "▶" if _typing else "▼"
 	_hint.visible = _position_mode != 3
@@ -111,7 +140,8 @@ func is_typing() -> bool:
 func reveal_all() -> void:
 	if _full_text.is_empty():
 		return
-	_typing_progress = float(_full_text.length())
+	_typing_time_budget = 0.0
+	_pending_pause_seconds = 0.0
 	_set_visible_characters(_full_text.length())
 
 
@@ -147,7 +177,9 @@ func hide_dialog() -> void:
 func _reset_body() -> void:
 	_full_text = ""
 	_visible_characters = 0
-	_typing_progress = 0.0
+	_character_delays.clear()
+	_typing_time_budget = 0.0
+	_pending_pause_seconds = 0.0
 	_typing = false
 	set_process(false)
 	if _message != null:
@@ -290,10 +322,42 @@ func _apply_mode_style() -> void:
 func _set_visible_characters(count: int) -> void:
 	_visible_characters = clampi(count, 0, _full_text.length())
 	_message.visible_characters = _visible_characters
-	if _visible_characters >= _full_text.length():
+	if _visible_characters >= _full_text.length() and _pending_pause_seconds <= 0.0:
 		_typing = false
 		set_process(false)
 		_hint.text = "▼"
+
+
+func _decode_pal_dialog_text(text: String) -> Dictionary:
+	# M.MSG 内的 `$NN` 和 `~NN` 是显示控制码，不属于正文。前者改变后续
+	# 逐字速度，后者在句末短暂停顿；换算公式来自 SDLPal `text.c`。
+	var content := ""
+	var delays := PackedFloat32Array()
+	var character_delay := _current_character_delay
+	var pending_pause := _pending_pause_seconds
+	var index := 0
+	while index < text.length():
+		var character := text.substr(index, 1)
+		if character in ["$", "~"] and index + 2 < text.length():
+			var digits := text.substr(index + 1, 2)
+			if digits.is_valid_int():
+				var units := digits.to_int()
+				if character == "$":
+					character_delay = float(units) * PAL_DELAY_SECONDS_PER_UNIT
+				else:
+					pending_pause += float(units) * PAL_DELAY_SECONDS_PER_UNIT
+				index += 3
+				continue
+		content += character
+		delays.append(character_delay + pending_pause)
+		pending_pause = 0.0
+		index += 1
+	return {
+		"text": content,
+		"character_delays": delays,
+		"character_delay": character_delay,
+		"trailing_pause": pending_pause,
+	}
 
 
 static func _is_speaker_title(text: String) -> bool:

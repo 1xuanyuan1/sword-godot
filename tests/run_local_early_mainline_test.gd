@@ -17,6 +17,8 @@ func _init() -> void:
 	if failure.is_empty():
 		failure = _test_first_island_statue_puzzle()
 	if failure.is_empty():
+		failure = _test_island_bath_dialog_presentation(database)
+	if failure.is_empty():
 		failure = _test_medicine_return_and_temple_reminder(database)
 	if failure.is_empty():
 		failure = _test_black_miao_night_departure(database)
@@ -28,7 +30,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
+	print("PASS: 买虾、仙灵岛洗澡对话、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
 	quit(0)
 
 
@@ -57,6 +59,43 @@ func _test_shrimp_errand(database: PalContentDatabase) -> String:
 		failure = "买虾任务没有返回正确的未来入口：%s" % next_entries
 	vm.free()
 	return failure
+
+
+func _test_island_bath_dialog_presentation(database: PalContentDatabase) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	explorer._build_interface()
+	explorer._dialog_box._ready()
+	explorer._database = database
+	explorer._session = session
+	var expected_speaker := database.get_word(database.player_roles.name_word_for(0))
+	# 原脚本在这些短句前使用零肖像 003C/003D，也没有再次输出“李逍遥：”。
+	explorer._on_dialog_started(1, 0, 0)
+	explorer._on_dialog_message(2518)
+	var portrait_ok: bool = (
+		explorer._dialog_box.has_portrait()
+		and explorer._dialog_box._portrait_column.visible
+		and explorer._dialog_box._speaker.text == expected_speaker
+	)
+	var first_controls_ok: bool = (
+		"~30" not in explorer._dialog_box._full_text
+		and explorer._dialog_box._pending_pause_seconds > 0.0
+	)
+	explorer._on_dialog_started(0, 0, 16)
+	explorer._on_dialog_message(2520)
+	explorer._on_dialog_message(2541)
+	var girl_speed_ok: bool = "$06" not in explorer._dialog_box._full_text
+	explorer._on_dialog_started(1, 0, 2)
+	explorer._on_dialog_message(2524)
+	explorer._on_dialog_message(2544)
+	var player_speed_ok: bool = "$04" not in explorer._dialog_box._full_text
+	explorer.free()
+	if not portrait_ok:
+		return "仙灵岛洗澡剧情的零肖像李逍遥台词没有恢复头像和姓名"
+	if not first_controls_ok or not girl_speed_ok or not player_speed_ok:
+		return "仙灵岛洗澡剧情仍显示 M.MSG 速度或停顿控制码"
+	return ""
 
 
 func _test_fish_vendor(database: PalContentDatabase) -> String:
