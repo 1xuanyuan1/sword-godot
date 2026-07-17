@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用本机生成资源验证桂花酒之后的买虾、病倒求药、黑苗人离店和御剑教学主线。
+## 使用本机生成资源验证仙灵岛石像机关，以及桂花酒后的求药、御剑教学和营救主线。
 ## 测试只比较消息编号和运行时状态，不输出或提交原版对话内容。
 extends SceneTree
 
@@ -14,6 +14,8 @@ func _init() -> void:
 	var failure := _test_shrimp_errand(database)
 	if failure.is_empty():
 		failure = _test_fish_vendor(database)
+	if failure.is_empty():
+		failure = _test_first_island_statue_puzzle()
 	if failure.is_empty():
 		failure = _test_medicine_return_and_temple_reminder(database)
 	if failure.is_empty():
@@ -80,6 +82,66 @@ func _test_fish_vendor(database: PalContentDatabase) -> String:
 		failure = "鱼嫂两轮对话不完整：%s" % messages
 	elif next_entries != [6028, 6028]:
 		failure = "鱼嫂首次与稳定重复入口不正确：%s" % next_entries
+	vm.free()
+	return failure
+
+
+func _test_first_island_statue_puzzle() -> String:
+	# 首次赴岛发生在后续剧情改写之前，使用独立数据库避免第二次赴岛状态反向污染。
+	var database := PalContentDatabase.new()
+	if not database.load_generated():
+		return "仙灵岛石像回归无法重新加载本地生成资源：%s" % database.error_message
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = 16
+	session.set_item_count(279, 1)
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var messages: Array[int] = []
+	var positions: Array[int] = []
+	var sounds: Array[int] = []
+	var next_entries: Array[int] = []
+	var statue_end_entries: Array[int] = []
+	var unsupported: Array[String] = []
+	vm.dialog_started.connect(func(position: int, _color: int, _portrait: int) -> void: positions.append(position))
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.sound_requested.connect(func(number: int) -> void: sounds.append(number))
+	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	for event_id in range(238, 244):
+		var statue := database.event_objects[event_id - 1]
+		session.party_direction = GameSession.DIR_SOUTH
+		session.set_party_world_position(statue.position + Vector2i(16, -8))
+		messages.clear()
+		positions.clear()
+		next_entries.clear()
+		vm.run_trigger(database.item_definition(279).script_on_use, 0xffff)
+		_drive_script(vm)
+		if not vm.touch_trigger_armed or statue.trigger_mode != PalEventObject.TRIGGER_TOUCH_NORMAL or next_entries != [39645]:
+			vm.free()
+			return "面对第 %d 座石像使用破天锤没有武装接触事件：armed=%s mode=%d entry=%s" % [event_id - 237, vm.touch_trigger_armed, statue.trigger_mode, next_entries]
+		next_entries.clear()
+		vm.run_trigger(statue.trigger_script, event_id)
+		_drive_script(vm)
+		statue_end_entries.append(next_entries[0] if not next_entries.is_empty() else -1)
+		if event_id < 243 and (not messages.is_empty() or not positions.is_empty()):
+			vm.free()
+			return "第 %d 座石像过早触发最终破碎叙述：%s" % [event_id - 237, messages]
+	var failure := ""
+	if not unsupported.is_empty():
+		failure = "仙灵岛六座石像遇到未支持指令：%s" % [unsupported]
+	elif database.event_objects.slice(237, 243).any(func(event: PalEventObject) -> bool: return event.state != 0):
+		failure = "六座石像没有全部变为隐藏状态"
+	elif messages != _message_range(2429, 2430) or positions != [3]:
+		failure = "第六座石像没有显示合并 Toast：位置 %s，消息 %s" % [positions, messages]
+	elif sounds != [262, 262, 262, 262, 262, 262]:
+		failure = "石像破碎音效次数不正确：%s" % [sounds]
+	elif statue_end_entries != [0, 0, 0, 0, 0, 9433]:
+		failure = "石像状态判断的结束入口不正确：%s" % [statue_end_entries]
+	elif session.item_count(279) != 0:
+		failure = "第六座石像后破天锤没有从背包移除"
+	elif database.event_objects[262].state != 1:
+		failure = "第六座石像后荷叶通路 EventObject 263 没有开启"
 	vm.free()
 	return failure
 

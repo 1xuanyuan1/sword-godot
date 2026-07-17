@@ -65,6 +65,9 @@ var waiting_for_rng: bool = false
 var waiting_for_battle: bool = false
 ## 最近一次条件指令是否成功，供后续分支判断。
 var script_success: bool = true
+## 本轮 `0081` 是否已把一个面对的事件提升为下一帧接触触发。
+## 该状态独立于 `script_success`，因为物品脚本可能先检查多个不匹配对象。
+var touch_trigger_armed: bool = false
 
 var _cursor: int = 0
 var _event_object_id: int = 0
@@ -134,6 +137,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	_battle_flee_entry = 0
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
+	touch_trigger_armed = false
 	_cursor = entry_index
 	_next_trigger_entry = entry_index
 	_event_object_id = event_object_id
@@ -202,6 +206,7 @@ func stop() -> void:
 	_dialog_is_toast = false
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
+	touch_trigger_armed = false
 	_call_stack.clear()
 	dialog_ended.emit()
 
@@ -661,7 +666,10 @@ func _continue_execution() -> int:
 					event.layer = _signed_word(entry.operands[1])
 			# 队伍未面向/接近 operand[0] 事件时跳到 operand[2]；operand[1] 为距离级别。
 			0x0081:
-				if not _is_party_facing_event(entry.operands[0], entry.operands[1]):
+				if _is_party_facing_event(entry.operands[0], entry.operands[1]):
+					if entry.operands[1] > 0:
+						touch_trigger_armed = true
+				else:
 					script_success = false
 					_cursor = entry.operands[2]
 					continue
@@ -671,6 +679,12 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_page_break.emit()
 				redraw_requested.emit(0)
+			# 目标事件状态等于 signed(operand[1]) 时跳到 operand[2]；0 用于立即结束脚本。
+			0x0094:
+				var compared_event := _resolve_event(entry.operands[0])
+				if compared_event != null and compared_event.state == _signed_word(entry.operands[1]):
+					_cursor = entry.operands[2]
+					continue
 			# 将 operand[0] 到 operand[1]（含两端）的 EventObject 状态批量改为 signed(operand[2])。
 			0x009a:
 				var target_state := _signed_word(entry.operands[2])

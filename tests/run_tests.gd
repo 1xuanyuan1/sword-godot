@@ -986,6 +986,31 @@ func _test_script_vm_scene_runtime_mutations() -> void:
 	_expect(changed_scene.script_on_enter == 0 and changed_scene.script_on_teleport == 0, "opcode 006D clears both scene scripts when both new entries are zero")
 	vm.free()
 
+	var branch_database := PalContentDatabase.new()
+	for operation in [0, 0x0094, 0x0047, 0, 0x0047, 0]:
+		var branch_entry := PalScriptEntry.new()
+		branch_entry.operation = operation
+		branch_entry.operands = PackedInt32Array([0, 0, 0])
+		branch_database.scripts.append(branch_entry)
+	branch_database.scripts[1].operands = PackedInt32Array([1, 2, 4])
+	branch_database.scripts[2].operands[0] = 11
+	branch_database.scripts[4].operands[0] = 22
+	var compared_event := PalEventObject.new()
+	compared_event.object_id = 1
+	compared_event.state = 2
+	branch_database.event_objects.append(compared_event)
+	var branch_sounds: Array[int] = []
+	var branch_vm := ScriptVM.new()
+	branch_vm.configure(branch_database)
+	branch_vm.sound_requested.connect(func(number: int) -> void: branch_sounds.append(number))
+	branch_vm.run_trigger(1)
+	_expect(branch_sounds == [22], "opcode 0094 jumps when the selected EventObject has the requested signed state")
+	compared_event.state = 1
+	branch_sounds.clear()
+	branch_vm.run_trigger(1)
+	_expect(branch_sounds == [11], "opcode 0094 falls through when the selected EventObject state differs")
+	branch_vm.free()
+
 
 func _test_script_vm_dialog_pause() -> void:
 	var database := PalContentDatabase.new()

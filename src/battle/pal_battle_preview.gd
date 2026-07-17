@@ -219,6 +219,9 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 func _unhandled_key_input(event: InputEvent) -> void:
 	if not visible or not (event is InputEventKey) or not event.pressed or event.echo:
 		return
+	# ESC 在实验室模式会立即切换场景，使本节点当场脱离 SceneTree。
+	# 先保存仍然有效的 Viewport，避免动作完成后 get_viewport() 已返回 null。
+	var input_viewport := get_viewport()
 	var handled := true
 	match event.keycode:
 		KEY_ESCAPE:
@@ -253,8 +256,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 				_load_nearest_battlefield(-1)
 		_:
 			handled = false
-	if handled:
-		get_viewport().set_input_as_handled()
+	if handled and input_viewport != null:
+		input_viewport.set_input_as_handled()
 
 
 func _build_interface() -> void:

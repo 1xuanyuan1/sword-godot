@@ -835,7 +835,9 @@ func _on_script_finished(next_entry: int) -> void:
 			item.script_on_use = next_entry
 			if _script_vm.script_success and item.is_consuming():
 				_session.change_item_count(_pending_used_item_id, -1)
-		var should_trigger_touch := _script_vm.script_success
+		# 0081 会按原版把匹配对象改为接触触发；它与脚本最终成功标志不是同一状态。
+		# 破天锤会先顺序检查前面的石像，因此面对第二座以后时 script_success 仍可能为 false。
+		var should_trigger_touch := _script_vm.touch_trigger_armed
 		_pending_used_item_id = 0
 		if should_trigger_touch:
 			call_deferred("_trigger_touch_event")
