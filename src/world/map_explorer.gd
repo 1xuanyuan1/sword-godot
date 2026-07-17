@@ -693,10 +693,18 @@ func _start_screen_fade(fade_out: bool, duration_seconds: float, complete_vm: bo
 
 func _on_screen_fade_finished(fade_out: bool, complete_vm: bool) -> void:
 	_screen_fade_active = false
+	# 清除已经结束的 Tween，再允许脚本回调启动下一段渐变；否则后续渐变会把
+	# 正在派发 finished 的旧 Tween 当作活动对象杀掉，丢失 VM 完成通知。
+	_fade_tween = null
 	if not fade_out and _fade_overlay != null:
 		_fade_overlay.visible = false
 	if complete_vm and _script_vm != null:
 		_script_vm.complete_screen_fade()
+	# 部分原版脚本先执行 0059 切换场景，再执行 0050 渐隐。此时必须等渐隐的
+	# VM 回调完成后才加载新场景，否则自动渐显会提前杀掉渐隐 Tween，并让
+	# waiting_for_screen_fade 永久保持为 true。
+	if _pending_scene_index >= 0 and not _screen_fade_active:
+		_apply_pending_scene()
 
 
 func _on_rng_animation_requested(animation_number: int, start_frame: int, end_frame: int, frames_per_second: int) -> void:
@@ -827,6 +835,10 @@ func _on_script_finished(next_entry: int) -> void:
 
 func _apply_pending_scene() -> void:
 	if _pending_scene_index < 0:
+		return
+	# 场景请求可能出现在紧随其后的渐隐指令之前。延后到当前渐变结束，保证
+	# VM 的完成回调不会被新场景的自动渐显覆盖。
+	if _screen_fade_active:
 		return
 	var scene_index := _pending_scene_index
 	_pending_scene_index = -1

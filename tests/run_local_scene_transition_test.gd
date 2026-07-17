@@ -4,12 +4,18 @@ extends SceneTree
 
 
 func _init() -> void:
+	call_deferred("_run_tests")
+
+
+func _run_tests() -> void:
 	var database := PalContentDatabase.new()
 	if not database.load_generated():
 		printerr("SKIP: 本地生成资源不存在：%s" % database.error_message)
 		quit(0)
 		return
 	var failure := _test_inn_exit(database)
+	if failure.is_empty():
+		failure = await _test_inn_exit_runtime()
 	if failure.is_empty():
 		failure = _test_stairs(database)
 	if failure.is_empty():
@@ -44,6 +50,39 @@ func _test_inn_exit(database: PalContentDatabase) -> String:
 	elif session.party_world_position() != Vector2i(1440, 1536):
 		failure = "客栈出口落点错误：%s" % session.party_world_position()
 	vm.free()
+	return failure
+
+
+func _test_inn_exit_runtime() -> String:
+	# 使用真实 MapExplorer、Tween 和延后场景切换，覆盖“0059 后紧跟 0050”时
+	# 渐显抢先杀掉渐隐 Tween、导致 VM 永久等待的生命周期回归。
+	PalDebugCheckpoint._pending = {
+		"id": "inn_exit_runtime_test",
+		"scene": 0,
+		"script": 0,
+		"position": Vector2i(1408, 1520),
+	}
+	var explorer: Control = load("res://scenes/map_explorer.tscn").instantiate()
+	root.add_child(explorer)
+	await process_frame
+	var exit_event: PalEventObject = explorer._scene_events[0]
+	explorer._run_event_trigger(exit_event)
+	await create_timer(1.3).timeout
+	var failure := ""
+	var vm: ScriptVM = explorer._script_vm
+	if explorer._session.scene_index != 2 or explorer._pending_scene_index != -1:
+		failure = "客栈出口真实转场没有稳定进入场景 3：scene=%d pending=%d" % [explorer._session.scene_index, explorer._pending_scene_index]
+	elif explorer._screen_fade_active or explorer._fade_overlay.visible or vm.waiting_for_screen_fade:
+		failure = "客栈出口渐变结束后仍锁住输入：screen=%s overlay=%s vm=%s" % [explorer._screen_fade_active, explorer._fade_overlay.visible, vm.waiting_for_screen_fade]
+	elif explorer._touch_scan_active or explorer._active_trigger_event != null or vm.running or vm.waiting_for_dialog or vm.waiting_for_rng or vm.waiting_for_battle:
+		failure = "客栈出口真实转场残留运行时门禁"
+	else:
+		var before: Vector2i = explorer._session.party_world_position()
+		var movement := GameSession.movement_for_direction(GameSession.DIR_NORTH)
+		if not explorer._try_move(movement) or explorer._session.party_world_position() == before:
+			failure = "客栈出口落地后无法实际移动一步"
+	explorer.queue_free()
+	await process_frame
 	return failure
 
 
