@@ -17,6 +17,8 @@ func _run_tests() -> void:
 	if failure.is_empty():
 		failure = await _test_inn_exit_runtime()
 	if failure.is_empty():
+		failure = await _test_bath_cutscene_runtime()
+	if failure.is_empty():
 		failure = _test_stairs(database)
 	if failure.is_empty():
 		failure = _test_kitchen_entry(database)
@@ -26,7 +28,7 @@ func _run_tests() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 客栈出口、楼梯动画、厨房入口及场景传送离开脚本完成，落点正确且没有重播开场")
+	print("PASS: 客栈出口、仙灵岛洗澡过场、楼梯动画、厨房入口及场景传送回归通过")
 	quit(0)
 
 
@@ -81,6 +83,112 @@ func _test_inn_exit_runtime() -> String:
 		var movement := GameSession.movement_for_direction(GameSession.DIR_NORTH)
 		if not explorer._try_move(movement) or explorer._session.party_world_position() == before:
 			failure = "客栈出口落地后无法实际移动一步"
+	explorer.queue_free()
+	await process_frame
+	return failure
+
+
+func _test_bath_cutscene_runtime() -> String:
+	PalDebugCheckpoint._pending = {
+		"id": "bath_cutscene_runtime_test",
+		# 事件对象 204 的剧情入口和赵灵儿 209 都属于场景 13（地图 119）。
+		# 不能只在相似的户外地图验证李逍遥动作，否则会漏掉真正的花树背景和赵灵儿。
+		"scene": 13,
+		"script": 9649,
+		"event": 204,
+		"position": Vector2i(1104, 1432),
+		"music": 61,
+	}
+	var explorer: Control = load("res://scenes/map_explorer.tscn").instantiate()
+	root.add_child(explorer)
+	await process_frame
+	explorer.set_process(false)
+	var vm: ScriptVM = explorer._script_vm
+	var bath_event: PalEventObject = explorer._database.event_objects[208]
+	var bath_event_is_loaded := false
+	for event in explorer._scene_events:
+		if event.object_id == 209:
+			bath_event_is_loaded = true
+			break
+	var failure := ""
+	if explorer._session.scene_index != 13 or explorer._database.scenes[13].map_number != 119:
+		failure = "洗澡过场没有载入花树场景 13 / 地图 119"
+	elif not bath_event_is_loaded or bath_event.sprite_number != 339:
+		failure = "花树场景缺少赵灵儿事件对象 209 / MGO 339"
+	if not failure.is_empty():
+		explorer.queue_free()
+		await process_frame
+		return failure
+	var samples: Array[Dictionary] = []
+	var sampled_frames: Array[int] = []
+	var can_capture_pixels := DisplayServer.get_name() != "headless"
+	var saw_li_costume_scene_visible := false
+	var guard := 0
+	while guard < 1000 and 16 not in sampled_frames:
+		if (
+			explorer._database.player_roles.scene_sprite_numbers[0] == 361
+			and explorer._script_camera_offset == Vector2i.ZERO
+			and not explorer._screen_fade_active
+			and not explorer._fade_overlay.visible
+		):
+			saw_li_costume_scene_visible = true
+		# 稳定可见段包括固定镜头后的洗澡姿势第 0 帧，以及惊叫后的第 9–16 帧。
+		# 第 8 帧紧接第二次 0050，本来就只作为渐隐转场起始姿势，不要求静止截图。
+		var should_sample: bool = (
+			bath_event.current_frame == 0 and explorer._script_camera_offset == Vector2i(192, 96)
+		) or bath_event.current_frame >= 9 and bath_event.current_frame <= 16
+		if should_sample and bath_event.current_frame not in sampled_frames and not explorer._screen_fade_active:
+			sampled_frames.append(bath_event.current_frame)
+			var nonblack_pixels := -1
+			var image: Image = null
+			if can_capture_pixels:
+				image = explorer.get_viewport().get_texture().get_image()
+				image.resize(320, 200, Image.INTERPOLATE_NEAREST)
+				nonblack_pixels = 0
+				for y in range(image.get_height()):
+					for x in range(image.get_width()):
+						var color := image.get_pixel(x, y)
+						if color.r > 0.04 or color.g > 0.04 or color.b > 0.04:
+							nonblack_pixels += 1
+			samples.append({
+				"frame": bath_event.current_frame,
+				"nonblack": nonblack_pixels,
+				"overlay": explorer._fade_overlay.visible,
+				"alpha": explorer._fade_overlay.modulate.a,
+			})
+			if can_capture_pixels and nonblack_pixels > 5000:
+				DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://generated/pal/visual_tests"))
+				image.save_png(ProjectSettings.globalize_path("res://generated/pal/visual_tests/bath_cutscene_%02d.png" % bath_event.current_frame))
+		if explorer._screen_fade_active or vm.waiting_for_screen_fade:
+			await create_timer(0.7).timeout
+		elif vm.waiting_for_dialog:
+			vm.advance_dialog()
+		elif vm.waiting_for_frames:
+			if vm.tick_frame():
+				explorer._refresh_world()
+			await process_frame
+		else:
+			await process_frame
+		guard += 1
+	var minimum_nonblack_pixels := 64000
+	var all_sampled_frames_uncovered := true
+	for sample in samples:
+		if int(sample["nonblack"]) >= 0:
+			minimum_nonblack_pixels = mini(minimum_nonblack_pixels, int(sample["nonblack"]))
+		if bool(sample["overlay"]) or float(sample["alpha"]) > 0.001:
+			all_sampled_frames_uncovered = false
+	if bath_event.current_frame < 16:
+		failure = "洗澡过场没有执行到 MGO 339 第 16 帧：frame=%d" % bath_event.current_frame
+	elif not saw_li_costume_scene_visible:
+		failure = "发现衣服后的李逍遥动作场景仍被黑色遮罩覆盖"
+	elif sampled_frames.size() != 9 or 0 not in sampled_frames:
+		failure = "洗澡过场没有捕获洗澡姿势及惊叫后的完整可见帧：%s" % [samples]
+	elif not all_sampled_frames_uncovered:
+		failure = "洗澡或晃衣服画面仍被黑色遮罩覆盖：%s" % [samples]
+	elif can_capture_pixels and minimum_nonblack_pixels < 5000:
+		failure = "洗澡过场至少一帧仍接近全黑：%s" % [samples]
+	elif explorer._screen_fade_active or explorer._fade_overlay.visible or explorer._fade_overlay.modulate.a > 0.001:
+		failure = "洗澡及晃衣服动作结束后仍残留黑色遮罩"
 	explorer.queue_free()
 	await process_frame
 	return failure

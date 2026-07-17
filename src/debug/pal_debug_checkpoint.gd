@@ -38,6 +38,18 @@ static func request(checkpoint_id: String) -> bool:
 				},
 				"hint": "向右面对张四并按空格，验证上船移动与后续剧情",
 			}
+		"fairy_island_bath":
+			# 从发现衣服前的镜头移动开始，覆盖两次 0050 渐隐、花树下洗澡画面、
+			# 上岸发现衣服不见以及李逍遥用树枝晃衣服的完整过场。
+			_pending = {
+				"id": checkpoint_id,
+				"scene": 13,
+				"script": 9649,
+				"event": 204,
+				"position": Vector2i(1104, 1432),
+				"music": 61,
+				"hint": "验证花树背景、洗澡画面与晃衣服动作不再异常黑屏",
+			}
 		_:
 			_pending = {}
 			return false

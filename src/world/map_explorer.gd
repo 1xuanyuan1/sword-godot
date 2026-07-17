@@ -738,9 +738,7 @@ func _on_unsupported_instruction(index: int, operation: int) -> void:
 func _on_script_redraw(_delay_units: int) -> void:
 	_hide_fbp_view()
 	_refresh_world()
-	if _fade_in_after_scene_change and not _screen_fade_active:
-		_fade_in_after_scene_change = false
-		_start_screen_fade(false, _automatic_fade_in_duration, false)
+	_start_pending_fade_in_after_world_draw()
 
 
 func _on_music_requested(music_number: int, loop: bool, fade_seconds: float) -> void:
@@ -811,6 +809,14 @@ func _start_screen_fade(fade_out: bool, duration_seconds: float, complete_vm: bo
 	_fade_tween = create_tween()
 	_fade_tween.tween_property(_fade_overlay, "modulate:a", 1.0 if fade_out else 0.0, maxf(0.01, duration_seconds))
 	_fade_tween.finished.connect(_on_screen_fade_finished.bind(fade_out, complete_vm))
+
+
+func _start_pending_fade_in_after_world_draw() -> bool:
+	if not _fade_in_after_scene_change or _screen_fade_active or _pending_scene_index >= 0:
+		return false
+	_fade_in_after_scene_change = false
+	_start_screen_fade(false, _automatic_fade_in_duration, false)
+	return true
 
 
 func _on_screen_fade_finished(fade_out: bool, complete_vm: bool) -> void:
@@ -1103,6 +1109,9 @@ func _on_camera_offset_requested(offset: Vector2i) -> void:
 	_script_camera_offset = offset
 	if _map_data != null and _map_data.is_valid():
 		_refresh_world()
+		# 官方 007F 每次镜头移动后调用 PAL_MakeScene；0050 留下的
+		# fNeedToFadeIn 应在这次画面完成后消费，不能等到稍后的 0005。
+		_start_pending_fade_in_after_world_draw()
 
 
 func _on_magic_use_requested(magic_object_id: int, caster_role_index: int, target_role_index: int) -> void:
