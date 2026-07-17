@@ -11,6 +11,8 @@ const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
 const RETURN_TO_LAB_KEYCODE := KEY_F10
+const FIELD_MAGIC_STAGE_USE := 0
+const FIELD_MAGIC_STAGE_SUCCESS := 1
 
 var _database := PalContentDatabase.new()
 var _session := GameSession.new()
@@ -43,6 +45,10 @@ var _script_frame_accumulator: float = 0.0
 var _active_trigger_event: PalEventObject
 var _active_scene_enter_index: int = -1
 var _pending_used_item_id: int = 0
+var _pending_magic_object_id: int = 0
+var _pending_magic_caster_role: int = -1
+var _pending_magic_target_role: int = -1
+var _pending_magic_stage: int = 0
 var _use_legacy_renderer: bool = false
 var _touch_scan_active: bool = false
 var _touch_scan_next_index: int = 0
@@ -143,6 +149,7 @@ func _build_interface() -> void:
 	_game_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_game_menu.item_use_requested.connect(_on_item_use_requested)
 	_game_menu.item_equip_requested.connect(_on_item_equip_requested)
+	_game_menu.magic_use_requested.connect(_on_magic_use_requested)
 	_ui_layer.add_child(_game_menu)
 
 	_rng_player = PalRngPlayer.new()
@@ -190,6 +197,8 @@ func _process(delta: float) -> void:
 		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_screen_fade and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle:
 			_trigger_touch_event()
 	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle):
+		return
+	if _pending_magic_object_id > 0:
 		return
 	# 同一轮接触扫描中的同步短脚本会在帧末续跑；期间不能夹入一次玩家移动。
 	if _touch_scan_active:
@@ -240,7 +249,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.keycode in MENU_KEYCODES:
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_screen_fade and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle and not _touch_scan_active:
+		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_screen_fade and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle and not _touch_scan_active and _pending_magic_object_id <= 0:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
 			else:
@@ -263,6 +272,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if _script_vm != null and _script_vm.waiting_for_battle:
 			return
 		if _touch_scan_active:
+			return
+		if _pending_magic_object_id > 0:
 			return
 	if event is InputEventKey and event.keycode == RETURN_TO_LAB_KEYCODE:
 		get_tree().change_scene_to_file("res://scenes/main.tscn")
@@ -828,6 +839,8 @@ func _on_script_finished(next_entry: int) -> void:
 		_pending_used_item_id = 0
 		if should_trigger_touch:
 			call_deferred("_trigger_touch_event")
+	if _pending_magic_object_id > 0:
+		_finish_pending_magic_stage(next_entry, _script_vm.script_success)
 	if _fade_in_after_scene_change and _pending_scene_index < 0 and not _screen_fade_active:
 		_fade_in_after_scene_change = false
 		_start_screen_fade(false, _automatic_fade_in_duration, false)
@@ -865,8 +878,85 @@ func _on_script_party_walk_finished() -> void:
 	_move_cooldown = 0.0
 
 
+func _on_magic_use_requested(magic_object_id: int, caster_role_index: int, target_role_index: int) -> void:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _pending_magic_object_id > 0 or _pending_used_item_id > 0:
+		return
+	var object := _database.magic_object_definition(magic_object_id)
+	var definition := _database.magic_definition_for_object(magic_object_id)
+	var caster_in_party := caster_role_index in _session.party_roles
+	var target_is_valid := target_role_index < 0 or target_role_index in _session.party_roles
+	if object == null or definition == null or not caster_in_party or not target_is_valid or not _session.has_magic(caster_role_index, magic_object_id) or not object.is_usable_outside_battle():
+		_game_menu.notify_magic_result(false, "这个仙术目前不能使用。")
+		return
+	if target_role_index < 0 and not object.applies_to_all():
+		_game_menu.notify_magic_result(false, "请选择一名队员作为目标。")
+		return
+	if caster_role_index < 0 or caster_role_index >= _session.role_mp.size() or _session.role_hp[caster_role_index] <= 0 or _session.role_mp[caster_role_index] < definition.mp_cost:
+		_game_menu.notify_magic_result(false, "真气不足，或施法者当前无法行动。")
+		return
+	_game_menu.close_menu()
+	_pending_magic_object_id = magic_object_id
+	_pending_magic_caster_role = caster_role_index
+	_pending_magic_target_role = target_role_index
+	_pending_magic_stage = FIELD_MAGIC_STAGE_USE
+	_status.text = "施展：%s" % _database.get_word(magic_object_id)
+	_run_pending_magic_stage()
+
+
+func _run_pending_magic_stage() -> void:
+	if _pending_magic_object_id <= 0 or _script_vm == null:
+		return
+	var object := _database.magic_object_definition(_pending_magic_object_id)
+	if object == null:
+		_complete_pending_magic(false)
+		return
+	var entry := object.script_on_use if _pending_magic_stage == FIELD_MAGIC_STAGE_USE else object.script_on_success
+	if entry <= 0:
+		_finish_pending_magic_stage(entry, true)
+		return
+	# 全体仙术沿用官方事件参数 0；单体仙术传入 PLAYERROLES 角色编号。
+	_script_vm.run_trigger(entry, 0 if _pending_magic_target_role < 0 else _pending_magic_target_role)
+
+
+func _finish_pending_magic_stage(next_entry: int, success: bool) -> void:
+	if _pending_magic_object_id <= 0:
+		return
+	var object := _database.magic_object_definition(_pending_magic_object_id)
+	if object == null:
+		_complete_pending_magic(false)
+		return
+	if _pending_magic_stage == FIELD_MAGIC_STAGE_USE:
+		object.script_on_use = next_entry
+		if not success:
+			_complete_pending_magic(false)
+			return
+		_pending_magic_stage = FIELD_MAGIC_STAGE_SUCCESS
+		# script_finished 从 VM 的解释循环内发出；延后一帧避免嵌套启动第二段脚本。
+		if is_inside_tree():
+			call_deferred("_run_pending_magic_stage")
+		return
+	object.script_on_success = next_entry
+	_complete_pending_magic(success)
+
+
+func _complete_pending_magic(success: bool) -> void:
+	var magic_object_id := _pending_magic_object_id
+	var caster_role_index := _pending_magic_caster_role
+	var definition := _database.magic_definition_for_object(magic_object_id)
+	if success and definition != null and caster_role_index >= 0 and caster_role_index < _session.role_mp.size():
+		_session.role_mp[caster_role_index] = maxi(0, _session.role_mp[caster_role_index] - definition.mp_cost)
+	_pending_magic_object_id = 0
+	_pending_magic_caster_role = -1
+	_pending_magic_target_role = -1
+	_pending_magic_stage = FIELD_MAGIC_STAGE_USE
+	var magic_name := _database.get_word(magic_object_id)
+	var feedback := "施展：%s" % magic_name if success else "%s没有生效" % magic_name
+	_status.text = feedback
+	_game_menu.notify_magic_result(success, feedback)
+
+
 func _on_item_use_requested(item_id: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _session.item_count(item_id) <= 0:
+	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _session.item_count(item_id) <= 0 or _pending_magic_object_id > 0:
 		return
 	var item := _database.item_definition(item_id)
 	if item == null or not item.is_usable():

@@ -60,11 +60,11 @@ sword/
 
 ### `src/world`
 
-`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排，也负责在 ScriptVM 等待时覆盖打开剧情战斗、切换 BGM 并回传胜负。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
+`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排，也负责把场外仙术的使用/成功脚本按顺序交给 ScriptVM、成功后扣除 MP，以及在 ScriptVM 等待时覆盖打开剧情战斗、切换 BGM 并回传胜负。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
 
 ### `src/ui`
 
-只负责屏幕控件和输入反馈。菜单和对话框读取内容数据库与会话，但不直接解析 MKF，也不自行推进 ScriptVM。`PalRngPlayer` 只播放导入后的帧区间，并以完成信号解除 VM 的剧情等待。
+只负责屏幕控件和输入反馈。`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备和系统页；它读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalRngPlayer` 只播放导入后的帧区间，并以完成信号解除 VM 的剧情等待。
 
 ### `src/debug`
 

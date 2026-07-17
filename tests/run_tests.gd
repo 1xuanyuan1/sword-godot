@@ -43,6 +43,7 @@ func _init() -> void:
 	_test_script_vm_audio_requests()
 	_test_script_vm_screen_fade_wait()
 	_test_script_vm_rng_and_role_state()
+	_test_script_vm_field_role_effects()
 	_test_script_vm_scene_teleport()
 	_test_script_vm_scene_runtime_mutations()
 	_test_script_vm_dialog_pause()
@@ -60,6 +61,7 @@ func _init() -> void:
 	_test_explorer_hud_canvas_layer()
 	_test_debug_checkpoints()
 	_test_game_menu_inventory()
+	_test_explorer_field_magic_bridge()
 	_test_explorer_input_keys()
 	_test_dialog_box_typewriter()
 	if _failures.is_empty():
@@ -594,11 +596,11 @@ func _test_battle_content_structures() -> void:
 	_expect(enemy_object != null and enemy_object.object_id == 18 and enemy_object.enemy_id == 9 and enemy_object.resistance_to_sorcery == 7, "enemy object maps OBJECT id to DATA enemy id")
 	_expect(enemy_object.script_on_turn_start == 101 and enemy_object.script_on_battle_end == 102 and enemy_object.script_on_ready == 103, "enemy object battle scripts")
 	var magic_object_bytes := PackedByteArray()
-	for value in [33, 0, 201, 202, 0, 0x1a]:
+	for value in [33, 0, 201, 202, 0, 0x1b]:
 		PalBinary.append_u16_le(magic_object_bytes, value)
 	var magic_object := PalMagicObjectDefinition.from_bytes(magic_object_bytes, 0, 296)
 	_expect(magic_object != null and magic_object.object_id == 296 and magic_object.magic_number == 33, "magic object maps WORD name id to DATA magic record")
-	_expect(magic_object.script_on_success == 201 and magic_object.script_on_use == 202 and magic_object.is_usable_in_battle(), "magic object scripts and in-battle flag")
+	_expect(magic_object.script_on_success == 201 and magic_object.script_on_use == 202 and magic_object.is_usable_in_battle() and magic_object.is_usable_outside_battle(), "magic object scripts and field/battle flags")
 	_expect(magic_object.is_used_on_enemy() and magic_object.applies_to_all(), "magic object enemy and apply-to-all flags")
 
 	var magic_bytes := PackedByteArray()
@@ -1056,6 +1058,58 @@ func _test_script_vm_dialog_page_break() -> void:
 	vm.free()
 
 
+func _test_script_vm_field_role_effects() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x001b, 0, 0x001c, 0, 0x002b, 0, 0x002c, 0, 0x002d, 0, 0x002f, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([0, 20, 0])
+	database.scripts[3].operands = PackedInt32Array([0, 5, 0])
+	database.scripts[5].operands = PackedInt32Array([1, 100, 0])
+	database.scripts[7].operands = PackedInt32Array([0, 3, 0])
+	database.scripts[9].operands = PackedInt32Array([GameSession.STATUS_PROTECT, 3, 0])
+	database.scripts[11].operands[0] = GameSession.STATUS_PROTECT
+	database.poisons.resize(101)
+	var poison := PoisonDefinition.PoisonData.new()
+	poison.object_id = 100
+	poison.poison_level = 2
+	database.poisons[100] = poison
+	var session := GameSession.new()
+	session.party_roles = PackedInt32Array([0, 1])
+	session.role_hp = PackedInt32Array([50, 80])
+	session.role_max_hp = PackedInt32Array([100, 100])
+	session.role_mp = PackedInt32Array([10, 10])
+	session.role_max_mp = PackedInt32Array([20, 20])
+	for _role_index in range(PalPlayerRoles.ROLE_COUNT):
+		session.role_status_rounds_by_role.append(PackedInt32Array([0, 0, 0, 0, 0, 0, 0, 0, 0]))
+		session.role_poisons_by_role.append({})
+	session.add_role_poison(0, 100, 1)
+	session.add_role_poison(1, 100, 1)
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.run_trigger(1, 0)
+	_expect(session.role_hp[0] == 70 and vm.script_success, "opcode 001B lets a field healing magic restore the selected role HP")
+	vm.run_trigger(1, 0)
+	session.role_hp[0] = session.role_max_hp[0]
+	vm.run_trigger(1, 0)
+	_expect(not vm.script_success, "opcode 001B reports failure when a full-health field target cannot change")
+	vm.run_trigger(3, 1)
+	_expect(session.role_mp[1] == 15 and vm.script_success, "opcode 001C restores only the selected role MP")
+	vm.run_trigger(5, 0)
+	_expect(not session.role_has_poison(0, 100) and not session.role_has_poison(1, 100), "opcode 002B cures the requested poison for the full party")
+	session.add_role_poison(0, 100, 1)
+	session.add_role_poison(1, 100, 1)
+	vm.run_trigger(7, 1)
+	_expect(session.role_has_poison(0, 100) and not session.role_has_poison(1, 100), "opcode 002C cures poisons by level only on the selected role")
+	vm.run_trigger(9, 0)
+	_expect(session.status_rounds_for(0, GameSession.STATUS_PROTECT) == 3, "opcode 002D applies a field role status")
+	vm.run_trigger(11, 0)
+	_expect(session.status_rounds_for(0, GameSession.STATUS_PROTECT) == 0, "opcode 002F removes the selected role status")
+	vm.free()
+
+
 func _test_script_vm_trigger_event_steps() -> void:
 	var database := PalContentDatabase.new()
 	database.scripts.append(PalScriptEntry.new())
@@ -1496,11 +1550,13 @@ func _test_debug_checkpoints() -> void:
 
 func _test_game_menu_inventory() -> void:
 	var database := PalContentDatabase.new()
-	database.words.resize(273)
+	database.words.resize(301)
 	database.words[0] = "李逍遥"
+	database.words[1] = "赵灵儿"
 	database.words[201] = "皮帽"
 	database.words[272] = "桂花酒"
-	database.items.resize(273)
+	database.words[300] = "气疗术"
+	database.items.resize(301)
 	var cap := PalItemDefinition.new()
 	cap.object_id = 201
 	cap.script_on_equip = 1
@@ -1511,7 +1567,24 @@ func _test_game_menu_inventory() -> void:
 	wine.script_on_use = 39660
 	wine.flags = PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_APPLY_TO_ALL
 	database.items[272] = wine
+	database.magic_objects.resize(301)
+	var healing_magic := PalMagicObjectDefinition.new()
+	healing_magic.object_id = 300
+	healing_magic.magic_number = 0
+	healing_magic.flags = PalMagicObjectDefinition.FLAG_USABLE_OUTSIDE_BATTLE
+	database.magic_objects[300] = healing_magic
+	var healing_definition := PalMagicDefinition.new()
+	healing_definition.magic_number = 0
+	healing_definition.mp_cost = 5
+	database.magics.append(healing_definition)
 	var session := GameSession.new()
+	session.party_roles = PackedInt32Array([0, 1])
+	session.role_hp = PackedInt32Array([100, 80])
+	session.role_max_hp = PackedInt32Array([100, 100])
+	session.role_mp = PackedInt32Array([12, 8])
+	session.role_max_mp = PackedInt32Array([20, 20])
+	for role_index in range(PalPlayerRoles.ROLE_COUNT):
+		session.learned_magics_by_role.append(PackedInt32Array([300]) if role_index == 0 else PackedInt32Array())
 	session.set_item_count(201, 1)
 	session.set_item_count(272, 1)
 	var menu := PalGameMenu.new()
@@ -1519,6 +1592,26 @@ func _test_game_menu_inventory() -> void:
 	menu.configure(database, session)
 	menu.open_main()
 	_expect(menu.current_page == PalGameMenu.Page.MAIN and menu._main_selection == 2, "classic main menu opens with inventory selected")
+	menu._main_selection = 0
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.STATUS and menu._status_party_selection == 0, "classic status entry opens the first party member page")
+	menu._confirm_selection()
+	_expect(menu._status_party_selection == 1, "status page confirm cycles to the next party member")
+	menu.go_back()
+	menu._main_selection = 1
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.MAGIC_CASTER, "multi-member party selects a caster before opening field magic")
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.MAGIC_LIST and menu._magic_entries.size() == 1 and menu._magic_entries[0].get("enabled") == true, "field magic list includes learned outside-battle magic with sufficient MP")
+	var magic_requests: Array = []
+	menu.magic_use_requested.connect(func(magic_id: int, caster_role: int, target_role: int) -> void: magic_requests.append([magic_id, caster_role, target_role]))
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.MAGIC_TARGET, "single-target field magic opens the party target row")
+	menu._move_selection(Vector2i(1, 0))
+	menu._confirm_selection()
+	_expect(magic_requests == [[300, 0, 1]], "field magic request carries the selected magic, caster and PLAYERROLES target")
+	menu.open_main()
+	menu._main_selection = 2
 	menu._confirm_selection()
 	_expect(menu.current_page == PalGameMenu.Page.INVENTORY_ACTION, "classic inventory command submenu opens from the main menu")
 	menu._confirm_selection()
@@ -1551,6 +1644,62 @@ func _test_game_menu_inventory() -> void:
 	_expect(session.music_volume == 90 and session.sound_volume == 90 and settings.back() == [90, 90], "system menu adjusts sound volume independently with left/right")
 	menu._confirm_selection()
 	_expect(session.sound_volume == 0 and settings.back() == [90, 0], "confirm on an audio row retains classic quick on/off behavior")
+	menu.free()
+
+
+func _test_explorer_field_magic_bridge() -> void:
+	var database := PalContentDatabase.new()
+	database.words.resize(101)
+	database.words[100] = "气疗术"
+	for operation in [0, 0x001b, 0, 0x001c, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands[1] = 20
+	database.scripts[3].operands[1] = 5
+	database.magic_objects.resize(101)
+	var object := PalMagicObjectDefinition.new()
+	object.object_id = 100
+	object.magic_number = 0
+	object.script_on_use = 1
+	object.script_on_success = 3
+	object.flags = PalMagicObjectDefinition.FLAG_USABLE_OUTSIDE_BATTLE
+	database.magic_objects[100] = object
+	var definition := PalMagicDefinition.new()
+	definition.magic_number = 0
+	definition.mp_cost = 3
+	database.magics.append(definition)
+	var session := GameSession.new()
+	session.party_roles = PackedInt32Array([0])
+	session.role_hp = PackedInt32Array([50])
+	session.role_max_hp = PackedInt32Array([100])
+	session.role_mp = PackedInt32Array([10])
+	session.role_max_mp = PackedInt32Array([20])
+	for role_index in range(PalPlayerRoles.ROLE_COUNT):
+		session.learned_magics_by_role.append(PackedInt32Array([100]) if role_index == 0 else PackedInt32Array())
+	var menu := PalGameMenu.new()
+	menu._ready()
+	menu.configure(database, session)
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var explorer_script: Script = load("res://src/world/map_explorer.gd")
+	var explorer: Control = explorer_script.new()
+	explorer._database = database
+	explorer._session = session
+	explorer._script_vm = vm
+	explorer._game_menu = menu
+	var status_label := Label.new()
+	explorer._status = status_label
+	vm.script_finished.connect(explorer._on_script_finished)
+	explorer._on_magic_use_requested(100, 0, 0)
+	_expect(session.role_hp[0] == 70 and explorer._pending_magic_stage == explorer.FIELD_MAGIC_STAGE_SUCCESS, "field magic bridge runs the use script before its success script")
+	explorer._run_pending_magic_stage()
+	_expect(session.role_mp[0] == 12 and explorer._pending_magic_object_id == 0, "successful field magic runs its success script and deducts MP exactly once")
+	_expect(menu.visible and menu.current_page == PalGameMenu.Page.MAGIC_LIST, "field magic returns to the refreshed magic list after resolution")
+	status_label.free()
+	explorer.free()
+	vm.free()
 	menu.free()
 
 

@@ -343,14 +343,21 @@ func _continue_execution() -> int:
 				if event != null and entry.operands[0] != 0:
 					event.direction = entry.operands[1]
 					event.current_frame = entry.operands[2]
-			# 同时增减角色体力与真气；operand[0] 非零时作用于全队，否则作用于当前角色。
-			0x001d:
+			# 增减角色体力、真气或两者；operand[0] 非零时作用于全队，否则作用于当前角色。
+			# 对齐 SDLPal script.c 的 001B–001D，供场外治疗仙术与剧情物品共用。
+			0x001b, 0x001c, 0x001d:
 				if session != null:
 					var delta := _signed_word(entry.operands[1])
+					var hp_delta := delta if entry.operation in [0x001b, 0x001d] else 0
+					var mp_delta := delta if entry.operation in [0x001c, 0x001d] else 0
 					if entry.operands[0] != 0:
+						var changed := false
 						for role_index in session.party_roles:
-							session.increase_role_hp_mp(role_index, delta, delta)
-					elif not session.increase_role_hp_mp(_event_object_id, delta, delta):
+							changed = session.increase_role_hp_mp(role_index, hp_delta, mp_delta) or changed
+						# 官方只有全体 001B 会在无人可恢复时把本轮脚本标为失败。
+						if entry.operation == 0x001b:
+							script_success = changed
+					elif not session.increase_role_hp_mp(_event_object_id, hp_delta, mp_delta):
 						script_success = false
 			# 增减金钱 signed(operand[0])；不足以扣除时跳到 operand[1]。
 			0x001e:
@@ -386,6 +393,28 @@ func _continue_execution() -> int:
 					else:
 						revived = session.revive_role(_event_object_id, entry.operands[1], database)
 					script_success = revived
+			# 按毒对象或毒等级清除玩家毒状态；供净衣咒等场外仙术使用。
+			0x002b:
+				if session != null:
+					if entry.operands[0] != 0:
+						for role_index in session.party_roles:
+							session.cure_role_poison(role_index, entry.operands[1])
+					else:
+						session.cure_role_poison(_event_object_id, entry.operands[1])
+			0x002c:
+				if session != null:
+					if entry.operands[0] != 0:
+						for role_index in session.party_roles:
+							session.cure_role_poisons_by_level(role_index, entry.operands[1], database)
+					else:
+						session.cure_role_poisons_by_level(_event_object_id, entry.operands[1], database)
+			# 设置或清除当前角色的经典状态；失败语义与官方 PAL_SetPlayerStatus 一致。
+			0x002d:
+				if session != null and not session.set_role_status(_event_object_id, entry.operands[0], entry.operands[1]):
+					script_success = false
+			0x002f:
+				if session != null:
+					session.remove_role_status(_event_object_id, entry.operands[0])
 			# 卸下指定角色装备；operand[1] 为 0 时清空六槽，否则使用 1–6 的部位编号。
 			0x0023:
 				if session != null:

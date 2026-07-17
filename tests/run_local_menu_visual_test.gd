@@ -10,8 +10,8 @@ func _init() -> void:
 		quit(0)
 		return
 	var wine := database.item_definition(272)
-	if wine == null or not database.load_ui_sprite().is_valid() or not database.load_item_bitmap(wine.bitmap).is_valid() or database.get_item_description(272).is_empty():
-		printerr("FAIL: 原版菜单 Sprite、桂花酒图标或物品说明没有正确导入")
+	if wine == null or not database.load_ui_sprite().is_valid() or not database.load_item_bitmap(wine.bitmap).is_valid() or database.get_item_description(272).is_empty() or not database.load_battle_background(0).is_valid() or not database.load_rgm_portrait(database.player_roles.avatar_for(0)).is_valid():
+		printerr("FAIL: 原版菜单 Sprite、状态背景、头像、桂花酒图标或物品说明没有正确导入")
 		quit(1)
 		return
 
@@ -63,12 +63,71 @@ func _init() -> void:
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_equipment.png"))
 	menu.open_main()
+	menu._main_selection = 0
+	menu._confirm_selection()
+	await process_frame
+	await process_frame
+	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_status.png"))
+	var field_magic_id := 0
+	var magic_candidates := PackedInt32Array()
+	for role_index in range(PalPlayerRoles.ROLE_COUNT):
+		magic_candidates.append_array(database.player_roles.magics_for(role_index))
+		if database.level_progression != null:
+			magic_candidates.append_array(database.level_progression.magic_objects_for_level(role_index, PalLevelProgression.MAX_LEVEL))
+	for magic_id in magic_candidates:
+		var magic_object := database.magic_object_definition(magic_id)
+		var magic_definition := database.magic_definition_for_object(magic_id)
+		if magic_object != null and magic_definition != null and magic_object.is_usable_outside_battle():
+			field_magic_id = magic_id
+			session.add_magic(0, magic_id)
+			session.role_mp[0] = maxi(session.role_mp[0], magic_definition.mp_cost)
+			break
+	menu.open_main()
+	menu._main_selection = 1
+	menu._confirm_selection()
+	await process_frame
+	await process_frame
+	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_field_magic.png"))
+	if field_magic_id <= 0:
+		printerr("FAIL: 玩家初始/升级仙术表中没有找到合法的场外仙术")
+		quit(1)
+		return
+	var field_definition := database.magic_definition_for_object(field_magic_id)
+	var hp_before := maxi(1, session.role_max_hp[0] - 30)
+	session.role_hp[0] = hp_before
+	session.role_max_mp[0] = maxi(session.role_max_mp[0], field_definition.mp_cost + 5)
+	session.role_mp[0] = field_definition.mp_cost + 5
+	var mp_before := session.role_mp[0]
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var explorer: Control = load("res://src/world/map_explorer.gd").new()
+	var status_label := Label.new()
+	explorer._database = database
+	explorer._session = session
+	explorer._script_vm = vm
+	explorer._game_menu = menu
+	explorer._status = status_label
+	var unsupported: Array[String] = []
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.script_finished.connect(explorer._on_script_finished)
+	explorer._on_magic_use_requested(field_magic_id, 0, 0)
+	if explorer._pending_magic_object_id > 0 and explorer._pending_magic_stage == explorer.FIELD_MAGIC_STAGE_SUCCESS and not vm.running:
+		explorer._run_pending_magic_stage()
+	if not unsupported.is_empty() or explorer._pending_magic_object_id != 0 or session.role_hp[0] <= hp_before or session.role_mp[0] != mp_before - field_definition.mp_cost:
+		printerr("FAIL: 真实场外仙术 %d 未完成：unsupported=%s pending=%d HP=%d MP=%d/%d" % [field_magic_id, unsupported, explorer._pending_magic_object_id, session.role_hp[0], session.role_mp[0], mp_before])
+		quit(1)
+		return
+	status_label.free()
+	explorer.free()
+	vm.free()
+	menu.open_main()
 	menu._main_selection = 3
 	menu._confirm_selection()
 	await process_frame
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_system_audio.png"))
-	print("PASS: 原版主菜单、物品页、装备页与系统音量页视觉快照已生成；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页与系统音量页视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+		field_magic_id,
 		session.attack_strength_for(0),
 		session.magic_strength_for(0),
 		session.defense_for(0),

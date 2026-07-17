@@ -42,7 +42,7 @@ flowchart LR
 | `PalBattlePreview` | 当前敌队、战场、双方节点、目标选择和攻击动画 | 自行计算伤害、修改探索剧情 |
 | `PalBattleUI` | 原版状态框、四向指令、仙术列表和上浮数字 | 提交指令、扣除 HP/MP |
 | `PalRngPlayer` | 当前过场帧区间、播放速度和可见状态 | 修改角色数值、决定后续脚本入口 |
-| UI | 对话、Toast、菜单和资源实验室的显示状态 | 绕过 ScriptVM 修改剧情 |
+| UI | 对话、Toast、菜单和资源实验室的显示状态，以及场外仙术的施法者/目标选择 | 绕过 ScriptVM 修改剧情、直接扣除仙术 MP |
 
 ## 启动与场景加载
 
@@ -57,6 +57,8 @@ flowchart LR
 `PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 默认走该路径，命令行用户参数 `--pal-map-backend=legacy` 可临时启用 CPU 基准。
 
 `Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast、经典菜单和 RNG 过场播放器统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。RNG 播放期间 `ScriptVM.waiting_for_rng` 阻止地图输入和后续指令，播放完成后再恢复。
+
+经典菜单的状态页只读取 `GameSession` 与内容数据库；场外仙术页选择施法者、仙术和我方目标后，把类型化请求交给 `MapExplorer`。探索控制器关闭菜单，依次执行对象的 `script_on_use`、`script_on_success`，两段成功后才从施法者 MP 扣除 DATA 定义的消耗；脚本等待期间地图输入保持关闭，结束后回到刷新过可用状态的仙术列表。
 
 每个 10 FPS 脚本帧中，`ScriptVM` 还会遍历当前场景的 EventObject：先更新临时消失/重现生命周期，再执行一条自动脚本。追逐事件通过 `set_scene_map()` 读取当前 PAL 地图阻挡；自动移动进入玩家接触范围后，`MapExplorer` 在同一更新周期运行触发脚本。
 

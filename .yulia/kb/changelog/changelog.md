@@ -13,6 +13,30 @@ keywords:
 
 ## 变更记录
 
+## 2026-07-17
+
+### [FT-042] [feat] 还原经典状态页与场外仙术菜单
+
+- **关联需求**: M3 菜单、法术与状态系统
+- **关联 TODO**: TD-003（阶段性）
+- **功能描述**: 开放主菜单“状态”和“仙术”入口；状态页使用原版 `FBP.MKF #0`、RGM 头像、装备图标和经典坐标显示经验、等级、HP/MP、五项属性、六件装备及毒状态。场外仙术支持多人施法者选择、3×5 列表、MP 与说明、单体目标选择及全体施放，并按顺序执行使用/成功脚本，只有完整成功后扣除一次 MP。仙术候选严格来自角色初始和升级习得表，避免物品与仙术共用 `OBJECT` 表造成误判。
+- **验证情况**: 295 项合成测试、真实资源菜单视觉测试和中文文档检查通过；真实样板仙术 296“气疗术”可恢复 HP、正确扣除一次 MP，仙术页不再误显示“银杏子”，左上 MP 与说明区域无文字遮挡。
+- **涉及文件**:
+  - `src/content/pal_magic_object_definition.gd`
+  - `src/game/script_vm.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `README.md`
+  - `docs/CLASSIC_UI.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
 ## 2026-07-16
 
 ### [FT-020] [feat] 推进买虾、病倒求药与山神庙主线

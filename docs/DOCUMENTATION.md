@@ -28,4 +28,4 @@
 - [项目目录结构](PROJECT_STRUCTURE.md)：目录职责、入口和 Git 边界。
 - [整体架构](ARCHITECTURE.md)：数据流、状态所有权和运行序列。
 - [开发工作流](DEVELOPMENT_WORKFLOW.md)：运行、导入、测试和提交。
-- [经典菜单与物品页](CLASSIC_UI.md)：记录官方 SDLPal 布局基准、原版 UI 资源解码和当前功能边界。
+- [经典菜单、状态、仙术与物品页](CLASSIC_UI.md)：记录官方 SDLPal 布局基准、状态页、场外仙术、原版 UI 资源解码和当前功能边界。

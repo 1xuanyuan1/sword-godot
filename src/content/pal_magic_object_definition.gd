@@ -42,6 +42,11 @@ func is_usable_in_battle() -> bool:
 	return (flags & FLAG_USABLE_IN_BATTLE) != 0
 
 
+## 返回仙术是否允许在地图上的“仙术”菜单中选择并使用。
+func is_usable_outside_battle() -> bool:
+	return (flags & FLAG_USABLE_OUTSIDE_BATTLE) != 0
+
+
 ## 返回仙术目标是否为敌方；为假时目标是我方队员。
 func is_used_on_enemy() -> bool:
 	return (flags & FLAG_USABLE_TO_ENEMY) != 0
