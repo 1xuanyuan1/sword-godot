@@ -647,6 +647,9 @@ func _refresh_world() -> void:
 		_set_error("地图渲染失败：%s" % rendered.error_message)
 		return
 	_map_view.texture = ImageTexture.create_from_image(rendered.to_rgba_image(palette))
+	# 官方 0050 设置 fNeedToFadeIn，下一次 PAL_MakeScene 无论是否由 0005 或切场景
+	# 触发都会自动渐显。剧情帧等待引起的普通世界刷新也必须消费这个状态。
+	_consume_pending_fade_in_after_world_draw()
 
 
 func _load_scene_sprites() -> bool:
@@ -738,9 +741,6 @@ func _on_unsupported_instruction(index: int, operation: int) -> void:
 func _on_script_redraw(_delay_units: int) -> void:
 	_hide_fbp_view()
 	_refresh_world()
-	if _fade_in_after_scene_change and not _screen_fade_active:
-		_fade_in_after_scene_change = false
-		_start_screen_fade(false, _automatic_fade_in_duration, false)
 
 
 func _on_music_requested(music_number: int, loop: bool, fade_seconds: float) -> void:
@@ -797,6 +797,14 @@ func _on_screen_fade_requested(fade_out: bool, duration_seconds: float) -> void:
 	else:
 		_fade_in_after_scene_change = false
 	_start_screen_fade(fade_out, duration_seconds, true)
+
+
+func _consume_pending_fade_in_after_world_draw() -> bool:
+	if not _fade_in_after_scene_change or _screen_fade_active or _pending_scene_index >= 0:
+		return false
+	_fade_in_after_scene_change = false
+	_start_screen_fade(false, _automatic_fade_in_duration, false)
+	return true
 
 
 func _start_screen_fade(fade_out: bool, duration_seconds: float, complete_vm: bool) -> void:

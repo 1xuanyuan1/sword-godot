@@ -63,6 +63,7 @@ func _init() -> void:
 	_test_script_vm_quoted_narration_toast()
 	_test_explorer_scene_enter_persistence()
 	_test_explorer_hud_canvas_layer()
+	_test_explorer_automatic_fade_in_after_world_draw()
 	_test_debug_checkpoints()
 	_test_startup_load_request()
 	_test_game_menu_inventory()
@@ -1630,6 +1631,19 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
 	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index() and explorer._fade_overlay.get_index() > explorer._location_toast.get_index(), "screen fade covers the complete world, location toast and HUD during scene transitions")
 	_expect(explorer._tile_world.get_parent() == explorer, "TileMap world remains on the Camera2D world canvas")
+	explorer.free()
+
+
+func _test_explorer_automatic_fade_in_after_world_draw() -> void:
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	explorer._fade_in_after_scene_change = true
+	explorer._screen_fade_active = true
+	_expect(not explorer._consume_pending_fade_in_after_world_draw() and explorer._fade_in_after_scene_change, "automatic fade-in waits until the active fade-out has finished")
+	explorer._screen_fade_active = false
+	explorer._pending_scene_index = 14
+	_expect(not explorer._consume_pending_fade_in_after_world_draw() and explorer._fade_in_after_scene_change, "automatic fade-in does not reveal the old world before a pending scene is loaded")
+	explorer._pending_scene_index = -1
+	_expect(explorer._consume_pending_fade_in_after_world_draw() and not explorer._fade_in_after_scene_change, "the first ordinary world draw consumes opcode 0050 automatic fade-in state")
 	explorer.free()
 
 
