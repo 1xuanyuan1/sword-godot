@@ -211,6 +211,15 @@ func load_mgo_sprite(sprite_number: int) -> PalSprite:
 	return sprite
 
 
+## 按 PLAYERROLES 当前的场景形象编号加载指定角色 Sprite。
+## 角色换装或读档直接恢复 `scene_sprite_numbers` 后会立即解析新编号；无效角色返回无效 Sprite。
+func load_player_scene_sprite(role_index: int) -> PalSprite:
+	if player_roles == null:
+		return PalSprite.new()
+	var sprite_number := player_roles.scene_sprite_for(role_index)
+	return load_mgo_sprite(sprite_number) if sprite_number > 0 else PalSprite.new()
+
+
 ## 按敌人属性编号读取并缓存 `ABC.MKF` 战斗 Sprite；缺失时返回无效对象。
 func load_enemy_battle_sprite(enemy_id: int) -> PalSprite:
 	if _enemy_battle_sprites.has(enemy_id):

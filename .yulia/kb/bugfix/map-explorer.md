@@ -87,6 +87,24 @@ keywords:
 - **修复内容**: 对齐官方 `script.c` 实现 `0080` 昼夜调色板切换，并在 `op0=0` 时请求正式 TileMap 场景同步最终调色板；黑色 FBP 准备完成后替换已经结束的顶层渐隐遮罩，保证“一夜过去”叙述显示在黑底之上。新增两次切换可逆、黑屏叙述层级的合成回归，以及真实资源脚本 `8992–9186` 回归，确认消息 `2294–2362` 完整执行、夜间最终恢复白天、李逍遥恢复普通造型、床边事件进入稳定脚本 `9187`，且离场事件被隐藏。
 - **状态**: ✅ 已修复
 
+---
+
+### [BF-030] 喂药后读档仍沿用李逍遥剧情 Sprite 导致步态异常
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M2–M3 求药归来主线、TileMap 人物渲染与 Godot 存档
+- **问题描述**: 给李大娘服用紫金丹的剧情会把李逍遥临时切到 Sprite 193，结束时再恢复普通 Sprite 2。`PalTileMapWorld` 和 CPU 对照路径却另外按角色编号缓存已经解析的 Sprite；`0065` 正常换装会发信号清缓存，但读档直接恢复整组 `scene_sprite_numbers`，不会经过该信号。如果读档前缓存的是 Sprite 193，即使存档状态已经恢复 Sprite 2，后续移动仍会用 193 的特殊动作帧组成错误步态。
+- **涉及文件**:
+  - `src/content/pal_content_database.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_early_mainline_test.gd`
+  - `docs/SCENE_RENDERING.md`
+  - `docs/SAVE_SYSTEM.md`
+- **修复内容**: 移除两个渲染器按角色编号保存的二级 Sprite 缓存，统一通过 `PalContentDatabase.load_player_scene_sprite()` 读取 PLAYERROLES 当前编号，继续复用数据库按实际 MGO 编号维护的安全缓存。合成回归模拟不发 `0065` 信号的读档式 `193 → 2` 直接恢复，并同时检查 TileMap 与 CPU 路径；真实求药回归确认脚本 `6072–6224` 最终恢复 Sprite 2，第一次移动清除剧情站立帧后使用 12 帧普通步态 Sprite。
+- **状态**: ✅ 已修复
+
 ## 2026-07-16
 
 ### [BF-009] 收起桂花酒后李逍遥消失直到再次移动

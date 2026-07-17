@@ -43,7 +43,6 @@ var _fade_in_after_scene_change: bool = false
 var _automatic_fade_in_duration: float = 0.6
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
-var _player_sprites: Dictionary = {}
 var _event_sprites: Dictionary = {}
 var _walk_phase: int = 0
 var _showing_walk_frame: bool = false
@@ -700,12 +699,8 @@ func _build_scene_draw_items(render_viewport: Vector2i) -> Array:
 
 
 func _player_sprite_for_role(role_index: int) -> PalSprite:
-	if _player_sprites.has(role_index):
-		return _player_sprites[role_index]
-	var sprite_number := _database.player_roles.scene_sprite_for(role_index)
-	var sprite := _database.load_mgo_sprite(sprite_number)
-	_player_sprites[role_index] = sprite
-	return sprite
+	# CPU 对照路径与正式 TileMap 路径共用内容数据库的当前形象解析，避免读档后分叉。
+	return _database.load_player_scene_sprite(role_index)
 
 
 func _party_frame(sprite: PalSprite, role_index: int, party_index: int) -> PalIndexedImage:
@@ -954,7 +949,6 @@ func _reset_transient_state_for_load() -> void:
 	if _location_toast != null:
 		_location_toast.hide()
 	_reset_touch_scan()
-	_player_sprites.clear()
 	_event_sprites.clear()
 	_move_cooldown = 0.0
 	_showing_walk_frame = false
@@ -1103,7 +1097,6 @@ func _apply_pending_scene() -> void:
 
 
 func _on_player_sprites_changed() -> void:
-	_player_sprites.clear()
 	if _tile_world != null:
 		_tile_world.reset_sprite_cache()
 

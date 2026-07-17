@@ -321,6 +321,14 @@ func _test_medicine_return_and_temple_reminder(database: PalContentDatabase) -> 
 		failure = "山神庙提醒消息不完整：%s" % messages
 	elif next_entries != [6225]:
 		failure = "山神庙提醒没有返回下一稳定入口：%s" % next_entries
+	elif database.player_roles.scene_sprite_numbers[0] != 2 or session.scripted_party_frame(0) != 0:
+		failure = "喂药剧情结束后李逍遥没有恢复普通 Sprite 2 的站立姿势：sprite=%d frame=%d" % [database.player_roles.scene_sprite_numbers[0], session.scripted_party_frame(0)]
+	else:
+		# 第一次玩家移动会清除剧情站立帧；渲染器随后必须从普通 Sprite 2 取步态。
+		session.record_party_step(GameSession.DIR_EAST, Vector2i(16, 8))
+		var walking_sprite := database.load_player_scene_sprite(0)
+		if session.scripted_party_frame(0) != -1 or walking_sprite.frame_count() != 12:
+			failure = "喂药后第一步仍沿用剧情动作或 Sprite 193：frame=%d sprite_frames=%d" % [session.scripted_party_frame(0), walking_sprite.frame_count()]
 	vm.free()
 	return failure
 

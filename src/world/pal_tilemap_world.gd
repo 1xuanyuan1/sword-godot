@@ -25,7 +25,6 @@ var _camera: Camera2D
 var _palette_material: ShaderMaterial
 var _palette_key: String = ""
 var _texture_cache: Dictionary = {}
-var _player_sprites: Dictionary = {}
 var _event_sprites: Dictionary = {}
 var _walk_phase: int = 0
 var _showing_walk_frame: bool = false
@@ -124,9 +123,8 @@ func is_map_blocked(world_position: Vector2i) -> bool:
 	return tilemap_blocked
 
 
-## 清空角色 Sprite 缓存；PLAYERROLES 场景 Sprite 被脚本修改后必须调用。
+## 清空依赖 Sprite 像素的运行时纹理缓存；PLAYERROLES 场景 Sprite 被脚本修改后调用。
 func reset_sprite_cache() -> void:
-	_player_sprites.clear()
 	_event_sprites.clear()
 	_texture_cache.clear()
 
@@ -223,11 +221,9 @@ func _party_frame(sprite: PalSprite, role_index: int, party_index: int, session:
 
 
 func _player_sprite_for_role(role_index: int) -> PalSprite:
-	if _player_sprites.has(role_index):
-		return _player_sprites[role_index]
-	var sprite := _database.load_mgo_sprite(_database.player_roles.scene_sprite_for(role_index))
-	_player_sprites[role_index] = sprite
-	return sprite
+	# MGO 本体已经由内容数据库按 Sprite 编号缓存。这里不能再按角色编号缓存，
+	# 否则读档直接恢复 scene_sprite_numbers 时会继续显示读档前的剧情造型。
+	return _database.load_player_scene_sprite(role_index)
 
 
 func _event_sprite(sprite_number: int) -> PalSprite:

@@ -39,6 +39,7 @@ func _init() -> void:
 	_test_pal_direction_mapping()
 	_test_party_trail()
 	_test_explorer_scripted_pose_priority()
+	_test_player_scene_sprite_refresh()
 	_test_explorer_blocker_displacement()
 	_test_audio_settings()
 	_test_audio_player_foundation()
@@ -770,6 +771,27 @@ func _test_explorer_scripted_pose_priority() -> void:
 	tile_world._showing_walk_frame = true
 	var native_frame: PalIndexedImage = tile_world._party_frame(_synthetic_map_tile_sprite(), 0, 0, explorer._session)
 	_expect(native_frame.is_valid() and native_frame.indices[0] == 9, "TileMap renderer prioritizes the same scripted party pose as the CPU reference")
+	tile_world.free()
+	explorer.free()
+
+
+func _test_player_scene_sprite_refresh() -> void:
+	var database := PalContentDatabase.new()
+	var roles := PalPlayerRoles.new()
+	roles.scene_sprite_numbers = PackedInt32Array([193])
+	database.player_roles = roles
+	var special_sprite := _synthetic_map_tile_sprite()
+	var regular_sprite := _synthetic_map_tile_sprite()
+	database._mgo_sprites[193] = special_sprite
+	database._mgo_sprites[2] = regular_sprite
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	explorer._database = database
+	var tile_world := PalTileMapWorld.new()
+	tile_world._database = database
+	_expect(explorer._player_sprite_for_role(0) == special_sprite and tile_world._player_sprite_for_role(0) == special_sprite, "both render paths resolve the current scripted player sprite")
+	# 存档恢复会直接替换 PLAYERROLES 数组，不会经过 0065 的换装信号。
+	roles.scene_sprite_numbers[0] = 2
+	_expect(explorer._player_sprite_for_role(0) == regular_sprite and tile_world._player_sprite_for_role(0) == regular_sprite, "save-style scene sprite restore invalidates role-based rendering without an external cache signal")
 	tile_world.free()
 	explorer.free()
 
