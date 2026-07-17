@@ -38,6 +38,7 @@ func _init() -> void:
 	_test_scene_y_sorting()
 	_test_pal_direction_mapping()
 	_test_party_trail()
+	_test_explorer_scripted_pose_priority()
 	_test_explorer_blocker_displacement()
 	_test_audio_settings()
 	_test_audio_player_foundation()
@@ -747,6 +748,23 @@ func _test_party_trail() -> void:
 	_expect(session.party_formation_collapsed and session.party_member_world_position(1) == session.party_world_position() + Vector2i(0, -1), "opcode 00A1 formation collapse stacks followers behind the leader")
 	session.record_party_step(GameSession.DIR_EAST, Vector2i(16, 8))
 	_expect(not session.party_formation_collapsed, "normal movement restores the trail formation after collapse")
+
+
+func _test_explorer_scripted_pose_priority() -> void:
+	var database := PalContentDatabase.new()
+	var roles := PalPlayerRoles.new()
+	roles.walk_frames = PackedInt32Array([3])
+	database.player_roles = roles
+	var explorer = load("res://src/world/map_explorer.gd").new()
+	explorer._database = database
+	explorer._session = GameSession.new()
+	explorer._session.reset_new_game()
+	explorer._session.set_party_gesture(GameSession.DIR_SOUTH, 1, 0)
+	# 剧情移动会短暂打开步态标志；紧随其后的 0015 必须重新取得优先级。
+	explorer._showing_walk_frame = true
+	var frame: PalIndexedImage = explorer._party_frame(_synthetic_map_tile_sprite(), 0, 0)
+	_expect(frame.is_valid() and frame.indices[0] == 9, "scripted party pose overrides a stale walk-frame flag after cutscene movement")
+	explorer.free()
 
 
 func _test_audio_settings() -> void:

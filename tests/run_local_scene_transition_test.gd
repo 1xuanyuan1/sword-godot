@@ -28,7 +28,7 @@ func _run_tests() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 客栈出口、仙灵岛洗澡过场、楼梯动画、厨房入口及场景传送回归通过")
+	print("PASS: 客栈出口、仙灵岛洗澡与倒地动作、楼梯动画、厨房入口及场景传送回归通过")
 	quit(0)
 
 
@@ -189,6 +189,58 @@ func _test_bath_cutscene_runtime() -> String:
 		failure = "洗澡过场至少一帧仍接近全黑：%s" % [samples]
 	elif explorer._screen_fade_active or explorer._fade_overlay.visible or explorer._fade_overlay.modulate.a > 0.001:
 		failure = "洗澡及晃衣服动作结束后仍残留黑色遮罩"
+	# 继续完成偷看剧情，再触发 EventObject 205 的后续追打段。官方脚本在两次
+	# 006E 小步移动后切到 Sprite 193，并用 0015 的第 0 帧表现李逍遥倒地。
+	if failure.is_empty():
+		var finish_guard := 0
+		while finish_guard < 3000 and (vm.running or vm.waiting_for_dialog or vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride or vm.waiting_for_screen_fade):
+			if explorer._screen_fade_active or vm.waiting_for_screen_fade:
+				await create_timer(0.7).timeout
+			elif vm.waiting_for_dialog:
+				vm.advance_dialog()
+			elif vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride:
+				if vm.tick_frame():
+					explorer._refresh_world()
+				await process_frame
+			else:
+				await process_frame
+			finish_guard += 1
+		var knockdown_event: PalEventObject = explorer._database.event_objects[204]
+		if vm.running or knockdown_event.state <= 0 or knockdown_event.trigger_script != 9792:
+			failure = "洗澡剧情没有正确启用后续追打事件 205：running=%s state=%d trigger=%d cursor=%d" % [vm.running, knockdown_event.state, knockdown_event.trigger_script, vm._cursor]
+		else:
+			explorer._run_event_trigger(knockdown_event)
+			var knockdown_guard := 0
+			var saw_knockdown_pose := false
+			while knockdown_guard < 1000 and not saw_knockdown_pose:
+				saw_knockdown_pose = (
+					explorer._database.player_roles.scene_sprite_numbers[0] == 193
+					and explorer._session.scripted_party_frame(0) == 0
+					and vm.waiting_for_dialog
+				)
+				if saw_knockdown_pose:
+					break
+				if vm.waiting_for_dialog:
+					vm.advance_dialog()
+				elif vm.waiting_for_frames or vm.waiting_for_party_walk or vm.waiting_for_party_ride:
+					if vm.tick_frame():
+						explorer._refresh_world()
+					await process_frame
+				else:
+					await process_frame
+				knockdown_guard += 1
+			if not saw_knockdown_pose:
+				failure = "追打剧情没有执行到李逍遥 Sprite 193 第 0 帧倒地动作"
+			else:
+				var sprite: PalSprite = explorer._player_sprite_for_role(0)
+				var displayed_frame: PalIndexedImage = explorer._party_frame(sprite, 0, 0)
+				var expected_frame := RleDecoder.decode(sprite.get_frame(0))
+				if not displayed_frame.is_valid() or displayed_frame.indices != expected_frame.indices:
+					failure = "残留步态标志覆盖了李逍遥 Sprite 193 第 0 帧倒地动作"
+				elif can_capture_pixels:
+					var knockdown_image := explorer.get_viewport().get_texture().get_image()
+					knockdown_image.resize(320, 200, Image.INTERPOLATE_NEAREST)
+					knockdown_image.save_png(ProjectSettings.globalize_path("res://generated/pal/visual_tests/bath_cutscene_knockdown.png"))
 	explorer.queue_free()
 	await process_frame
 	return failure

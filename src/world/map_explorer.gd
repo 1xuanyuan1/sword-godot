@@ -712,7 +712,9 @@ func _party_frame(sprite: PalSprite, role_index: int, party_index: int) -> PalIn
 	if sprite == null or not sprite.is_valid():
 		return PalIndexedImage.new()
 	var scripted_frame := _session.scripted_party_frame(party_index)
-	if scripted_frame >= 0 and not _showing_walk_frame:
+	# record_party_step() 会在真正移动时清除旧剧情动作；若脚本随后再次执行 0015，
+	# 新动作必须覆盖残留的步态标志。仙灵岛剧情依赖这一顺序显示李逍遥倒地帧。
+	if scripted_frame >= 0:
 		return _decode_sprite_frame(sprite, scripted_frame)
 	var walk_frames := _database.player_roles.walk_frame_count_for(role_index)
 	var direction := _session.party_member_direction(party_index)
