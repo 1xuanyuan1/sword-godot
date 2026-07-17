@@ -28,7 +28,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、求药归来、黑苗人离店、御剑教学、天亮返店、赵灵儿营救战、首次/再次乘船赴岛与道具叙述 Toast 主线完成")
+	print("PASS: 买虾、求药归来、御剑教学、再次赴岛、水月宫惨案、安葬返航、客栈强制战、夜间长剧情与次日恢复主线完成")
 	quit(0)
 
 
@@ -491,6 +491,248 @@ func _test_post_training_dawn_and_rescue(database: PalContentDatabase, session: 
 		failure = "赵灵儿同行抵达入口不正确：消息 %s，入口 %s" % [messages, next_entries]
 	elif session.party_roles != PackedInt32Array([1, 0]) or session.music_number != 70 or session.battle_music_number != 37:
 		failure = "赵灵儿同行抵达后的队伍或音乐不正确：队伍 %s，BGM %d/%d" % [session.party_roles, session.music_number, session.battle_music_number]
+	vm.free()
+	if failure.is_empty():
+		failure = _test_island_massacre_funeral_and_return(database, session)
+	return failure
+
+
+func _test_island_massacre_funeral_and_return(database: PalContentDatabase, session: GameSession) -> String:
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var messages: Array[int] = []
+	var unsupported: Array[String] = []
+	var next_entries: Array[int] = []
+	var requested_scenes: Array[int] = []
+	var battle_requests: Array = []
+	var music_requests: Array = []
+	var fade_requests: Array = []
+	var fbp_requests: Array = []
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	vm.scene_change_requested.connect(func(scene_index: int) -> void: requested_scenes.append(scene_index))
+	vm.battle_requested.connect(func(team: int, field: int, boss: bool) -> void: battle_requests.append([team, field, boss]))
+	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: music_requests.append([number, loop, fade]))
+	vm.screen_fade_requested.connect(func(fade_out: bool, duration: float) -> void: fade_requests.append([fade_out, duration]))
+	vm.fbp_requested.connect(func(image_number: int, duration: float) -> void: fbp_requests.append([image_number, duration]))
+
+	# 再次赴岛前的借船脚本会开启水月宫惨案接触点；石像和通路由首次赴岛用例独立覆盖。
+	var massacre_event := database.event_objects[352]
+	if massacre_event.state != 1 or massacre_event.trigger_script != 9361 or massacre_event.trigger_mode != PalEventObject.TRIGGER_TOUCH_FAR:
+		vm.free()
+		return "再次赴岛没有开启水月宫惨案入口：状态 %d，脚本 %d，模式 %d" % [massacre_event.state, massacre_event.trigger_script, massacre_event.trigger_mode]
+	session.scene_index = 19
+	vm.run_trigger(massacre_event.trigger_script, massacre_event.object_id)
+	_drive_script(vm)
+	var failure := ""
+	if not unsupported.is_empty():
+		failure = "水月宫惨案发现剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2422, 2427) or next_entries != [9361]:
+		failure = "水月宫惨案发现消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0]) or massacre_event.state != 0:
+		failure = "发现惨案后没有暂时移除赵灵儿或关闭接触点：队伍 %s，状态 %d" % [session.party_roles, massacre_event.state]
+	elif database.event_objects[342].state != 1 or database.event_objects[342].auto_script not in [9358, 9359]:
+		failure = "姥姥受伤对象没有出现并开始移动：状态 %d，自动脚本 %d" % [database.event_objects[342].state, database.event_objects[342].auto_script]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	music_requests.clear()
+	var grandmother := database.event_objects[349]
+	if grandmother.state != 2 or grandmother.trigger_script != 9196:
+		vm.free()
+		return "水月宫没有可触发的姥姥临终事件：状态 %d，脚本 %d" % [grandmother.state, grandmother.trigger_script]
+	vm.run_trigger(grandmother.trigger_script, grandmother.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "姥姥临终剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2367, 2407) or next_entries != [9196]:
+		failure = "姥姥临终消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [18] or session.scene_index != 18 or database.scenes[18].script_on_enter != 9321:
+		failure = "姥姥临终后没有进入安葬场景：场景 %s/%d，入口 %d" % [requested_scenes, session.scene_index, database.scenes[18].script_on_enter]
+	elif session.party_roles != PackedInt32Array([0]) or database.event_objects[349].state != 0 or database.event_objects[350].state != 0 or database.event_objects[351].state != 0:
+		failure = "姥姥临终后队伍或水月宫人物状态未清理：队伍 %s，状态 %d/%d/%d" % [session.party_roles, database.event_objects[349].state, database.event_objects[350].state, database.event_objects[351].state]
+	elif database.event_objects.slice(353, 359).any(func(event: PalEventObject) -> bool: return event.state != 0):
+		failure = "水月宫安葬前尸体 EventObject 354–359 没有隐藏"
+	elif database.event_objects[225].trigger_script != 9454:
+		failure = "姥姥临终后没有安装张四返航入口：%d" % database.event_objects[225].trigger_script
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[18].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "水月宫安葬剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(2408, 2421) or next_entries != [9357]:
+		failure = "水月宫安葬消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0, 1]) or session.music_number != 76:
+		failure = "安葬后赵灵儿没有归队或音乐不正确：队伍 %s，BGM %d" % [session.party_roles, session.music_number]
+	elif database.event_objects[283].state != 0 or database.event_objects.slice(284, 312).any(func(event: PalEventObject) -> bool: return event.state != 2):
+		failure = "安葬场景墓地 EventObject 状态不正确"
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	music_requests.clear()
+	var shore_boat := database.event_objects[116]
+	vm.run_trigger(database.event_objects[225].trigger_script, 226)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "水月宫返航剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != [2434] or next_entries != [9454]:
+		failure = "张四返航消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [4] or session.scene_index != 4 or session.music_number != 49:
+		failure = "返航没有回到余杭码头或恢复日间音乐：场景 %s/%d，BGM %d" % [requested_scenes, session.scene_index, session.music_number]
+	elif shore_boat.position != Vector2i(1184, 1424) or shore_boat.trigger_script != 0 or database.event_objects[123].state != 2:
+		failure = "返航后余杭船只或张四状态不正确：船 %s/%d，张四 %d" % [shore_boat.position, shore_boat.trigger_script, database.event_objects[123].state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 返回客栈立即进入敌队 19 强制战；先验证阻塞请求，再模拟胜利继续到安置赵灵儿。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	music_requests.clear()
+	battle_requests.clear()
+	session.scene_index = 2
+	if database.event_objects[59].state != 2 or database.event_objects[59].trigger_script != 7126:
+		vm.free()
+		return "返航后客栈没有开启黑苗头领强制战：状态 %d，脚本 %d" % [database.event_objects[59].state, database.event_objects[59].trigger_script]
+	vm.run_trigger(7126, 60)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "返航客栈强制战前遇到未支持指令：%s" % [unsupported]
+	elif not vm.waiting_for_battle or battle_requests != [[19, 21, true]]:
+		failure = "返航客栈没有请求敌队 19／战场 21 的 Boss 战：%s" % [battle_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	vm.complete_battle(ScriptVM.BATTLE_RESULT_VICTORY)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "返航客栈强制战后剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1553, 1600) or next_entries != [7126]:
+		failure = "返航客栈强制战后消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [0] or session.scene_index != 0 or database.scenes[0].script_on_enter != 7283:
+		failure = "强制战后没有进入安置赵灵儿的客房阶段：场景 %s/%d，入口 %d" % [requested_scenes, session.scene_index, database.scenes[0].script_on_enter]
+	elif session.party_roles != PackedInt32Array([0]) or database.event_objects[30].state != 1:
+		failure = "强制战后队伍或客房赵灵儿事件状态不正确：队伍 %s，事件31=%d" % [session.party_roles, database.event_objects[30].state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 进入客房安置赵灵儿；场景进入脚本、床边查看和李大娘安排休息是三个独立触发点。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	fbp_requests.clear()
+	vm.run_trigger(database.scenes[0].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "安置赵灵儿的客房进入脚本遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1601, 1602) or next_entries != [7290]:
+		failure = "安置赵灵儿的客房消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_world_position() != Vector2i(720, 328):
+		failure = "安置赵灵儿后李逍遥位置不正确：%s" % session.party_world_position()
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[0].script_on_enter = next_entries[0]
+
+	messages.clear()
+	next_entries.clear()
+	var resting_linger := database.event_objects[30]
+	vm.run_trigger(resting_linger.trigger_script, resting_linger.object_id)
+	_drive_script(vm)
+	if messages != [1603] or next_entries != [7291]:
+		failure = "床边查看赵灵儿的消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	fbp_requests.clear()
+	var aunt := database.event_objects[56]
+	if aunt.state != 2 or aunt.trigger_script != 7294:
+		vm.free()
+		return "强制战后李大娘没有切到安排休息入口：状态 %d，脚本 %d" % [aunt.state, aunt.trigger_script]
+	session.scene_index = 2
+	vm.run_trigger(aunt.trigger_script, aunt.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "李大娘安排休息剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1604, 1612) or next_entries != [7294]:
+		failure = "李大娘安排休息消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [0] or session.scene_index != 0 or database.scenes[0].script_on_enter != 7327:
+		failure = "休息后没有切回夜间客房入口：场景 %s/%d，入口 %d" % [requested_scenes, session.scene_index, database.scenes[0].script_on_enter]
+	elif aunt.state != 0 or resting_linger.state != 0:
+		failure = "休息转场没有隐藏李大娘或床上的赵灵儿：状态 %d/%d" % [aunt.state, resting_linger.state]
+	elif fbp_requests != [[0xffff, 0.0]]:
+		failure = "休息叙述没有请求原版黑屏 FBP：%s" % [fbp_requests]
+	elif fade_requests.size() != 3 or fade_requests[0][0] != true or not is_equal_approx(fade_requests[0][1], 0.6) or fade_requests[1][0] != false or not is_equal_approx(fade_requests[1][1], 0.6) or fade_requests[2][0] != true:
+		failure = "休息黑屏的渐隐／默认渐显时序不正确：%s" % [fade_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 夜间醒来换回普通造型，并在楼下安装李大娘后续事件。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	fbp_requests.clear()
+	vm.run_trigger(database.scenes[0].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "夜间客房进入剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != [1618, 1619] or next_entries != [7345]:
+		failure = "夜间醒来消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif not session.night_palette or session.party_world_position() != Vector2i(1296, 264) or database.player_roles.scene_sprite_numbers[0] != 2:
+		failure = "夜间醒来的调色板、位置或李逍遥造型不正确：night=%s，位置=%s，造型=%d" % [session.night_palette, session.party_world_position(), database.player_roles.scene_sprite_numbers[0]]
+	var night_aunt := database.event_objects[68]
+	if failure.is_empty() and (night_aunt.state != 2 or night_aunt.trigger_script != 7346 or night_aunt.trigger_mode != PalEventObject.TRIGGER_TOUCH_FARTHER or night_aunt.position != Vector2i(1616, 1528)):
+		failure = "夜间李大娘事件没有正确安装：状态 %d，脚本 %d，模式 %d，位置 %s" % [night_aunt.state, night_aunt.trigger_script, night_aunt.trigger_mode, night_aunt.position]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[0].script_on_enter = next_entries[0]
+
+	# 下楼接触李大娘后，完整跑过夜间长剧情、场景过程渐隐、黑屏叙述和次日恢复。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	fbp_requests.clear()
+	session.scene_index = 2
+	vm.run_trigger(night_aunt.trigger_script, night_aunt.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "夜间李大娘长剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1620, 1657) or next_entries != [7346]:
+		failure = "夜间李大娘长剧情消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [0] or session.scene_index != 0 or session.night_palette or session.music_number != 8:
+		failure = "夜间剧情结束后没有恢复白天客房与 BGM：场景 %s/%d，night=%s，BGM=%d" % [requested_scenes, session.scene_index, session.night_palette, session.music_number]
+	elif fbp_requests != [[0xffff, 0.0]]:
+		failure = "夜间剧情结尾没有请求原版黑屏 FBP：%s" % [fbp_requests]
+	elif fade_requests.size() != 3 or fade_requests[0][0] != true or not is_equal_approx(fade_requests[0][1], 3.2) or fade_requests[1][0] != false or not is_equal_approx(fade_requests[1][1], 0.6) or fade_requests[2][0] != true:
+		failure = "夜间剧情的场景渐隐／黑屏／次日渐隐时序不正确：%s" % [fade_requests]
 	vm.free()
 	return failure
 

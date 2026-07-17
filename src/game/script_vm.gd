@@ -26,6 +26,9 @@ signal dialog_ended
 signal music_requested(music_number: int, loop: bool, fade_seconds: float)
 ## 请求播放一次音效。
 signal sound_requested(sound_number: int)
+## 请求显示一张 FBP 全屏图片；`image_number == 0xffff` 表示原版黑屏过场。
+## `fade_seconds` 大于零时，显示层完成渐显后必须调用 `complete_screen_fade()`。
+signal fbp_requested(image_number: int, fade_seconds: float)
 ## 请求屏幕渐隐或渐显；探索控制器完成动画后必须调用 `complete_screen_fade()`。
 signal screen_fade_requested(fade_out: bool, duration_seconds: float)
 ## 请求播放阻塞剧情的 RNG 过场；`end_frame == -1` 表示播放到动画结束。
@@ -542,7 +545,10 @@ func _continue_execution() -> int:
 					session.battlefield_number = entry.operands[0]
 			# 屏幕渐隐/渐显；默认速度对应官方 PAL_FadeOut/PAL_FadeIn 的约 0.6 秒。
 			0x0050, 0x0051:
-				var fade_duration := float(entry.operands[0] if entry.operands[0] > 0 else 1) * 0.6
+				# 0051 在官方源码中先把速度转为 SHORT；剧情常用 0xFFFF 表示默认速度，
+				# 不能把它当作无符号 65535，否则一次渐显会错误地持续十多个小时。
+				var fade_speed := entry.operands[0] if entry.operation == 0x0050 else _signed_word(entry.operands[0])
+				var fade_duration := float(fade_speed if fade_speed > 0 else 1) * 0.6
 				var fade_out := entry.operation == 0x0050
 				if get_signal_connection_list(&"screen_fade_requested").is_empty():
 					screen_fade_requested.emit(fade_out, fade_duration)
@@ -648,6 +654,18 @@ func _continue_execution() -> int:
 						session.party_roles.append(0)
 					session.clear_party_gestures()
 					player_sprites_changed.emit()
+			# 显示 FBP 全屏图片；0xFFFF 解压失败后按原版得到全黑画面。
+			0x0076:
+				# PAL_ShowFBP 每个淡入步长等待 `(operand[1] + 1) * 10ms`，
+				# 16×6 个子步骤合计约 `(operand[1] + 1) * 0.96s`。
+				var fade_seconds := float(entry.operands[1] + 1) * 0.96 if entry.operands[1] > 0 else 0.0
+				if fade_seconds > 0.0 and not get_signal_connection_list(&"fbp_requested").is_empty():
+					_cursor = next_cursor
+					running = false
+					waiting_for_screen_fade = true
+					fbp_requested.emit(entry.operands[0], fade_seconds)
+					return _cursor
+				fbp_requested.emit(entry.operands[0], fade_seconds)
 			# 停止当前 BGM；operand[0] 为 0 时淡出 2 秒，否则淡出 operand[0]×3 秒。
 			0x0077:
 				var fade_seconds := 2.0 if entry.operands[0] == 0 else float(entry.operands[0]) * 3.0
@@ -682,6 +700,22 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_page_break.emit()
 				redraw_requested.emit(0)
+			# 按 signed operand[0] 渐变当前场景；负数渐隐，正数渐显。
+			0x0093:
+				var step := _signed_word(entry.operands[0])
+				if step == 0:
+					step = 1
+				# PAL_SceneFade 每个调色板步长约 100ms，遍历 64 级亮度。
+				var fade_duration := float(ceili(64.0 / absf(float(step)))) * 0.1
+				var fade_out := step < 0
+				if get_signal_connection_list(&"screen_fade_requested").is_empty():
+					screen_fade_requested.emit(fade_out, fade_duration)
+				else:
+					_cursor = next_cursor
+					running = false
+					waiting_for_screen_fade = true
+					screen_fade_requested.emit(fade_out, fade_duration)
+					return _cursor
 			# 目标事件状态等于 signed(operand[1]) 时跳到 operand[2]；0 用于立即结束脚本。
 			0x0094:
 				var compared_event := _resolve_event(entry.operands[0])

@@ -113,6 +113,24 @@ keywords:
 
 ---
 
+### [FT-047] [feat] 推进水月宫惨案到客栈次日主线
+
+- **关联需求**: M3 完整场景流程、M5 完整流程与音画
+- **关联 TODO**: TD-001、TD-006、TD-008（阶段性）
+- **功能描述**: 对齐固定 SDLPal `script.c` 与 `palette.c`，实现 `0076` FBP 全屏图片和 `0093` 场景过程渐隐／渐显；黑屏 FBP 位于地图及普通 HUD 上方、剧情对话下方，并按显式回调阻塞 VM。修正 `0051 FFFF` 必须按 signed SHORT 使用默认渐显速度，避免误算成 65535 倍。真实资源主线从双人再次赴岛继续覆盖水月宫惨案、姥姥临终、安葬返航、客栈敌队 19／战场 21 强制战、安置赵灵儿、李大娘安排休息、夜间长剧情及次日白天恢复。
+- **验证情况**: 315 项合成检查、22 项装备检查、22 项版本化存档检查、123 项经典战斗逻辑检查、10 项剧情战斗桥接检查、真实资源场景转场与早期主线回归及中文文档检查通过；黑屏、3.2 秒场景渐隐、默认 0.6 秒渐显、日夜调色板、BGM 8、队伍和 EventObject 状态均有断言。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_early_mainline_test.gd`
+  - `README.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
 ## 2026-07-16
 
 ### [FT-020] [feat] 推进买虾、病倒求药与山神庙主线

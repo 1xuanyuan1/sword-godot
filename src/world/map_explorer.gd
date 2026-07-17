@@ -26,6 +26,8 @@ var _ui_layer: CanvasLayer
 var _status: Label
 var _location_toast: PanelContainer
 var _location_toast_label: Label
+var _fbp_layer: ColorRect
+var _fbp_view: TextureRect
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
 var _equipment_manager := PalEquipmentManager.new()
@@ -34,6 +36,7 @@ var _battle_view: PalBattlePreview
 var _audio_player: Node
 var _fade_overlay: ColorRect
 var _fade_tween: Tween
+var _fbp_tween: Tween
 var _screen_fade_active: bool = false
 var _fade_in_after_scene_change: bool = false
 var _automatic_fade_in_duration: float = 0.6
@@ -98,6 +101,7 @@ func _ready() -> void:
 	_script_vm.party_walk_finished.connect(_on_script_party_walk_finished)
 	_script_vm.music_requested.connect(_on_music_requested)
 	_script_vm.sound_requested.connect(_on_sound_requested)
+	_script_vm.fbp_requested.connect(_on_fbp_requested)
 	_script_vm.screen_fade_requested.connect(_on_screen_fade_requested)
 	_script_vm.rng_animation_requested.connect(_on_rng_animation_requested)
 	_script_vm.battle_requested.connect(_on_battle_requested)
@@ -173,6 +177,23 @@ func _build_interface() -> void:
 	_location_toast.add_child(_location_toast_label)
 	_location_toast.hide()
 	_ui_layer.add_child(_location_toast)
+
+	# FBP 过场图位于世界和普通 HUD 之上、剧情对话框之下；这样黑屏叙述仍可显示文字。
+	_fbp_layer = ColorRect.new()
+	_fbp_layer.name = "FbpLayer"
+	_fbp_layer.color = Color.BLACK
+	_fbp_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fbp_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fbp_view = TextureRect.new()
+	_fbp_view.name = "FbpView"
+	_fbp_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_fbp_view.stretch_mode = TextureRect.STRETCH_SCALE
+	_fbp_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_fbp_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_fbp_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_fbp_layer.add_child(_fbp_view)
+	_fbp_layer.hide()
+	_ui_layer.add_child(_fbp_layer)
 
 	_dialog_box = PalDialogBox.new()
 	_dialog_box.name = "DialogBox"
@@ -506,6 +527,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 	if scene_index < 0 or scene_index >= _database.scenes.size():
 		_set_error("场景索引越界：%d" % scene_index)
 		return
+	_hide_fbp_view()
 	_session.scene_index = scene_index
 	_reset_touch_scan()
 	_script_frame_accumulator = 0.0
@@ -705,6 +727,7 @@ func _on_unsupported_instruction(index: int, operation: int) -> void:
 
 
 func _on_script_redraw(_delay_units: int) -> void:
+	_hide_fbp_view()
 	_refresh_world()
 	if _fade_in_after_scene_change and not _screen_fade_active:
 		_fade_in_after_scene_change = false
@@ -719,6 +742,43 @@ func _on_music_requested(music_number: int, loop: bool, fade_seconds: float) -> 
 func _on_sound_requested(sound_number: int) -> void:
 	if _audio_player != null:
 		_audio_player.play_sound(sound_number)
+
+
+func _on_fbp_requested(image_number: int, fade_seconds: float) -> void:
+	if _fbp_layer == null or _fbp_view == null:
+		if fade_seconds > 0.0 and _script_vm != null:
+			_script_vm.call_deferred("complete_screen_fade")
+		return
+	if _fbp_tween != null and _fbp_tween.is_valid():
+		_fbp_tween.kill()
+	_fbp_tween = null
+	_fbp_view.texture = null
+	if image_number != 0xffff:
+		var indexed := _database.load_battle_background(image_number)
+		var palette := _database.load_palette(_session.palette_index, _session.night_palette)
+		if indexed.is_valid() and not palette.is_empty():
+			_fbp_view.texture = ImageTexture.create_from_image(indexed.to_rgba_image(palette))
+	_fbp_layer.modulate.a = 0.0 if fade_seconds > 0.0 else 1.0
+	_fbp_layer.show()
+	if fade_seconds > 0.0:
+		_fbp_tween = create_tween()
+		_fbp_tween.tween_property(_fbp_layer, "modulate:a", 1.0, fade_seconds)
+		_fbp_tween.finished.connect(func() -> void:
+			_fbp_tween = null
+			if _script_vm != null and _script_vm.waiting_for_screen_fade:
+				_script_vm.complete_screen_fade()
+		)
+
+
+func _hide_fbp_view() -> void:
+	if _fbp_tween != null and _fbp_tween.is_valid():
+		_fbp_tween.kill()
+	_fbp_tween = null
+	if _fbp_layer != null:
+		_fbp_layer.hide()
+		_fbp_layer.modulate.a = 1.0
+	if _fbp_view != null:
+		_fbp_view.texture = null
 
 
 func _on_screen_fade_requested(fade_out: bool, duration_seconds: float) -> void:
@@ -858,6 +918,7 @@ func _reset_transient_state_for_load() -> void:
 	_pending_magic_target_role = -1
 	_pending_magic_stage = FIELD_MAGIC_STAGE_USE
 	_pending_location_toast = ""
+	_hide_fbp_view()
 	_location_toast_serial += 1
 	if _location_toast != null:
 		_location_toast.hide()

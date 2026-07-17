@@ -43,6 +43,7 @@ func _init() -> void:
 	_test_script_vm_foundation()
 	_test_script_vm_audio_requests()
 	_test_script_vm_screen_fade_wait()
+	_test_script_vm_fbp_and_scene_fade_wait()
 	_test_script_vm_rng_and_role_state()
 	_test_script_vm_field_role_effects()
 	_test_script_vm_scene_teleport()
@@ -845,6 +846,34 @@ func _test_script_vm_screen_fade_wait() -> void:
 	vm.free()
 
 
+func _test_script_vm_fbp_and_scene_fade_wait() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x0076, 0x0093, 0x0051, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([0xffff, 1, 0])
+	database.scripts[2].operands[0] = 0xfffe # signed -2，约 3.2 秒渐隐。
+	database.scripts[3].operands[0] = 0xffff # signed -1，按默认速度渐显。
+	var fbp_requests: Array = []
+	var fade_requests: Array = []
+	var vm := ScriptVM.new()
+	vm.configure(database, GameSession.new())
+	vm.fbp_requested.connect(func(image_number: int, duration: float) -> void: fbp_requests.append([image_number, duration]))
+	vm.screen_fade_requested.connect(func(fade_out: bool, duration: float) -> void: fade_requests.append([fade_out, duration]))
+	vm.run_trigger(1)
+	_expect(vm.waiting_for_screen_fade and not vm.running, "opcode 0076 blocks a faded FBP until its renderer callback")
+	_expect(fbp_requests.size() == 1 and fbp_requests[0][0] == 0xffff and is_equal_approx(fbp_requests[0][1], 1.92), "opcode 0076 forwards black-screen sentinel and PAL fade timing")
+	vm.complete_screen_fade()
+	_expect(vm.waiting_for_screen_fade and fade_requests.size() == 1 and fade_requests[0][0] and is_equal_approx(fade_requests[0][1], 3.2), "opcode 0093 signed -2 requests a blocking 3.2-second scene fade-out")
+	vm.complete_screen_fade()
+	_expect(vm.waiting_for_screen_fade and fade_requests.size() == 2 and not fade_requests[1][0] and is_equal_approx(fade_requests[1][1], 0.6), "opcode 0051 treats signed FFFF as the default fade-in speed")
+	vm.complete_screen_fade()
+	_expect(not vm.running and not vm.waiting_for_screen_fade, "FBP and scene palette fades resume through their explicit callbacks")
+	vm.free()
+
+
 func _test_script_vm_rng_and_role_state() -> void:
 	var roles := PalPlayerRoles.new()
 	for role_index in range(PalPlayerRoles.ROLE_COUNT):
@@ -1561,6 +1590,7 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._ui_layer is CanvasLayer and explorer._ui_layer.layer > 0, "explorer HUD uses an independent foreground CanvasLayer")
 	_expect(explorer._status.get_parent() == explorer._ui_layer, "status label stays outside the Camera2D world canvas")
 	_expect(explorer._location_toast.get_parent() == explorer._ui_layer and explorer._location_toast.position == Vector2(104, 28) and explorer._location_toast.size == Vector2(112, 24), "scene location toast stays centered below the HUD status line")
+	_expect(explorer._fbp_layer.get_parent() == explorer._ui_layer and explorer._fbp_layer.get_index() > explorer._location_toast.get_index() and explorer._fbp_layer.get_index() < explorer._dialog_box.get_index(), "FBP cutscene layer covers world HUD while keeping narrative dialog visible")
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
