@@ -28,7 +28,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、求药归来、御剑教学、再次赴岛、水月宫惨案、安葬返航、客栈强制战、夜间长剧情与次日恢复主线完成")
+	print("PASS: 买虾、御剑教学、水月宫惨案、安葬返航、客栈强制战、夜间长剧情、离开余杭与抵达苏州主线完成")
 	quit(0)
 
 
@@ -733,6 +733,128 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 		failure = "夜间剧情结尾没有请求原版黑屏 FBP：%s" % [fbp_requests]
 	elif fade_requests.size() != 3 or fade_requests[0][0] != true or not is_equal_approx(fade_requests[0][1], 3.2) or fade_requests[1][0] != false or not is_equal_approx(fade_requests[1][1], 0.6) or fade_requests[2][0] != true:
 		failure = "夜间剧情的场景渐隐／黑屏／次日渐隐时序不正确：%s" % [fade_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 次日在二楼与李大娘长谈，取得包袱并安装赵灵儿同行及码头离村入口。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	fbp_requests.clear()
+	var day_aunt := database.event_objects[38]
+	if day_aunt.state != 2 or day_aunt.trigger_script != 7488:
+		vm.free()
+		return "次日二楼没有出现李大娘主线事件：状态 %d，脚本 %d" % [day_aunt.state, day_aunt.trigger_script]
+	session.scene_index = 1
+	vm.run_trigger(day_aunt.trigger_script, day_aunt.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "次日李大娘长谈遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1658, 1714) or next_entries != [7599]:
+		failure = "次日李大娘长谈消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.item_count(280) != 1:
+		failure = "李大娘交付的包袱没有进入背包：%d" % session.item_count(280)
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 与同层的赵灵儿交谈后恢复双人队伍，并把余杭室外进入脚本切到离村段落。
+	messages.clear()
+	next_entries.clear()
+	var linger := database.event_objects[37]
+	if linger.state != 2 or linger.trigger_script != 7603:
+		vm.free()
+		return "次日赵灵儿没有进入同行触发状态：状态 %d，脚本 %d" % [linger.state, linger.trigger_script]
+	vm.run_trigger(linger.trigger_script, linger.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "赵灵儿同行剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1717, 1720) or next_entries != [7603]:
+		failure = "赵灵儿同行消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0, 1]) or linger.state != 0:
+		failure = "赵灵儿同行后队伍或场景事件状态不正确：队伍 %s，状态 %d" % [session.party_roles, linger.state]
+	elif database.scenes[3].script_on_enter != 7938 or database.event_objects[125].trigger_script != 7892:
+		failure = "离开客栈后没有安装余杭告别或码头乘船入口：室外 %d，码头 %d" % [database.scenes[3].script_on_enter, database.event_objects[125].trigger_script]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 进入余杭室外自动走出四步并告别，结尾按原版把全队 HP/MP 恢复至上限。
+	messages.clear()
+	next_entries.clear()
+	session.scene_index = 3
+	vm.run_trigger(database.scenes[3].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "离开余杭的室外进入剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1896, 1897) or next_entries != [7951]:
+		failure = "离开余杭的告别消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.role_hp[0] != session.role_max_hp[0] or session.role_hp[1] != session.role_max_hp[1] or session.role_mp[0] != session.role_max_mp[0] or session.role_mp[1] != session.role_max_mp[1]:
+		failure = "离村前没有按原版恢复双人 HP/MP"
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[3].script_on_enter = next_entries[0]
+
+	# 方老板码头对话先把李逍遥切成乘船造型，再启用船体 EventObject 的接触脚本。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	var dock_owner := database.event_objects[125]
+	session.scene_index = 4
+	vm.run_trigger(dock_owner.trigger_script, dock_owner.object_id)
+	_drive_script(vm)
+	var travel_boat := database.event_objects[126]
+	if not unsupported.is_empty():
+		failure = "余杭前往苏州的码头对话遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(1885, 1894) or next_entries != [7892]:
+		failure = "方老板码头对话消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0]) or database.player_roles.scene_sprite_numbers[0] != 232 or dock_owner.state != 0:
+		failure = "登船前队伍、李逍遥乘船造型或方老板事件状态不正确"
+	elif travel_boat.trigger_mode != PalEventObject.TRIGGER_TOUCH_FARTHEST or travel_boat.trigger_script != 7916 or session.party_world_position() != Vector2i(1248, 1200):
+		failure = "前往苏州的船体触发或登船位置不正确：模式 %d，脚本 %d，位置 %s" % [travel_boat.trigger_mode, travel_boat.trigger_script, session.party_world_position()]
+	elif fade_requests.size() != 1 or not fade_requests[0][0] or not is_equal_approx(fade_requests[0][1], 0.6):
+		failure = "余杭码头登船前没有按原版渐隐：%s" % [fade_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 接触船体后同步移动船和队伍，恢复双人普通造型并切换到苏州城外场景。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	vm.run_trigger(travel_boat.trigger_script, travel_boat.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "余杭驶向苏州的乘船动画遇到未支持指令：%s" % [unsupported]
+	elif next_entries != [7916] or requested_scenes != [21] or session.scene_index != 21:
+		failure = "乘船后没有切换到苏州城外：入口 %s，场景 %s/%d" % [next_entries, requested_scenes, session.scene_index]
+	elif session.party_roles != PackedInt32Array([0, 1]) or database.player_roles.scene_sprite_numbers[0] != 2 or session.party_world_position() != Vector2i(1360, 1688):
+		failure = "抵达苏州前队伍、造型或落点不正确：队伍 %s，造型 %d，位置 %s" % [session.party_roles, database.player_roles.scene_sprite_numbers[0], session.party_world_position()]
+	elif travel_boat.position != Vector2i(960, 1056) or fade_requests.size() != 1 or not fade_requests[0][0]:
+		failure = "驶离后的船体终点或场景渐隐不正确：船 %s，渐变 %s" % [travel_boat.position, fade_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 苏州城外进入脚本负责设置区域 BGM、战斗音乐和双人落点。
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[21].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "苏州城外进入剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3131, 3134) or next_entries != [11419]:
+		failure = "苏州城外进入消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.music_number != 71 or session.battle_music_number != 37 or session.party_roles != PackedInt32Array([0, 1]):
+		failure = "苏州城外音乐或队伍状态不正确：BGM %d/%d，队伍 %s" % [session.music_number, session.battle_music_number, session.party_roles]
+	elif session.party_world_position() != Vector2i(1104, 1384):
+		failure = "苏州城外进入落点不正确：%s" % session.party_world_position()
 	vm.free()
 	return failure
 
