@@ -86,19 +86,21 @@ func set_walk_animation(walk_phase: int, moving: bool) -> void:
 
 
 ## 根据会话和当前场景事件同步相机、调色板、队伍、NPC 与覆盖块。
+## `camera_offset` 仅用于 `007F` 剧情镜头，不改变队伍世界位置。
 ## 只修改渲染节点，不修改 `GameSession` 或事件对象。
-func sync_world(session: GameSession, events: Array[PalEventObject]) -> bool:
+func sync_world(session: GameSession, events: Array[PalEventObject], camera_offset: Vector2i = Vector2i.ZERO) -> bool:
 	if loaded_map_number < 0 or _map_instance == null or _database == null:
 		error_message = "TileMap 世界尚未载入地图"
 		return false
 	if not _update_palette(session.palette_index, session.night_palette):
 		return false
-	_camera.position = Vector2(session.viewport_position) + Vector2(VIEWPORT_SIZE) / 2.0
+	var render_viewport := session.viewport_position + camera_offset
+	_camera.position = Vector2(render_viewport) + Vector2(VIEWPORT_SIZE) / 2.0
 	_clear_sort_items()
-	var scene_items := _build_scene_items(session, events)
-	var expanded := PalSceneRenderer.expanded_draw_items(_map_data, _tile_sprite, session.viewport_position, scene_items)
+	var scene_items := _build_scene_items(session, events, render_viewport)
+	var expanded := PalSceneRenderer.expanded_draw_items(_map_data, _tile_sprite, render_viewport, scene_items)
 	for item in expanded:
-		_add_draw_item(item, session.viewport_position)
+		_add_draw_item(item, render_viewport)
 	return true
 
 
@@ -164,7 +166,7 @@ func _update_palette(index: int, night: bool) -> bool:
 	return true
 
 
-func _build_scene_items(session: GameSession, events: Array[PalEventObject]) -> Array:
+func _build_scene_items(session: GameSession, events: Array[PalEventObject], render_viewport: Vector2i) -> Array:
 	var result: Array = []
 	for party_index in range(mini(session.party_roles.size(), 3)):
 		var role_index := session.party_roles[party_index]
@@ -175,7 +177,7 @@ func _build_scene_items(session: GameSession, events: Array[PalEventObject]) -> 
 		var world_position := session.party_member_world_position(party_index)
 		if party_index > 0 and _is_blocked_with_events(world_position, events):
 			world_position = session.trail_positions[1]
-		result.append(PalSceneRenderer.player_item(frame, world_position - session.viewport_position, session.world_layer))
+		result.append(PalSceneRenderer.player_item(frame, world_position - render_viewport, session.world_layer))
 
 	for event in events:
 		if not event.is_visible() or event.sprite_number <= 0:
@@ -193,7 +195,7 @@ func _build_scene_items(session: GameSession, events: Array[PalEventObject]) -> 
 		var frame := _decode_frame(sprite, frame_index)
 		if not frame.is_valid():
 			continue
-		var screen_position := event.position - session.viewport_position
+		var screen_position := event.position - render_viewport
 		if screen_position.x < -frame.width or screen_position.x > VIEWPORT_SIZE.x + frame.width or screen_position.y < -frame.height or screen_position.y > VIEWPORT_SIZE.y + frame.height:
 			continue
 		result.append(PalSceneRenderer.event_item(frame, screen_position, event.layer))

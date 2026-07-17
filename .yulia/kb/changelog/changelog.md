@@ -176,6 +176,29 @@ keywords:
 
 ---
 
+### [FT-051] [feat] 实现剧情镜头与 CD 回退并完成比武招亲
+
+- **关联需求**: M3 场景流程、M5 完整流程与音画
+- **关联 TODO**: TD-001、TD-006、TD-008（阶段性）
+- **功能描述**: 对齐固定 SDLPal `script.c` 实现 `007F` 剧情镜头和 `00A3` CD 音乐回退。镜头支持 signed 逐帧平移、固定 PAL 格坐标和复位，在 TileMap Camera2D 与 CPU 对照渲染间共享偏移，但不修改队伍世界坐标、轨迹或碰撞；切场景自动复位。Godot 无 CD 设备时按官方回退播放 `op1` 的循环 RIX，导入器同步收集该曲目。真实主线从苏州客栈次日推进到比武招亲敌队 24／战场 26胜利并进入林家堡内厅。
+- **验证情况**: 320 项合成检查覆盖 `007F` 每帧偏移、固定镜头、复位、队伍坐标不变、`00A3` RIX 14 请求和导入收集；真实资源主线消息 `3309–3441`、完整多段镜头轨迹、敌队 24、战场 26、赵灵儿暂时离队和场景 33 入口均有断言；5 个 TileMap 固定视口继续与 CPU 基准保持 320×200 零像素差异。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/world/map_explorer.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_early_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/AUDIO.md`
+  - `docs/SCENE_RENDERING.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
 ## 2026-07-16
 
 ### [FT-020] [feat] 推进买虾、病倒求药与山神庙主线

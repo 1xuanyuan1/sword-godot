@@ -72,4 +72,6 @@ PalTileMapWorld
 
 静态地图完全由 TileMapLayer 绘制。人物和事件使用带脚底基准的 `Node2D + Sprite2D`；SDLPal 可能重复绘制的特殊覆盖块使用同一 RG8 图集内容创建兼容 Sprite2D，并和人物进入同一 Y 排序容器。这样既保留 Godot 原生地图，也避免强行用单个 TileMap 单元表达原版逐人物覆盖队列。
 
+`ScriptVM 007F` 使用独立的剧情镜头偏移。它只改变 `PalCamera` 和 CPU 对照渲染使用的视口左上角，不修改 `GameSession.viewport_position`、队伍脚底、轨迹或事件坐标；逐帧平移、固定格坐标和复位因此不会误触碰撞。场景切换会清空临时偏移。
+
 本地 `run_local_tilemap_visual_test.gd` 会让 TileMapLayer 和 CPU 使用同一会话状态。目前客栈 map 12 的固定视口已经达到 320×200 零差异像素。

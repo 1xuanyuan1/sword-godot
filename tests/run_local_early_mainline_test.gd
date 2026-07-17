@@ -28,7 +28,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、御剑教学、水月宫惨案、离开余杭、林月如城外事件、苏州客栈战与次日同行主线完成")
+	print("PASS: 买虾、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
 	quit(0)
 
 
@@ -508,6 +508,7 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 	var music_requests: Array = []
 	var fade_requests: Array = []
 	var fbp_requests: Array = []
+	var camera_offsets: Array[Vector2i] = []
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
 	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
 	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
@@ -516,6 +517,7 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: music_requests.append([number, loop, fade]))
 	vm.screen_fade_requested.connect(func(fade_out: bool, duration: float) -> void: fade_requests.append([fade_out, duration]))
 	vm.fbp_requested.connect(func(image_number: int, duration: float) -> void: fbp_requests.append([image_number, duration]))
+	vm.camera_offset_requested.connect(func(offset: Vector2i) -> void: camera_offsets.append(offset))
 
 	# 再次赴岛前的借船脚本会开启水月宫惨案接触点；石像和通路由首次赴岛用例独立覆盖。
 	var massacre_event := database.event_objects[352]
@@ -1098,6 +1100,75 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 		failure = "客栈次日叫醒赵灵儿消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
 	elif session.party_roles != PackedInt32Array([0, 1]) or sleeping_linger.state != 0 or database.event_objects[508].state != 0:
 		failure = "叫醒赵灵儿后队伍或床上 EventObject 没有恢复：队伍 %s，状态 %d/%d" % [session.party_roles, sleeping_linger.state, database.event_objects[508].state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 从苏州街区进入林家堡擂台；场景入口用 00A3 将 CD 音轨回退为 RIX BGM 14。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	music_requests.clear()
+	fade_requests.clear()
+	camera_offsets.clear()
+	var tournament_entrance := database.event_objects[423]
+	session.scene_index = 22
+	vm.run_trigger(tournament_entrance.trigger_script, tournament_entrance.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "进入比武招亲场景的传送脚本遇到未支持指令：%s" % [unsupported]
+	elif requested_scenes != [31] or session.scene_index != 31 or session.party_world_position() != Vector2i(1376, 864):
+		failure = "比武招亲入口没有切到擂台正确落点：场景 %s/%d，位置 %s" % [requested_scenes, session.scene_index, session.party_world_position()]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[31].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "比武招亲场景进入脚本遇到未支持指令：%s" % [unsupported]
+	elif not messages.is_empty() or next_entries != [13448] or session.music_number != 14 or music_requests != [[14, true, 0.0]]:
+		failure = "比武招亲场景的消息、未来入口或 CD 回退 BGM 不正确：消息 %s，入口 %s，BGM %d/%s" % [messages, next_entries, session.music_number, music_requests]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[31].script_on_enter = next_entries[0]
+
+	# 接触擂台主事件，完整执行观战、上台动画和镜头平移，随后请求敌队 24／战场 26。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	battle_requests.clear()
+	music_requests.clear()
+	camera_offsets.clear()
+	var tournament_event := database.event_objects[550]
+	vm.run_trigger(tournament_event.trigger_script, tournament_event.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "比武招亲战前剧情遇到未支持指令：%s" % [unsupported]
+	elif not vm.waiting_for_battle or battle_requests != [[24, 26, true]]:
+		failure = "比武招亲没有请求敌队 24／战场 26：%s" % [battle_requests]
+	elif messages != _message_range(3309, 3409):
+		failure = "比武招亲战前消息不正确：%s" % [messages]
+	elif camera_offsets.is_empty() or camera_offsets[-1] != Vector2i(-16, -8):
+		failure = "比武招亲战前 007F 镜头没有逐帧移动到原版偏移：%s" % [camera_offsets]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	vm.complete_battle(ScriptVM.BATTLE_RESULT_VICTORY)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "比武招亲战后剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3309, 3441) or next_entries != [12111]:
+		failure = "比武招亲完整消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [33] or session.scene_index != 33 or database.scenes[33].script_on_enter != 12619:
+		failure = "比武招亲后没有进入林家堡内厅：场景 %s/%d，入口 %d" % [requested_scenes, session.scene_index, database.scenes[33].script_on_enter]
+	elif session.party_roles != PackedInt32Array([0]) or session.battle_music_number != 14:
+		failure = "比武招亲后队伍或战斗音乐状态不正确：队伍 %s，战斗 BGM %d" % [session.party_roles, session.battle_music_number]
+	elif camera_offsets.is_empty() or camera_offsets[-1] != Vector2i.ZERO:
+		failure = "比武招亲切场景时没有复位剧情镜头：%s" % [camera_offsets]
 	vm.free()
 	return failure
 

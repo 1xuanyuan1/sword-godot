@@ -44,6 +44,7 @@ func _init() -> void:
 	_test_script_vm_audio_requests()
 	_test_script_vm_screen_fade_wait()
 	_test_script_vm_fbp_and_scene_fade_wait()
+	_test_script_vm_camera_pan()
 	_test_script_vm_rng_and_role_state()
 	_test_script_vm_field_role_effects()
 	_test_script_vm_scene_teleport()
@@ -340,10 +341,10 @@ func _test_voc_decoder() -> void:
 
 func _test_music_reference_collection() -> void:
 	var bytes := PackedByteArray()
-	for values in [[0x0043, 31, 0, 0], [0x0045, 37, 0, 0], [0x0043, 31, 1, 0], [0x0000, 0, 0, 0]]:
+	for values in [[0x0043, 31, 0, 0], [0x0045, 37, 0, 0], [0x0043, 31, 1, 0], [0x00a3, 9, 14, 0], [0x0000, 0, 0, 0]]:
 		for value in values:
 			PalBinary.append_u16_le(bytes, value)
-	_expect(PalDataImporter._music_track_numbers(bytes) == [2, 3, 4, 5, 31, 37], "RIX import collects victory, scene, battle and preview music")
+	_expect(PalDataImporter._music_track_numbers(bytes) == [2, 3, 4, 5, 14, 31, 37], "RIX import collects victory, scene, battle, CD fallback and preview music")
 
 
 func _test_content_structures() -> void:
@@ -799,13 +800,14 @@ func _test_script_vm_foundation() -> void:
 
 func _test_script_vm_audio_requests() -> void:
 	var database := PalContentDatabase.new()
-	for operation in [0, 0x0043, 0x0047, 0]:
+	for operation in [0, 0x0043, 0x0047, 0x00a3, 0]:
 		var entry := PalScriptEntry.new()
 		entry.operation = operation
 		entry.operands = PackedInt32Array([0, 0, 0])
 		database.scripts.append(entry)
 	database.scripts[1].operands = PackedInt32Array([31, 3, 0])
 	database.scripts[2].operands[0] = 98
+	database.scripts[3].operands = PackedInt32Array([9, 14, 0])
 	var session := GameSession.new()
 	var music_requests: Array = []
 	var sound_requests: Array[int] = []
@@ -814,7 +816,7 @@ func _test_script_vm_audio_requests() -> void:
 	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: music_requests.append([number, loop, fade]))
 	vm.sound_requested.connect(func(number: int) -> void: sound_requests.append(number))
 	vm.run_trigger(1)
-	_expect(session.music_number == 31 and music_requests == [[31, true, 3.0]], "opcode 0043 forwards music number, loop and fade semantics")
+	_expect(session.music_number == 14 and music_requests == [[31, true, 3.0], [14, true, 0.0]], "opcodes 0043 and 00A3 forward scene music and CD-fallback RIX semantics")
 	_expect(sound_requests == [98], "opcode 0047 forwards the original VOC sound number")
 	vm.free()
 
@@ -871,6 +873,36 @@ func _test_script_vm_fbp_and_scene_fade_wait() -> void:
 	_expect(vm.waiting_for_screen_fade and fade_requests.size() == 2 and not fade_requests[1][0] and is_equal_approx(fade_requests[1][1], 0.6), "opcode 0051 treats signed FFFF as the default fade-in speed")
 	vm.complete_screen_fade()
 	_expect(not vm.running and not vm.waiting_for_screen_fade, "FBP and scene palette fades resume through their explicit callbacks")
+	vm.free()
+
+
+func _test_script_vm_camera_pan() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x007f, 0, 0x007f, 0, 0x007f, 0]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[1].operands = PackedInt32Array([0xfffe, 0xffff, 3])
+	database.scripts[3].operands = PackedInt32Array([10, 20, 0xffff])
+	database.scripts[5].operands = PackedInt32Array([0, 0, 0xffff])
+	var session := GameSession.new()
+	session.viewport_position = Vector2i(64, 32)
+	var party_position := session.party_world_position()
+	var offsets: Array[Vector2i] = []
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	vm.camera_offset_requested.connect(func(offset: Vector2i) -> void: offsets.append(offset))
+	vm.run_trigger(1)
+	_expect(vm.waiting_for_frames, "opcode 007F relative pan waits for its signed frame count")
+	for _frame in range(3):
+		vm.tick_frame()
+	_expect(offsets == [Vector2i(-2, -1), Vector2i(-4, -2), Vector2i(-6, -3)], "opcode 007F emits one signed camera step per PAL script frame")
+	_expect(not vm.running and not vm.waiting_for_frames and session.party_world_position() == party_position, "camera pan finishes without moving the party world position")
+	vm.run_trigger(3)
+	_expect(offsets[-1] == Vector2i(96, 176), "opcode 007F FFFF centers the camera on its PAL tile target")
+	vm.run_trigger(5)
+	_expect(offsets[-1] == Vector2i.ZERO, "opcode 007F zero operands restore ordinary party-follow camera")
 	vm.free()
 
 

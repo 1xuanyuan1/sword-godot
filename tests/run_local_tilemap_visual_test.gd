@@ -57,7 +57,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	var native_image := viewport.get_texture().get_image()
 	if native_image == null:
 		return "当前为 dummy renderer；请去掉 --headless，使用真实 GL Compatibility 渲染器运行"
-	var scene_items: Array = world._build_scene_items(session, events)
+	var scene_items: Array = world._build_scene_items(session, events, session.viewport_position)
 	var map_data := database.load_map(scene.map_number)
 	var tile_sprite := database.load_map_tiles(scene.map_number)
 	var cpu_indexed := PalSceneRenderer.render(map_data, tile_sprite, Rect2i(session.viewport_position, Vector2i(320, 200)), scene_items)

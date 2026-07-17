@@ -655,11 +655,15 @@ static func _convert_rix_audio(mus_path: String, absolute_output: String, report
 
 static func _music_track_numbers(script_bytes: PackedByteArray) -> Array[int]:
 	# 曲目 2/3 是 Boss/普通胜利音乐，4/5 供启动与资源预览；其余来自剧情脚本。
+	# 00A3 的 op0 是 CD 音轨，桌面移植实际播放的 RIX 回退编号位于 op1。
 	var numbers: Dictionary = {2: true, 3: true, 4: true, 5: true}
 	for offset in range(0, script_bytes.size() - PalScriptEntry.BYTE_SIZE + 1, PalScriptEntry.BYTE_SIZE):
 		var entry := PalScriptEntry.from_bytes(script_bytes, offset)
-		if entry != null and entry.operation in [0x0043, 0x0045] and entry.operands[0] > 0:
-			numbers[entry.operands[0]] = true
+		if entry == null:
+			continue
+		var music_number := entry.operands[1] if entry.operation == 0x00a3 else entry.operands[0]
+		if entry.operation in [0x0043, 0x0045, 0x00a3] and music_number > 0:
+			numbers[music_number] = true
 	var result: Array[int] = []
 	for raw_number in numbers:
 		result.append(int(raw_number))

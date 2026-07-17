@@ -63,6 +63,7 @@ var _system_toast_serial: int = 0
 var _location_toast_serial: int = 0
 var _loaded_scene_index: int = -1
 var _pending_location_toast: String = ""
+var _script_camera_offset: Vector2i = Vector2i.ZERO
 
 
 func _ready() -> void:
@@ -99,6 +100,7 @@ func _ready() -> void:
 	_script_vm.player_sprites_changed.connect(_on_player_sprites_changed)
 	_script_vm.party_step_performed.connect(_on_script_party_step)
 	_script_vm.party_walk_finished.connect(_on_script_party_walk_finished)
+	_script_vm.camera_offset_requested.connect(_on_camera_offset_requested)
 	_script_vm.music_requested.connect(_on_music_requested)
 	_script_vm.sound_requested.connect(_on_sound_requested)
 	_script_vm.fbp_requested.connect(_on_fbp_requested)
@@ -528,6 +530,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 		_set_error("场景索引越界：%d" % scene_index)
 		return
 	_hide_fbp_view()
+	_script_camera_offset = Vector2i.ZERO
 	_session.scene_index = scene_index
 	_reset_touch_scan()
 	_script_frame_accumulator = 0.0
@@ -621,17 +624,18 @@ func _apply_debug_event_overrides(overrides: Dictionary) -> void:
 
 
 func _refresh_world() -> void:
+	var render_viewport := _session.viewport_position + _script_camera_offset
 	if not _use_legacy_renderer:
 		_tile_world.set_walk_animation(_walk_phase, _showing_walk_frame)
-		if not _tile_world.sync_world(_session, _scene_events):
+		if not _tile_world.sync_world(_session, _scene_events, _script_camera_offset):
 			_set_error("Godot 原生地图渲染失败：%s" % _tile_world.error_message)
 		return
 	var palette := _database.load_palette(_session.palette_index, _session.night_palette)
-	var scene_items := _build_scene_draw_items()
+	var scene_items := _build_scene_draw_items(render_viewport)
 	var rendered := PalSceneRenderer.render(
 		_map_data,
 		_tile_sprite,
-		Rect2i(_session.viewport_position, Vector2i(320, 200)),
+		Rect2i(render_viewport, Vector2i(320, 200)),
 		scene_items
 	)
 	if not rendered.is_valid() or palette.is_empty():
@@ -657,7 +661,7 @@ func _load_scene_sprites() -> bool:
 	return true
 
 
-func _build_scene_draw_items() -> Array:
+func _build_scene_draw_items(render_viewport: Vector2i) -> Array:
 	var result: Array = []
 	for party_index in range(mini(_session.party_roles.size(), 3)):
 		var role_index := _session.party_roles[party_index]
@@ -668,7 +672,7 @@ func _build_scene_draw_items() -> Array:
 		var member_world_position := _session.party_member_world_position(party_index)
 		if party_index > 0 and _is_blocked(member_world_position):
 			member_world_position = _session.trail_positions[1]
-		result.append(PalSceneRenderer.player_item(player_frame, member_world_position - _session.viewport_position, _session.world_layer))
+		result.append(PalSceneRenderer.player_item(player_frame, member_world_position - render_viewport, _session.world_layer))
 	for event in _scene_events:
 		if not event.is_visible() or not _event_sprites.has(event.sprite_number):
 			continue
@@ -683,7 +687,7 @@ func _build_scene_draw_items() -> Array:
 		var frame := _decode_sprite_frame(sprite, frame_index)
 		if not frame.is_valid():
 			continue
-		var screen_position := event.position - _session.viewport_position
+		var screen_position := event.position - render_viewport
 		if screen_position.x < -frame.width or screen_position.x > 320 + frame.width or screen_position.y < -frame.height or screen_position.y > 200 + frame.height:
 			continue
 		result.append(PalSceneRenderer.event_item(frame, screen_position, event.layer))
@@ -918,6 +922,7 @@ func _reset_transient_state_for_load() -> void:
 	_pending_magic_target_role = -1
 	_pending_magic_stage = FIELD_MAGIC_STAGE_USE
 	_pending_location_toast = ""
+	_script_camera_offset = Vector2i.ZERO
 	_hide_fbp_view()
 	_location_toast_serial += 1
 	if _location_toast != null:
@@ -1084,6 +1089,12 @@ func _on_script_party_step() -> void:
 func _on_script_party_walk_finished() -> void:
 	_showing_walk_frame = false
 	_move_cooldown = 0.0
+
+
+func _on_camera_offset_requested(offset: Vector2i) -> void:
+	_script_camera_offset = offset
+	if _map_data != null and _map_data.is_valid():
+		_refresh_world()
 
 
 func _on_magic_use_requested(magic_object_id: int, caster_role_index: int, target_role_index: int) -> void:

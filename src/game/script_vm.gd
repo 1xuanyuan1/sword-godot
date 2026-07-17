@@ -43,6 +43,8 @@ signal player_sprites_changed
 signal party_step_performed
 ## 脚本自动行走抵达目标。
 signal party_walk_finished
+## 剧情镜头相对队伍跟随视口的偏移发生变化；探索渲染器应立即同步。
+signal camera_offset_requested(offset: Vector2i)
 
 const MAX_INSTRUCTIONS_PER_RUN := 10000
 
@@ -81,6 +83,9 @@ var _dialog_is_toast: bool = false
 var _frames_remaining: int = 0
 var _auto_frame_number: int = 0
 var _close_dialog_after_frame_wait: bool = false
+var _camera_pan_active: bool = false
+var _camera_pan_step: Vector2i = Vector2i.ZERO
+var _camera_offset: Vector2i = Vector2i.ZERO
 var _next_trigger_entry: int = 0
 var _party_walk_target: Vector2i = Vector2i.ZERO
 var _party_walk_speed: int = 0
@@ -108,6 +113,8 @@ func configure(content_database: PalContentDatabase, game_session: GameSession =
 	# 新游戏与读档都从空的调用上下文继续；不能沿用读档前最后一次事件目标。
 	_last_event_object_id = 0
 	_auto_frame_number = 0
+	_camera_offset = Vector2i.ZERO
+	_camera_pan_active = false
 	if session != null and database != null:
 		session.initialize_role_state(database.player_roles)
 	_equipment_manager.database = database
@@ -143,6 +150,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	_battle_flee_entry = 0
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
+	_camera_pan_active = false
 	touch_trigger_armed = false
 	_cursor = entry_index
 	_next_trigger_entry = entry_index
@@ -212,6 +220,7 @@ func stop() -> void:
 	_dialog_is_toast = false
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
+	_camera_pan_active = false
 	touch_trigger_armed = false
 	_call_stack.clear()
 	dialog_ended.emit()
@@ -231,10 +240,14 @@ func tick_frame() -> bool:
 		return _tick_party_ride() or world_changed
 	if not waiting_for_frames:
 		return world_changed
+	if _camera_pan_active:
+		_camera_offset += _camera_pan_step
+		camera_offset_requested.emit(_camera_offset)
 	_frames_remaining -= 1
 	world_changed = true
 	if _frames_remaining <= 0:
 		waiting_for_frames = false
+		_camera_pan_active = false
 		if _close_dialog_after_frame_wait:
 			_close_dialog_after_frame_wait = false
 			_dialog_has_body = false
@@ -580,6 +593,7 @@ func _continue_execution() -> int:
 			# 切换到 1-based 的 operand[0] 场景，并在下一安全时机载入。
 			0x0059:
 				if session != null and entry.operands[0] > 0 and entry.operands[0] <= database.scenes.size():
+					_set_camera_offset(Vector2i.ZERO)
 					session.scene_index = entry.operands[0] - 1
 					session.world_layer = 0
 					scene_change_requested.emit(session.scene_index)
@@ -685,6 +699,19 @@ func _continue_execution() -> int:
 				var event := _resolve_event(entry.operands[0])
 				if event != null:
 					event.layer = _signed_word(entry.operands[1])
+			# 平移或复位剧情镜头；队伍世界位置保持不变。
+			0x007f:
+				if entry.operands[0] == 0 and entry.operands[1] == 0:
+					_set_camera_offset(Vector2i.ZERO)
+					if entry.operands[2] != 0xffff:
+						redraw_requested.emit(0)
+				elif entry.operands[2] == 0xffff:
+					# 固定镜头以 PAL 格坐标为中心；相对偏移只影响渲染，不改变队伍脚底坐标。
+					var target_viewport := Vector2i(entry.operands[0] * 32 - 160, entry.operands[1] * 16 - 112)
+					_set_camera_offset(target_viewport - (session.viewport_position if session != null else Vector2i.ZERO))
+				else:
+					var camera_step := Vector2i(_signed_word(entry.operands[0]), _signed_word(entry.operands[1]))
+					return _wait_for_camera_pan(next_cursor, camera_step, maxi(1, _signed_word(entry.operands[2])))
 			# 队伍未面向/接近 operand[0] 事件时跳到 operand[2]；operand[1] 为距离级别。
 			0x0081:
 				if _is_party_facing_event(entry.operands[0], entry.operands[1]):
@@ -733,6 +760,11 @@ func _continue_execution() -> int:
 			0x00a1:
 				if session != null:
 					session.collapse_party_formation()
+			# 播放 CD 音轨，桌面移植无 CD 时按官方回退到 operand[1] 的 RIX 曲目。
+			0x00a3:
+				if session != null:
+					session.music_number = entry.operands[1]
+				music_requested.emit(entry.operands[1], true, 0.0)
 			# 延迟 operand[0]×80ms；10 FPS VM 换算为相应脚本帧数。
 			0x0085:
 				# SDLPal delays operand × 80 ms; scene scripts advance at 10 FPS here.
@@ -786,6 +818,7 @@ func _finish(next_entry: int) -> int:
 	_dialog_is_toast = false
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
+	_camera_pan_active = false
 	dialog_ended.emit()
 	script_finished.emit(next_entry)
 	return next_entry
@@ -880,7 +913,23 @@ func _wait_for_frames(next_cursor: int, frame_count: int, close_dialog_after_wai
 	_frames_remaining = maxi(1, frame_count)
 	waiting_for_frames = true
 	_close_dialog_after_frame_wait = close_dialog_after_wait
+	_camera_pan_active = false
 	return _cursor
+
+
+func _wait_for_camera_pan(next_cursor: int, step: Vector2i, frame_count: int) -> int:
+	_cursor = next_cursor
+	_frames_remaining = maxi(1, frame_count)
+	waiting_for_frames = true
+	_close_dialog_after_frame_wait = false
+	_camera_pan_step = step
+	_camera_pan_active = true
+	return _cursor
+
+
+func _set_camera_offset(offset: Vector2i) -> void:
+	_camera_offset = offset
+	camera_offset_requested.emit(_camera_offset)
 
 
 func _event_by_id(event_object_id: int) -> PalEventObject:
