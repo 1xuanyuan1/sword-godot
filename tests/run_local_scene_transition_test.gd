@@ -236,8 +236,13 @@ func _test_bath_cutscene_runtime() -> String:
 				var displayed_frame: PalIndexedImage = explorer._party_frame(sprite, 0, 0)
 				var expected_frame := RleDecoder.decode(sprite.get_frame(0))
 				if not displayed_frame.is_valid() or displayed_frame.indices != expected_frame.indices:
-					failure = "残留步态标志覆盖了李逍遥 Sprite 193 第 0 帧倒地动作"
-				elif can_capture_pixels:
+					failure = "CPU 对照渲染器的残留步态覆盖了李逍遥 Sprite 193 第 0 帧倒地动作"
+				else:
+					var native_sprite: PalSprite = explorer._tile_world._player_sprite_for_role(0)
+					var native_frame: PalIndexedImage = explorer._tile_world._party_frame(native_sprite, 0, 0, explorer._session)
+					if not native_frame.is_valid() or native_frame.indices != expected_frame.indices:
+						failure = "TileMap 原生渲染器的残留步态覆盖了李逍遥 Sprite 193 第 0 帧倒地动作"
+				if failure.is_empty() and can_capture_pixels:
 					var knockdown_image := explorer.get_viewport().get_texture().get_image()
 					knockdown_image.resize(320, 200, Image.INTERPOLATE_NEAREST)
 					knockdown_image.save_png(ProjectSettings.globalize_path("res://generated/pal/visual_tests/bath_cutscene_knockdown.png"))

@@ -56,6 +56,21 @@ keywords:
 - **修复内容**: 让当前有效的 `party_script_frames` 始终优先于残留步态标志；真正的普通移动仍由 `record_party_step()` 清除旧姿势，不影响行走动画。新增合成回归复现“移动标志仍为真、随后重新下发 `0015`”的顺序，并把真实洗澡回归继续执行到 EventObject 205 的追打段，核对 Sprite 193 第 0 帧数据及带窗口像素截图。
 - **状态**: ✅ 已修复
 
+---
+
+### [BF-027] 默认 TileMap 渲染仍把李逍遥倒地帧画成腾空帧
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M2–M3 TileMap 原生地图与仙灵岛人物动作
+- **问题描述**: BF-025 只修改了 `MapExplorer` 内被默认隐藏的 CPU 对照选帧函数，实际游戏使用的 `PalTileMapWorld._party_frame()` 仍在 `_showing_walk_frame` 为真时忽略 `0015` 剧情帧。测试也只直接调用 CPU 函数，因此误报通过；从正式存档或剧情测试进入都会继续显示 Sprite 193 的腾空/步态帧。
+- **涉及文件**:
+  - `src/world/pal_tilemap_world.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_scene_transition_test.gd`
+  - `docs/SCENE_RENDERING.md`
+- **修复内容**: 将 TileMap 原生选帧规则同步为“有效剧情帧优先”，并把合成回归改为同时检查 CPU 与 TileMap 两个后端返回同一索引帧。真实资源回归进一步直接读取 `PalTileMapWorld` 当前帧，与 Sprite 193 第 0 帧逐像素索引比较；带窗口截图确认默认 TileMap 画面中的李逍遥横向倒地。
+- **状态**: ✅ 已修复
+
 ## 2026-07-16
 
 ### [BF-009] 收起桂花酒后李逍遥消失直到再次移动

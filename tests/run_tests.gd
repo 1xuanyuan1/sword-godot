@@ -763,7 +763,13 @@ func _test_explorer_scripted_pose_priority() -> void:
 	# 剧情移动会短暂打开步态标志；紧随其后的 0015 必须重新取得优先级。
 	explorer._showing_walk_frame = true
 	var frame: PalIndexedImage = explorer._party_frame(_synthetic_map_tile_sprite(), 0, 0)
-	_expect(frame.is_valid() and frame.indices[0] == 9, "scripted party pose overrides a stale walk-frame flag after cutscene movement")
+	_expect(frame.is_valid() and frame.indices[0] == 9, "CPU renderer prioritizes a scripted party pose over a stale walk-frame flag")
+	var tile_world := PalTileMapWorld.new()
+	tile_world._database = database
+	tile_world._showing_walk_frame = true
+	var native_frame: PalIndexedImage = tile_world._party_frame(_synthetic_map_tile_sprite(), 0, 0, explorer._session)
+	_expect(native_frame.is_valid() and native_frame.indices[0] == 9, "TileMap renderer prioritizes the same scripted party pose as the CPU reference")
+	tile_world.free()
 	explorer.free()
 
 

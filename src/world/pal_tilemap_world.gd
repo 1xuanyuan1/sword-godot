@@ -206,7 +206,9 @@ func _party_frame(sprite: PalSprite, role_index: int, party_index: int, session:
 	if sprite == null or not sprite.is_valid():
 		return PalIndexedImage.new()
 	var scripted_frame := session.scripted_party_frame(party_index)
-	if scripted_frame >= 0 and not _showing_walk_frame:
+	# 普通移动已经由 GameSession 清除旧剧情动作；移动后重新执行的 0015
+	# 必须覆盖残留步态。与 CPU 对照渲染器保持一致，避免两种后端动作不同。
+	if scripted_frame >= 0:
 		return _decode_frame(sprite, scripted_frame)
 	var walk_frames := _database.player_roles.walk_frame_count_for(role_index)
 	var direction := session.party_member_direction(party_index)
