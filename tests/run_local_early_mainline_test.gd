@@ -21,6 +21,8 @@ func _init() -> void:
 	if failure.is_empty():
 		failure = _test_palace_marriage_night(database)
 	if failure.is_empty():
+		failure = _test_first_island_return_dialog_boundary(database)
+	if failure.is_empty():
 		failure = _test_medicine_return_and_temple_reminder(database)
 	if failure.is_empty():
 		failure = _test_black_miao_night_departure(database)
@@ -32,7 +34,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、仙灵岛洗澡与水月宫过夜、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
+	print("PASS: 买虾、仙灵岛洗澡、水月宫过夜与首次返航、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
 	quit(0)
 
 
@@ -131,6 +133,51 @@ func _test_palace_marriage_night(database: PalContentDatabase) -> String:
 		failure = "水月宫床边事件没有进入稳定后续入口：状态 %d，脚本 %d" % [marriage_event.state, marriage_event.trigger_script]
 	elif hidden_attendant.state != 0:
 		failure = "水月宫过夜后应离场的事件仍然可见：%d" % hidden_attendant.state
+	vm.free()
+	return failure
+
+
+func _test_first_island_return_dialog_boundary(database: PalContentDatabase) -> String:
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.scene_index = 18
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var messages: Array[int] = []
+	var unsupported: Array[String] = []
+	var next_entries: Array[int] = []
+	var requested_scenes: Array[int] = []
+	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.unsupported_instruction.connect(func(index: int, operation: int) -> void: unsupported.append("0x%04X@%d" % [operation, index]))
+	vm.script_finished.connect(func(next_entry: int) -> void: next_entries.append(next_entry))
+	vm.scene_change_requested.connect(func(scene_index: int) -> void: requested_scenes.append(scene_index))
+	var shore_boat := database.event_objects[116]
+	var shore_boat_before_dialog := shore_boat.position
+	vm.run_trigger(8681)
+	var failure := ""
+	if not vm.waiting_for_dialog or messages != _message_range(2185, 2187):
+		failure = "首次返航第一轮对白等待不正确：消息 %s，waiting=%s" % [messages, vm.waiting_for_dialog]
+	else:
+		vm.advance_dialog()
+	if failure.is_empty() and (not vm.waiting_for_dialog or messages != _message_range(2185, 2189)):
+		failure = "首次返航第二轮对白等待不正确：消息 %s，waiting=%s" % [messages, vm.waiting_for_dialog]
+	elif failure.is_empty():
+		vm.advance_dialog()
+	if failure.is_empty() and (not vm.waiting_for_dialog or messages != _message_range(2185, 2193)):
+		failure = "首次返航李逍遥最后一轮对白等待不正确：消息 %s，waiting=%s" % [messages, vm.waiting_for_dialog]
+	elif failure.is_empty() and (not requested_scenes.is_empty() or session.scene_index != 18 or shore_boat.position != shore_boat_before_dialog):
+		failure = "首次返航最后一轮对白结束前已经回到余杭：场景 %s/%d，船 %s→%s" % [requested_scenes, session.scene_index, shore_boat_before_dialog, shore_boat.position]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	vm.advance_dialog()
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "首次返航剧情遇到未支持指令：%s" % [unsupported]
+	elif requested_scenes != [4] or session.scene_index != 4 or session.music_number != 8:
+		failure = "首次返航对白结束后没有回到余杭：场景 %s/%d，BGM %d" % [requested_scenes, session.scene_index, session.music_number]
+	elif shore_boat.position != Vector2i(1184, 1424) or next_entries != [8681]:
+		failure = "首次返航结束后的船只或稳定入口不正确：船 %s，入口 %s" % [shore_boat.position, next_entries]
 	vm.free()
 	return failure
 
@@ -665,7 +712,17 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 	requested_scenes.clear()
 	music_requests.clear()
 	var shore_boat := database.event_objects[116]
+	var shore_boat_before_dialog := shore_boat.position
+	var scene_before_dialog := session.scene_index
 	vm.run_trigger(database.event_objects[225].trigger_script, 226)
+	if not vm.waiting_for_dialog or messages != [2434]:
+		failure = "张四返航对白没有在正文结束处等待：消息 %s，waiting=%s" % [messages, vm.waiting_for_dialog]
+	elif not requested_scenes.is_empty() or session.scene_index != scene_before_dialog or shore_boat.position != shore_boat_before_dialog:
+		failure = "张四返航对白结束前已经切场景或移动船只：场景 %s/%d，船 %s→%s" % [requested_scenes, session.scene_index, shore_boat_before_dialog, shore_boat.position]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	vm.advance_dialog()
 	_drive_script(vm)
 	if not unsupported.is_empty():
 		failure = "水月宫返航剧情遇到未支持指令：%s" % [unsupported]

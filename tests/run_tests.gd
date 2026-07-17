@@ -1136,21 +1136,30 @@ func _test_script_vm_scene_runtime_mutations() -> void:
 
 func _test_script_vm_dialog_pause() -> void:
 	var database := PalContentDatabase.new()
-	for operation in [0, 0x003d, 0xffff, 0xffff, 0]:
+	for operation in [0, 0x003d, 0xffff, 0xffff, 0x0046, 0x0059, 0]:
 		var entry := PalScriptEntry.new()
 		entry.operation = operation
 		entry.operands = PackedInt32Array([0, 0, 0])
 		database.scripts.append(entry)
 	database.scripts[2].operands[0] = 12
 	database.scripts[3].operands[0] = 13
+	database.scripts[4].operands = PackedInt32Array([10, 20, 0])
+	database.scripts[5].operands[0] = 2
+	database.scenes.append(PalSceneDefinition.new())
+	database.scenes.append(PalSceneDefinition.new())
+	var session := GameSession.new()
+	var initial_position := session.party_world_position()
 	var messages: Array[int] = []
+	var requested_scenes: Array[int] = []
 	var vm := ScriptVM.new()
-	vm.configure(database)
+	vm.configure(database, session)
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.scene_change_requested.connect(func(index: int) -> void: requested_scenes.append(index))
 	vm.run_trigger(1)
 	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM combines consecutive dialog body messages")
+	_expect(session.party_world_position() == initial_position and session.scene_index == 0 and requested_scenes.is_empty(), "dialog waits before any following world mutation or scene change")
 	vm.advance_dialog()
-	_expect(not vm.waiting_for_dialog and not vm.running, "script VM finishes after one dialog round")
+	_expect(not vm.waiting_for_dialog and not vm.running and session.party_world_position() == Vector2i(320, 320) and session.scene_index == 1 and requested_scenes == [1], "script VM applies following world mutations only after the dialog round ends")
 	vm.free()
 
 

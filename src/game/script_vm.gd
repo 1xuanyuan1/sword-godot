@@ -266,6 +266,11 @@ func _continue_execution() -> int:
 	var executed := 0
 	while running and _cursor > 0 and _cursor < database.scripts.size() and executed < MAX_INSTRUCTIONS_PER_RUN:
 		var entry := database.scripts[_cursor]
+		# 官方 PAL_ShowDialogText 会在正文轮次结束时等待玩家确认。Godot 会合并连续的
+		# FFFF 正文，但下一条只要不是消息，就必须先暂停；否则坐标、事件和 0059
+		# 场景切换会在对话框仍显示时提前生效。
+		if _dialog_has_body and entry.operation != 0xffff:
+			return _pause_at_dialog_boundary()
 		instruction_started.emit(_cursor, entry.operation, entry.operands)
 		var next_cursor := _cursor + 1
 		match entry.operation:
