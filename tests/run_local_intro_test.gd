@@ -49,8 +49,8 @@ func _init() -> void:
 	elif vm.running or vm.waiting_for_dialog or vm.waiting_for_frames:
 		printerr("FAIL: 首场景进入脚本没有结束")
 		quit(1)
-	elif database.event_objects.size() < 11 or database.event_objects[10].state != 0 or database.event_objects[10].position != Vector2i(1152, 384):
-		printerr("FAIL: 李大娘自动离场脚本没有完成")
+	elif database.event_objects.size() < 12 or database.event_objects[3].state != 1 or database.event_objects[10].state != 0 or database.event_objects[10].position != Vector2i(1152, 384) or database.event_objects[10].auto_script != 4458 or database.event_objects[11].state != 0:
+		printerr("FAIL: 李大娘自动离场后没有隐藏叫醒姿势或开启房间楼梯")
 		quit(1)
 	elif not intro_pose_frames.has(2) or not intro_pose_frames.has(3):
 		printerr("FAIL: 李逍遥的大侠姿势帧没有执行")

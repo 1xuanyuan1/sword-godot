@@ -41,7 +41,7 @@ func _build_interface() -> void:
 	page.add_child(title)
 
 	var subtitle := Label.new()
-	subtitle.text = "直接进入检查点；不会修改正式存档，也不会提交本地素材。"
+	subtitle.text = "直接进入临时检查点；不会自动修改正式存档。\n检查点不是完整主线存档，只保证按钮标注片段。"
 	subtitle.add_theme_font_size_override("font_size", 8)
 	subtitle.add_theme_color_override("font_color", Color("cbd5e1"))
 	page.add_child(subtitle)

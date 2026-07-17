@@ -1729,6 +1729,31 @@ func _test_debug_checkpoints() -> void:
 	var boat_overrides: Dictionary = checkpoint.get("event_overrides", {})
 	_expect(checkpoint.get("scene") == 4 and checkpoint.get("position") == Vector2i(1136, 1368) and checkpoint.get("music") == 87, "boat checkpoint opens the real Yuhang dock state next to Zhang Si")
 	_expect(boat_overrides.get(124, {}).get("trigger_script") == 0x16f9 and boat_overrides.get(124, {}).get("position") == Vector2i(1152, 1376), "boat checkpoint restores Zhang Si's post-medicine position and boarding script")
+	_expect(checkpoint.get("scene_enter_scripts", {}).get(0) == 8145 and boat_overrides.get(4, {}).get("state") == 1, "boat checkpoint preserves the completed inn intro and open stairs")
+	_expect(boat_overrides.get(11, {}).get("position") == Vector2i(1152, 384) and boat_overrides.get(11, {}).get("auto_script") == 4458 and boat_overrides.get(12, {}).get("state") == 0, "boat checkpoint removes the aunt wake-up pose before continued play")
+	var legacy_database := PalContentDatabase.new()
+	var inn_scene := PalSceneDefinition.new()
+	inn_scene.script_on_enter = 6225
+	legacy_database.scenes.append(inn_scene)
+	for event_id in range(1, 13):
+		var event := PalEventObject.new()
+		event.object_id = event_id
+		legacy_database.event_objects.append(event)
+	var legacy_stairs: PalEventObject = legacy_database.event_objects[3]
+	legacy_stairs.state = 0
+	legacy_stairs.trigger_script = 4475
+	var legacy_aunt_exit: PalEventObject = legacy_database.event_objects[10]
+	legacy_aunt_exit.position = Vector2i(1328, 296)
+	legacy_aunt_exit.auto_script = 4455
+	legacy_aunt_exit.state = 0
+	legacy_aunt_exit.sprite_number = 21
+	legacy_aunt_exit.direction = GameSession.DIR_WEST
+	var legacy_aunt_pose: PalEventObject = legacy_database.event_objects[11]
+	legacy_aunt_pose.state = 1
+	legacy_aunt_pose.sprite_number = 628
+	_expect(DebugCheckpoint.repair_legacy_checkpoint_runtime(legacy_database), "legacy boat-checkpoint saves are recognized by their impossible post-medicine inn state")
+	_expect(legacy_stairs.state == 1 and legacy_aunt_exit.position == Vector2i(1152, 384) and legacy_aunt_exit.auto_script == 4458 and legacy_aunt_exit.direction == GameSession.DIR_SOUTH and legacy_aunt_pose.state == 0, "legacy checkpoint repair opens the stairs and removes the aunt wake-up pose")
+	_expect(not DebugCheckpoint.repair_legacy_checkpoint_runtime(legacy_database), "legacy checkpoint repair is idempotent and leaves normal runtime state alone")
 	_expect(not DebugCheckpoint.request("kitchen_entry") and not DebugCheckpoint.request("stairs"), "completed non-wine manual checkpoints are archived from the test lab")
 	_expect(DebugCheckpoint.consume().is_empty() and not DebugCheckpoint.request("missing"), "debug story checkpoint is consumed once and rejects unknown ids")
 

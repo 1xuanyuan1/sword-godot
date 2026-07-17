@@ -905,6 +905,9 @@ func _on_load_slot_requested(slot: int) -> bool:
 		_game_menu.close_menu()
 		_show_system_toast("读取失败：%s" % _save_manager.error_message)
 		return false
+	# 旧版码头检查点只补了船只，继续游玩后会把客栈开场的李大娘姿势和关闭楼梯写入存档。
+	# 这里只修复与该旧检查点完全匹配的不可能状态，正常主线存档不会命中。
+	var repaired_checkpoint_state := DebugCheckpoint.repair_legacy_checkpoint_runtime(_database)
 	_reset_transient_state_for_load()
 	if not _equipment_manager.configure(_database, _session):
 		_set_error("读档后无法重建装备效果：%s" % _equipment_manager.error_message)
@@ -917,7 +920,7 @@ func _on_load_slot_requested(slot: int) -> bool:
 	_load_scene(_session.scene_index, false)
 	if _audio_player != null:
 		_audio_player.play_music(_session.music_number, true, 0.0)
-	_show_system_toast("已读取存档 %03d" % slot)
+	_show_system_toast("已读取存档 %03d%s" % [slot, "，已修复旧剧情检查点状态" if repaired_checkpoint_state else ""])
 	return true
 
 
