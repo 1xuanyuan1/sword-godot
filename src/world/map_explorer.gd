@@ -8,6 +8,7 @@ extends Control
 const MOVE_REPEAT_SECONDS := 0.10
 const SCRIPT_FRAME_SECONDS := 0.10
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
+const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
 const RETURN_TO_LAB_KEYCODE := KEY_F10
@@ -108,8 +109,12 @@ func _ready() -> void:
 	_script_vm.rng_animation_requested.connect(_on_rng_animation_requested)
 	_script_vm.battle_requested.connect(_on_battle_requested)
 	add_child(_script_vm)
+	var requested_load_slot := StartupRequest.consume_load_slot()
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
-	if checkpoint.is_empty():
+	if requested_load_slot > 0:
+		if not _on_load_slot_requested(requested_load_slot):
+			_load_scene(_session.scene_index, true)
+	elif checkpoint.is_empty():
 		_load_scene(_session.scene_index, true)
 	else:
 		_load_debug_checkpoint(checkpoint)
@@ -876,19 +881,19 @@ func _on_save_slot_requested(slot: int) -> void:
 	_show_system_toast("已保存到存档 %03d" % slot)
 
 
-func _on_load_slot_requested(slot: int) -> void:
+func _on_load_slot_requested(slot: int) -> bool:
 	if not _save_system_available:
 		_game_menu.close_menu()
 		_show_system_toast("读档不可用：%s" % _save_manager.error_message)
-		return
+		return false
 	if not _save_manager.load_slot(slot, _session):
 		_game_menu.close_menu()
 		_show_system_toast("读取失败：%s" % _save_manager.error_message)
-		return
+		return false
 	_reset_transient_state_for_load()
 	if not _equipment_manager.configure(_database, _session):
 		_set_error("读档后无法重建装备效果：%s" % _equipment_manager.error_message)
-		return
+		return false
 	_script_vm.configure(_database, _session)
 	_game_menu.configure(_database, _session)
 	_refresh_save_slot_summaries()
@@ -898,6 +903,7 @@ func _on_load_slot_requested(slot: int) -> void:
 	if _audio_player != null:
 		_audio_player.play_music(_session.music_number, true, 0.0)
 	_show_system_toast("已读取存档 %03d" % slot)
+	return true
 
 
 func _reset_transient_state_for_load() -> void:

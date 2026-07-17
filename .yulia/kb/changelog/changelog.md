@@ -199,6 +199,27 @@ keywords:
 
 ---
 
+### [FT-052] [feat] 在资源实验室直接读取正式存档
+
+- **关联需求**: M3 存读档与启动体验
+- **关联 TODO**: 无
+- **功能描述**: 将资源实验室的入口分为“开始游戏”和“开发工具”，提供“开始新游戏”与“读取存档”。启动读档直接复用游戏内原版 100 槽界面，保留地点、时间、队伍头像、姓名、等级、分页和损坏诊断；独立模式以纯黑背景隔离实验室文字，Esc 直接关闭。确认槽位后由一次性 `PalStartupRequest` 只传递编号，探索场景仍通过 `PalSaveManager` 重新校验格式、内容指纹与 SHA-256，恢复地图、剧情和 BGM 且不重跑场景进入脚本。
+- **验证情况**: 327 项合成检查覆盖一次性槽位边界、独立取消和游戏内原有返回层级；真实 OpenGL 回归验证启动页按钮不重叠、100 槽页视觉，并只读恢复本机正式存档 001 到场景 3，未重跑进入脚本。截图继续只写入被忽略的 `generated/pal/visual_tests/`。
+- **涉及文件**:
+  - `src/game/pal_startup_request.gd`
+  - `src/ui/import_lab.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_startup_load_test.gd`
+  - `README.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/SAVE_SYSTEM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
 ## 2026-07-16
 
 ### [FT-020] [feat] 推进买虾、病倒求药与山神庙主线

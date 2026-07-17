@@ -3,6 +3,7 @@
 extends SceneTree
 
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
+const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 
@@ -63,6 +64,7 @@ func _init() -> void:
 	_test_explorer_scene_enter_persistence()
 	_test_explorer_hud_canvas_layer()
 	_test_debug_checkpoints()
+	_test_startup_load_request()
 	_test_game_menu_inventory()
 	_test_explorer_field_magic_bridge()
 	_test_explorer_input_keys()
@@ -1650,6 +1652,14 @@ func _test_debug_checkpoints() -> void:
 	_expect(DebugCheckpoint.consume().is_empty() and not DebugCheckpoint.request("missing"), "debug story checkpoint is consumed once and rejects unknown ids")
 
 
+func _test_startup_load_request() -> void:
+	StartupRequest.consume_load_slot()
+	_expect(not StartupRequest.request_load_slot(0) and StartupRequest.consume_load_slot() == 0, "startup load request rejects slot zero")
+	_expect(not StartupRequest.request_load_slot(PalSaveManager.SLOT_COUNT + 1) and StartupRequest.consume_load_slot() == 0, "startup load request rejects slots beyond one hundred")
+	_expect(StartupRequest.request_load_slot(73), "startup load request accepts a valid formal save slot")
+	_expect(StartupRequest.consume_load_slot() == 73 and StartupRequest.consume_load_slot() == 0, "startup load slot is consumed exactly once")
+
+
 func _test_game_menu_inventory() -> void:
 	var database := PalContentDatabase.new()
 	database.words.resize(301)
@@ -1767,6 +1777,13 @@ func _test_game_menu_inventory() -> void:
 	menu._save_slot_selection = 1
 	menu._confirm_selection()
 	_expect(load_requests == [1], "empty load slots stay disabled")
+	menu.open_load_slots(true)
+	_expect(menu.visible and menu.current_page == PalGameMenu.Page.LOAD_SLOTS, "startup can directly open the existing one-hundred-slot load browser")
+	menu.go_back()
+	_expect(not menu.visible, "standalone startup load browser closes directly on cancel")
+	menu.open_load_slots(false)
+	menu.go_back()
+	_expect(menu.visible and menu.current_page == PalGameMenu.Page.SYSTEM, "in-game load browser still returns to the system menu")
 	menu.current_page = PalGameMenu.Page.SYSTEM
 	menu._system_selection = 2
 	var settings: Array = []

@@ -1,8 +1,10 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 工程主入口的资源实验室，负责选择 Data 目录、调用导入器和导航到各样板。
-## UI 只展示 `PalImportReport`，不会自行解析或发布原版资源。
+## 工程主入口的资源实验室，负责选择 Data 目录、调用导入器、新游戏／读档和样板导航。
+## UI 将资源与存档校验委托给专用模块，不会自行解析、修改或发布原版资源。
 extends Control
+
+const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 
 var _source_path: LineEdit
 var _status: RichTextLabel
@@ -10,10 +12,16 @@ var _details: Tree
 var _preview: TextureRect
 var _import_button: Button
 var _explore_button: Button
+var _load_save_button: Button
 var _rng_button: Button
 var _story_test_button: Button
 var _battle_button: Button
 var _dialog: FileDialog
+var _save_menu: PalGameMenu
+var _database := PalContentDatabase.new()
+var _launcher_session := GameSession.new()
+var _save_manager := PalSaveManager.new()
+var _save_system_available: bool = false
 
 
 func _ready() -> void:
@@ -70,23 +78,41 @@ func _build_interface() -> void:
 	_import_button.pressed.connect(_run_import)
 	picker.add_child(_import_button)
 
-	var actions := HBoxContainer.new()
-	actions.add_theme_constant_override("separation", 4)
-	page.add_child(actions)
+	var game_actions := HBoxContainer.new()
+	game_actions.add_theme_constant_override("separation", 4)
+	page.add_child(game_actions)
 
 	var actions_label := Label.new()
-	actions_label.text = "可玩入口"
+	actions_label.text = "开始游戏"
 	actions_label.add_theme_font_size_override("font_size", 9)
 	actions_label.add_theme_color_override("font_color", Color("93c5fd"))
-	actions.add_child(actions_label)
+	game_actions.add_child(actions_label)
 
 	_explore_button = Button.new()
-	_explore_button.text = "探索样板"
+	_explore_button.text = "开始新游戏"
 	_explore_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_explore_button.add_theme_font_size_override("font_size", 9)
 	_explore_button.disabled = true
 	_explore_button.pressed.connect(_open_explorer)
-	actions.add_child(_explore_button)
+	game_actions.add_child(_explore_button)
+
+	_load_save_button = Button.new()
+	_load_save_button.text = "读取存档"
+	_load_save_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_load_save_button.add_theme_font_size_override("font_size", 9)
+	_load_save_button.disabled = true
+	_load_save_button.pressed.connect(_open_save_loader)
+	game_actions.add_child(_load_save_button)
+
+	var tools_actions := HBoxContainer.new()
+	tools_actions.add_theme_constant_override("separation", 4)
+	page.add_child(tools_actions)
+
+	var tools_label := Label.new()
+	tools_label.text = "开发工具"
+	tools_label.add_theme_font_size_override("font_size", 9)
+	tools_label.add_theme_color_override("font_color", Color("93c5fd"))
+	tools_actions.add_child(tools_label)
 
 	_rng_button = Button.new()
 	_rng_button.text = "RNG 动画"
@@ -94,7 +120,7 @@ func _build_interface() -> void:
 	_rng_button.add_theme_font_size_override("font_size", 9)
 	_rng_button.disabled = true
 	_rng_button.pressed.connect(_open_rng_preview)
-	actions.add_child(_rng_button)
+	tools_actions.add_child(_rng_button)
 
 	_story_test_button = Button.new()
 	_story_test_button.text = "剧情测试"
@@ -102,7 +128,7 @@ func _build_interface() -> void:
 	_story_test_button.add_theme_font_size_override("font_size", 9)
 	_story_test_button.disabled = true
 	_story_test_button.pressed.connect(_open_story_test)
-	actions.add_child(_story_test_button)
+	tools_actions.add_child(_story_test_button)
 
 	_battle_button = Button.new()
 	_battle_button.text = "战斗样板"
@@ -110,7 +136,7 @@ func _build_interface() -> void:
 	_battle_button.add_theme_font_size_override("font_size", 9)
 	_battle_button.disabled = true
 	_battle_button.pressed.connect(_open_battle_preview)
-	actions.add_child(_battle_button)
+	tools_actions.add_child(_battle_button)
 
 	var split := HSplitContainer.new()
 	split.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -154,16 +180,26 @@ func _build_interface() -> void:
 	_dialog.dir_selected.connect(_on_directory_selected)
 	add_child(_dialog)
 
+	_save_menu = PalGameMenu.new()
+	_save_menu.name = "StartupSaveMenu"
+	_save_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_save_menu.load_slot_requested.connect(_on_startup_load_slot_requested)
+	add_child(_save_menu)
+
 
 func _show_idle_state() -> void:
 	var has_core_content := FileAccess.file_exists("res://generated/pal/content/core/scenes.bin")
 	var has_generated_content := has_core_content and FileAccess.file_exists("res://generated/pal/content/world/tilemaps/012.tscn")
 	_explore_button.disabled = not has_generated_content
+	var readable_save_count := _configure_save_launcher(has_generated_content)
 	_story_test_button.disabled = not has_generated_content
 	_rng_button.disabled = not FileAccess.file_exists("res://generated/pal/rng/000/000.png")
 	_battle_button.disabled = not FileAccess.file_exists("res://generated/pal/content/battle/backgrounds/021.idx")
-	var state_text := "已发现本地生成内容，可以打开预览。" if has_generated_content else ("生成内容版本较旧，请重新导入 Data。" if has_core_content else "等待资源目录。")
+	var state_text := "已发现本地生成内容，可以开始游戏。" if has_generated_content else ("生成内容版本较旧，请重新导入 Data。" if has_core_content else "等待资源目录。")
+	if _save_system_available:
+		state_text += " 可读取存档 %d 个。" % readable_save_count
 	_status.text = "[color=#93c5fd]%s[/color] 本仓库不会复制或上传原版数据。" % state_text
+	_details.clear()
 	var root := _details.create_item()
 	var item := _details.create_item(root)
 	item.set_text(0, "尚未校验")
@@ -214,6 +250,9 @@ func _show_report(report: PalImportReport) -> void:
 		_story_test_button.disabled = false
 		_rng_button.disabled = not report.files.has("rng_preview")
 		_battle_button.disabled = not report.files.has("battle_backgrounds")
+		var readable_save_count := _configure_save_launcher(true)
+		if _save_system_available:
+			lines.append("正式存档：发现 %d 个可读取槽位，可从启动页直接进入。" % readable_save_count)
 	_status.text = "\n".join(lines)
 
 	_preview.texture = null
@@ -224,6 +263,22 @@ func _show_report(report: PalImportReport) -> void:
 
 
 func _open_explorer() -> void:
+	get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
+
+
+func _open_save_loader() -> void:
+	if not _save_system_available:
+		_status.text = "[color=#fca5a5]存档系统不可用：%s[/color]" % _save_manager.error_message
+		return
+	_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
+	_save_menu.open_load_slots(true)
+
+
+func _on_startup_load_slot_requested(slot: int) -> void:
+	if not StartupRequest.request_load_slot(slot):
+		_status.text = "[color=#fca5a5]存档槽位必须在 1–%d 之间。[/color]" % PalSaveManager.SLOT_COUNT
+		return
+	_save_menu.close_menu()
 	get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
 
 
@@ -245,3 +300,29 @@ func _format_size(bytes: int) -> String:
 	if bytes >= 1024:
 		return "%.1f KiB" % (bytes / 1024.0)
 	return "%d B" % bytes
+
+
+func _configure_save_launcher(has_generated_content: bool) -> int:
+	_save_system_available = false
+	_load_save_button.disabled = true
+	if not has_generated_content:
+		return 0
+	_database = PalContentDatabase.new()
+	if not _database.load_generated():
+		return 0
+	_launcher_session = GameSession.new()
+	_launcher_session.reset_new_game()
+	_launcher_session.initialize_role_state(_database.player_roles)
+	_save_manager = PalSaveManager.new()
+	_save_system_available = _save_manager.configure(_database)
+	if not _save_system_available:
+		return 0
+	var summaries := _save_manager.slot_summaries()
+	_save_menu.configure(_database, _launcher_session)
+	_save_menu.configure_save_slots(summaries, _save_manager.current_slot)
+	_load_save_button.disabled = false
+	var readable_save_count := 0
+	for metadata in summaries:
+		if bool(metadata.get("can_load", false)):
+			readable_save_count += 1
+	return readable_save_count

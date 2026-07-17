@@ -26,7 +26,7 @@ sword/
 
 ## 入口与主要场景
 
-- `scenes/main.tscn`：工程主入口，提供数据目录选择、导入和实验室导航。
+- `scenes/main.tscn`：工程主入口，提供数据目录选择、导入、新游戏、正式存档读取和实验室导航。
 - `scenes/map_explorer.tscn`：当前可玩探索场景，连接 `GameSession`、`ScriptVM`、地图世界、对话框和菜单。
 - `scenes/rng_preview.tscn`：RNG 增量动画浏览器。
 - `scenes/battle_preview.tscn`：敌队、战场、双方战斗 Sprite 和首个经典普攻回合的可操作样板。
@@ -56,7 +56,7 @@ sword/
 
 ### `src/game`
 
-`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、毒与九种状态、主经验、等级、成长属性、六槽装备、装备效果、仙术、调色板和场景索引。`PalEquipmentManager` 解释装备脚本并维护背包交换与加成；`PalSaveManager` 负责 100 个版本化 Godot 存档槽、内容指纹、损坏校验和运行时剧情快照；`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
+`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、毒与九种状态、主经验、等级、成长属性、六槽装备、装备效果、仙术、调色板和场景索引。`PalEquipmentManager` 解释装备脚本并维护背包交换与加成；`PalSaveManager` 负责 100 个版本化 Godot 存档槽、内容指纹、损坏校验和运行时剧情快照；`PalStartupRequest` 只在场景切换间一次性传递启动页选中的正式存档槽；`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
 
 ### `src/world`
 

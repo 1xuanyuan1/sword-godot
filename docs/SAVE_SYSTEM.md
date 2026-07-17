@@ -5,6 +5,7 @@
 ## 槽位与操作
 
 - 系统菜单提供 100 个独立槽位，每页显示 5 个。
+- 资源实验室启动页提供“读取存档”，直接打开同一套 100 槽界面；确认后进入对应探索场景，Esc 直接返回实验室。
 - 上／下键切换当前页槽位，左／右键每次翻 5 个槽位，空格或回车确认，Esc 返回。
 - 槽位摘要显示中文地点名、保存时间、队伍头像、姓名和等级；右侧小数字是该槽累计保存次数。
 - 保存和读取只允许在探索地图的空闲状态执行，不保存半句对话、战斗中间帧、渐变或菜单内部选择。
@@ -49,3 +50,10 @@
 ```
 
 存档页视觉快照包含在 `tests/run_local_menu_visual_test.gd`；输出继续写入被忽略的 `generated/pal/visual_tests/`。
+
+启动页入口、独立取消和正式槽位只读恢复回归：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . \
+  --script res://tests/run_local_startup_load_test.gd
+```

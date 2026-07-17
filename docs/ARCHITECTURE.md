@@ -14,6 +14,8 @@ flowchart LR
     E <--> F
     E <--> Q[PalSaveManager]
     D --> Q
+    Q -. 启动页有效槽位 .-> R[PalStartupRequest]
+    R --> G
     D --> G[MapExplorer]
     D --> O[PalBattlePreview / PalBattleController / PalBattleUI]
     E --> O
@@ -35,6 +37,7 @@ flowchart LR
 | `PalContentDatabase` | 场景、脚本、事件、物品、毒、角色定义和资源缓存 | 玩家当前金钱、位置、背包 |
 | `GameSession` | 当前场景、队伍、位置、轨迹、背包、金钱、角色等级/HP/MP/仙术、毒与九种状态、六槽装备及其效果、调色板 | 解码原版文件、绘制 UI |
 | `PalSaveManager` | 100 个 Godot 存档槽、格式版本、内容指纹、校验和与剧情运行时快照 | 兼容原版 `.rpg`、保存半句对话或战斗中间帧 |
+| `PalStartupRequest` | 下一次进入探索场景要读取的一次性槽位编号 | 读取存档文件、持有完整会话、绕过存档校验 |
 | `PalEquipmentManager` | 当前一次装备脚本的部位上下文和诊断 | 持久保存装备、直接绘制装备页 |
 | `ScriptVM` | 当前指令入口、等待原因、自动脚本调度 | 持久化内容、直接绘制画面 |
 | `MapExplorer` | 输入与各模块的编排、当前场景事件引用 | 重新解释资源格式 |
@@ -51,11 +54,12 @@ flowchart LR
 
 1. Godot 从 `scenes/main.tscn` 启动资源实验室。
 2. 用户选择本机数据目录后，`PalDataImporter` 只读原始文件并写入被忽略的 `generated/pal/`。
-3. 进入探索场景时，`PalContentDatabase.load_generated()` 读取结构化内容。
-4. `GameSession.reset_new_game()` 创建本次临时游戏状态。
-5. `MapExplorer` 根据 `scene_index` 取得 `map_number`、场景事件和进入脚本。
-6. `PalTileMapWorld` 实例化该 `map_number` 对应的 TileMap 场景；多个剧情场景可以复用同一地图资源。
-7. `ScriptVM` 执行场景进入脚本，并通过信号请求重绘、对话、人物动作或场景切换。
+3. 已有生成内容时，启动页提供“开始新游戏”和“读取存档”；读档页复用 `PalGameMenu` 的 100 槽原版 UI，只把确认的槽位写入一次性 `PalStartupRequest`。
+4. 进入探索场景时，`PalContentDatabase.load_generated()` 读取结构化内容，`GameSession.reset_new_game()` 先建立安全默认状态。
+5. 若存在启动读档请求，`MapExplorer` 让 `PalSaveManager` 重新验证并恢复该槽；否则按新游戏状态运行场景进入脚本。请求在读取后立即清空。
+6. `MapExplorer` 根据 `scene_index` 取得 `map_number` 与场景事件；读档不重跑 `script_on_enter`，新游戏才执行进入脚本。
+7. `PalTileMapWorld` 实例化该 `map_number` 对应的 TileMap 场景；多个剧情场景可以复用同一地图资源。
+8. `ScriptVM` 通过信号请求重绘、对话、人物动作或场景切换。
 
 系统菜单保存时，`PalSaveManager` 从 `GameSession` 和运行时内容数据库复制队伍、背包、装备、Scene、EventObject 与脚本游标，再写入 `user://saves/`。读档先验证格式、内容指纹和 SHA-256，随后恢复会话与可变剧情数据，由装备管理器重建派生属性、地图层重载场景但不重跑进入脚本。完整边界见[Godot 版本化存档系统](SAVE_SYSTEM.md)。
 

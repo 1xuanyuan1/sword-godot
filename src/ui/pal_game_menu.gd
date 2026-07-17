@@ -116,6 +116,7 @@ var _magic_target_selection: int = 0
 var _magic_entries: Array[Dictionary] = []
 var _save_slots: Array[Dictionary] = []
 var _save_slot_selection: int = 0
+var _close_load_slots_on_cancel: bool = false
 var _last_feedback: String = ""
 var _ui_sprite: PalSprite
 var _palette: PackedByteArray = PackedByteArray()
@@ -153,7 +154,19 @@ func configure_save_slots(summaries: Array[Dictionary], current_slot: int = 1) -
 func open_main() -> void:
 	if database == null or session == null:
 		return
+	_close_load_slots_on_cancel = false
 	current_page = Page.MAIN
+	show()
+	queue_redraw()
+
+
+## 直接打开 100 槽读取页；`close_on_cancel` 为 `true` 时 Esc 关闭菜单而不返回系统页。
+## 资源实验室使用独立取消模式，探索场景内的系统菜单保持原有返回层级。
+func open_load_slots(close_on_cancel: bool = false) -> void:
+	if database == null or session == null:
+		return
+	_close_load_slots_on_cancel = close_on_cancel
+	current_page = Page.LOAD_SLOTS
 	show()
 	queue_redraw()
 
@@ -162,6 +175,7 @@ func open_main() -> void:
 func open_inventory() -> void:
 	if database == null or session == null:
 		return
+	_close_load_slots_on_cancel = false
 	_inventory_return_page = Page.MAIN
 	_inventory_for_equipment = false
 	_open_item_selection()
@@ -198,6 +212,7 @@ func notify_magic_result(success: bool, feedback: String = "") -> void:
 
 ## 关闭整个菜单，返回地图输入。
 func close_menu() -> void:
+	_close_load_slots_on_cancel = false
 	hide()
 
 
@@ -226,9 +241,15 @@ func go_back() -> void:
 		Page.MAGIC_TARGET:
 			current_page = Page.MAGIC_LIST
 			queue_redraw()
-		Page.SAVE_SLOTS, Page.LOAD_SLOTS:
+		Page.SAVE_SLOTS:
 			current_page = Page.SYSTEM
 			queue_redraw()
+		Page.LOAD_SLOTS:
+			if _close_load_slots_on_cancel:
+				close_menu()
+			else:
+				current_page = Page.SYSTEM
+				queue_redraw()
 		_:
 			close_menu()
 
@@ -334,6 +355,9 @@ func _process(_delta: float) -> void:
 func _draw() -> void:
 	if not visible or database == null or session == null:
 		return
+	if current_page == Page.LOAD_SLOTS and _close_load_slots_on_cancel:
+		# 启动页没有游戏画面可作为菜单底图；纯黑遮住实验室文字，保留原版窗口本身的透明边界。
+		draw_rect(Rect2(Vector2.ZERO, size), Color.BLACK)
 	match current_page:
 		Page.MAIN:
 			_draw_main_menu()
