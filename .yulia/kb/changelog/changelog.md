@@ -37,6 +37,82 @@ keywords:
 
 ---
 
+### [FT-043] [feat] 完成 100 槽版本化 Godot 存读档
+
+- **关联需求**: M3 完整系统
+- **关联 TODO**: TD-004
+- **功能描述**: 新增 100 个分页存档槽，将完整 `GameSession`、294 个 Scene、5332 个 EventObject、对象脚本游标和角色场景形象保存到 `user://saves/`；格式包含版本号、PAL 内容指纹和 SHA-256 校验，使用临时文件与旧档备份降低写坏风险。系统菜单可显示中文地点、保存时间、队伍头像、姓名和等级；读档重建装备、地图、调色板、音量与 BGM，但不重跑场景进入脚本。该格式明确不兼容原版 `.rpg`。
+- **验证情况**: 309 项合成检查、22 项独立存档检查和中文文档检查通过；真实资源完成 100 槽往返，恢复 5332 个 EventObject，单档约 260 KB；菜单 OpenGL 视觉回归通过。
+- **涉及文件**:
+  - `src/game/pal_save_manager.gd`
+  - `src/content/pal_scene_catalog.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_save_system_tests.gd`
+  - `tests/run_local_save_system_test.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `.github/workflows/ci.yml`
+  - `README.md`
+  - `docs/SAVE_SYSTEM.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/CLASSIC_UI.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-044] [feat] 完成 EventObject 自动脚本与场景行为门禁
+
+- **关联需求**: M2–M3 场景流程
+- **关联 TODO**: TD-002
+- **功能描述**: 将 NPC 自动移动、追逐、临时隐藏／重现、触发模式、场景离开脚本、队伍脱困、PAL half 碰撞及脚本结束状态纳入统一实现与回归；全部剧情场景的自动脚本已无未支持指令。后续具体主线推进仍由 TD-001 与 TD-008 跟踪，不再把已经完成的 EventObject 运行机制长期挂作待办。
+- **验证情况**: 294 个剧情场景分别运行 120 个自动脚本帧，无未支持指令；1537 个 EventObject 发生动作、入口或状态变化；309 项合成检查和既有场景转场回归保持通过。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_local_event_auto_script_test.gd`
+  - `tests/run_local_scene_transition_test.gd`
+  - `tests/run_local_early_mainline_test.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-045] [feat] 完成剧情检查点与自动回归工作流
+
+- **关联需求**: 开发验证效率
+- **关联 TODO**: TD-007
+- **功能描述**: 建立一次性内存剧情检查点、资源实验室人工入口和 `run_local_*` 自动回归分层；已验收的开场、对话、楼梯、厨房、转场、乘船和主线节点从人工列表移除并交给长期自动测试，只保留仍需观察的临时入口。后续剧情新增回归属于开发工作流，不再作为一个永远进行中的独立 TODO。
+- **验证情况**: 检查点请求、消费和无效编号具有合成覆盖；真实资源回归已覆盖开场、桂花酒、场景转场、搜索、早期主线、战斗桥接及首次／再次赴岛，中文开发流程文档检查通过。
+- **涉及文件**:
+  - `src/debug/pal_debug_checkpoint.gd`
+  - `src/debug/story_test_lab.gd`
+  - `scenes/story_test_lab.tscn`
+  - `tests/run_tests.gd`
+  - `tests/run_local_scene_transition_test.gd`
+  - `tests/run_local_early_mainline_test.gd`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+
+---
+
+### [FT-046] [feat] 增加跨区域地点 Toast 与经典缺字兼容
+
+- **关联需求**: M2 场景反馈、经典 UI 一致性
+- **关联 TODO**: 无
+- **功能描述**: 场景切换时将详细地点归并为大区域，跨区域后在 HUD 顶部短暂显示“仙灵岛”等名称，同一区域内部、初次启动和读档不重复提示；地点控件独立于剧情对话。经典菜单和战斗 UI 新增简繁兼容字形层，简体“戏／档／栈／间”等在 Big5 字库缺字时复用对应原版繁体点阵，不再混入尺寸不同的系统字体；存档页同时收紧时间、保存次数和详情布局。
+- **验证情况**: 309 项合成检查、经典菜单 OpenGL 视觉回归和中文文档检查通过；跨区域名称归并、同区域抑制、HUD 层级和关键简繁字形均有自动断言。
+- **涉及文件**:
+  - `src/content/pal_scene_catalog.gd`
+  - `src/ui/pal_classic_font.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/SCENE_RENDERING.md`
+
+---
+
 ## 2026-07-16
 
 ### [FT-020] [feat] 推进买虾、病倒求药与山神庙主线

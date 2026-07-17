@@ -12,10 +12,11 @@
 6. [脚本虚拟机](SCRIPT_VM.md)：理解原版事件脚本、对话、自动行走和场景切换。
 7. [音乐、音效与音量](AUDIO.md)：理解 RIX/VOC 离线转换、脚本曲目切换和系统菜单音量。
 8. [经典菜单、状态、仙术与物品页](CLASSIC_UI.md)：理解原版菜单布局、状态背景、场外仙术、点阵字和物品资源。
-9. [装备系统](EQUIPMENT.md)：理解六槽装备、装备脚本、背包交换和原版装备页。
-10. [经典战斗系统](BATTLE.md)：理解敌人、敌队、战场、Sprite、站位和当前实现边界。
-11. [开发工作流](DEVELOPMENT_WORKFLOW.md)：运行、导入、测试、剧情检查点、提交和排错。
-12. [SDLPal 上游基准](UPSTREAM.md)：查看固定参考提交和 Godot 模块到 SDLPal 源文件的映射。
+9. [Godot 版本化存档系统](SAVE_SYSTEM.md)：理解 100 槽、保存范围、内容指纹、损坏恢复和 bug 复现用法。
+10. [装备系统](EQUIPMENT.md)：理解六槽装备、装备脚本、背包交换和原版装备页。
+11. [经典战斗系统](BATTLE.md)：理解敌人、敌队、战场、Sprite、站位和当前实现边界。
+12. [开发工作流](DEVELOPMENT_WORKFLOW.md)：运行、导入、测试、剧情检查点、提交和排错。
+13. [SDLPal 上游基准](UPSTREAM.md)：查看固定参考提交和 Godot 模块到 SDLPal 源文件的映射。
 
 RNG 动画格式另见 [RNG 增量动画](RNG_FORMAT.md)，文档和源码注释约定见 [文档语言与注释规范](DOCUMENTATION.md)。
 

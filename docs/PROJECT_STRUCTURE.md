@@ -56,7 +56,7 @@ sword/
 
 ### `src/game`
 
-`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、毒与九种状态、主经验、等级、成长属性、六槽装备、装备效果、仙术、调色板和场景索引。`PalEquipmentManager` 解释装备脚本并维护背包交换与加成；`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
+`GameSession` 保存本次游戏的可变状态，例如队伍位置、方向、物品、金钱、角色 HP/MP、毒与九种状态、主经验、等级、成长属性、六槽装备、装备效果、仙术、调色板和场景索引。`PalEquipmentManager` 解释装备脚本并维护背包交换与加成；`PalSaveManager` 负责 100 个版本化 Godot 存档槽、内容指纹、损坏校验和运行时剧情快照；`ScriptVM` 解释 SDLPal 事件脚本并修改会话或事件对象。
 
 ### `src/world`
 
@@ -64,7 +64,7 @@ sword/
 
 ### `src/ui`
 
-只负责屏幕控件和输入反馈。`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备和系统页；它读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalRngPlayer` 只播放导入后的帧区间，并以完成信号解除 VM 的剧情等待。
+只负责屏幕控件和输入反馈。`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备和系统页；它读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalClassicFont` 为自定义简体 UI 文案复用原版 Big5 字库中已有的繁体点阵，避免单个缺字回退到尺寸不同的系统字体；真正存在的简体字形永远优先。`PalRngPlayer` 只播放导入后的帧区间，并以完成信号解除 VM 的剧情等待。
 
 ### `src/debug`
 
@@ -75,6 +75,7 @@ sword/
 - `tests/run_tests.gd`：CI 使用合成字节运行，不依赖原版游戏。
 - `tests/run_battle_logic_tests.gd`：CI 使用合成敌我数据验证经典回合、伤害和胜负。
 - `tests/run_equipment_tests.gd`：CI 使用合成物品和脚本验证六槽装备、属性效果与背包交换。
+- `tests/run_save_system_tests.gd`：CI 使用合成内容验证版本、校验、损坏诊断和完整会话往返。
 - `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。

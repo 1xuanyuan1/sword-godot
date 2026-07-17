@@ -13,6 +13,10 @@ signal item_equip_requested(item_id: int, role_index: int)
 ## 玩家确认场外仙术及目标时发出；接收方负责执行使用/成功脚本并扣除真气。
 ## `target_role_index` 为 -1 表示仙术作用于全队。
 signal magic_use_requested(magic_object_id: int, caster_role_index: int, target_role_index: int)
+## 玩家在 100 槽分页菜单确认保存时发出；接收方负责写入用户目录。
+signal save_slot_requested(slot: int)
+## 玩家在 100 槽分页菜单确认有效存档时发出；接收方负责恢复场景和运行时状态。
+signal load_slot_requested(slot: int)
 ## 玩家在系统页调整音乐或音效音量时发出；播放层应立即应用两个百分比。
 signal audio_settings_changed(music_volume: int, sound_volume: int)
 
@@ -26,6 +30,8 @@ enum Page {
 	MAGIC_CASTER,
 	MAGIC_LIST,
 	MAGIC_TARGET,
+	SAVE_SLOTS,
+	LOAD_SLOTS,
 }
 
 const MAIN_MENU_POSITION := Vector2i(3, 37)
@@ -35,6 +41,13 @@ const SYSTEM_MENU_POSITION := Vector2i(40, 60)
 const SYSTEM_ITEM_POSITIONS := [Vector2i(53, 72), Vector2i(53, 90), Vector2i(53, 108), Vector2i(53, 126), Vector2i(53, 144)]
 const VOLUME_VALUE_X := 170
 const VOLUME_STEP := 10
+const SAVE_SLOT_BOX_POSITION := Vector2i(184, 7)
+const SAVE_SLOT_TEXT_POSITION := Vector2i(195, 17)
+const SAVE_SLOT_ROW_HEIGHT := 38
+const SAVE_SLOT_COUNT_POSITION_X := 276
+const SAVE_DETAIL_TEXT_WIDTH := 136
+const SAVE_DETAIL_PARTY_POSITION := Vector2i(12, 92)
+const SAVE_DETAIL_PARTY_SPACING := 28
 const INVENTORY_COLUMNS := 3
 const INVENTORY_ROWS := 7
 const INVENTORY_ITEM_WIDTH := 100
@@ -101,6 +114,8 @@ var _magic_caster_selection: int = 0
 var _magic_selection: int = 0
 var _magic_target_selection: int = 0
 var _magic_entries: Array[Dictionary] = []
+var _save_slots: Array[Dictionary] = []
+var _save_slot_selection: int = 0
 var _last_feedback: String = ""
 var _ui_sprite: PalSprite
 var _palette: PackedByteArray = PackedByteArray()
@@ -124,6 +139,14 @@ func configure(content_database: PalContentDatabase, game_session: GameSession) 
 	database = content_database
 	session = game_session
 	_load_classic_resources()
+
+
+## 更新 100 个存档槽的摘要，并让下次打开时默认选中 `current_slot`。
+## 摘要只用于绘制，不会在菜单层读取或写入存档文件。
+func configure_save_slots(summaries: Array[Dictionary], current_slot: int = 1) -> void:
+	_save_slots = summaries.duplicate(true)
+	_save_slot_selection = clampi(current_slot - 1, 0, PalSaveManager.SLOT_COUNT - 1)
+	queue_redraw()
 
 
 ## 打开经典主菜单并重置选择位置。
@@ -202,6 +225,9 @@ func go_back() -> void:
 			queue_redraw()
 		Page.MAGIC_TARGET:
 			current_page = Page.MAGIC_LIST
+			queue_redraw()
+		Page.SAVE_SLOTS, Page.LOAD_SLOTS:
+			current_page = Page.SYSTEM
 			queue_redraw()
 		_:
 			close_menu()
@@ -289,6 +315,13 @@ func _gui_input(event: InputEvent) -> void:
 					_magic_target_selection = party_index
 					_confirm_selection()
 					break
+		Page.SAVE_SLOTS, Page.LOAD_SLOTS:
+			for row in range(PalSaveManager.SLOTS_PER_PAGE):
+				var position := SAVE_SLOT_BOX_POSITION + Vector2i(0, row * SAVE_SLOT_ROW_HEIGHT)
+				if Rect2i(position, Vector2i(136, 32)).has_point(point):
+					_save_slot_selection = _save_slot_page_start() + row
+					_confirm_selection()
+					break
 	accept_event()
 	queue_redraw()
 
@@ -322,6 +355,8 @@ func _draw() -> void:
 			_draw_magic_list_page()
 		Page.MAGIC_TARGET:
 			_draw_magic_target_page()
+		Page.SAVE_SLOTS, Page.LOAD_SLOTS:
+			_draw_save_slot_page()
 
 
 func _draw_main_menu() -> void:
@@ -570,7 +605,7 @@ func _draw_system_menu() -> void:
 	# 保留经典窗口与点阵字，而不引入不协调的现代滑块控件。
 	_draw_classic_box(SYSTEM_MENU_POSITION, 4, 8, 0, 6)
 	for index in range(SYSTEM_ITEM_POSITIONS.size()):
-		var enabled := index in [2, 3]
+		var enabled := index in [0, 1, 2, 3]
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _system_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
@@ -615,6 +650,13 @@ func _move_selection(direction: Vector2i) -> void:
 			if not session.party_roles.is_empty():
 				var delta := direction.x if direction.x != 0 else direction.y
 				_magic_target_selection = posmod(_magic_target_selection + delta, session.party_roles.size())
+		Page.SAVE_SLOTS, Page.LOAD_SLOTS:
+			if direction.x != 0:
+				_save_slot_selection = posmod(_save_slot_selection + direction.x * PalSaveManager.SLOTS_PER_PAGE, PalSaveManager.SLOT_COUNT)
+			elif direction.y != 0:
+				var page_start := _save_slot_page_start()
+				var row := posmod(_save_slot_selection - page_start + direction.y, PalSaveManager.SLOTS_PER_PAGE)
+				_save_slot_selection = page_start + row
 	queue_redraw()
 
 
@@ -646,7 +688,11 @@ func _confirm_selection() -> void:
 		Page.EQUIPMENT:
 			_request_item_equip()
 		Page.SYSTEM:
-			if _system_selection == 2:
+			if _system_selection == 0:
+				current_page = Page.SAVE_SLOTS
+			elif _system_selection == 1:
+				current_page = Page.LOAD_SLOTS
+			elif _system_selection == 2:
 				session.set_music_volume(GameSession.AUDIO_VOLUME_MAX if session.music_volume == 0 else 0)
 				audio_settings_changed.emit(session.music_volume, session.sound_volume)
 			elif _system_selection == 3:
@@ -661,7 +707,124 @@ func _confirm_selection() -> void:
 			_confirm_magic_selection()
 		Page.MAGIC_TARGET:
 			_request_selected_magic(_selected_magic_target_role())
+		Page.SAVE_SLOTS:
+			save_slot_requested.emit(_save_slot_selection + 1)
+		Page.LOAD_SLOTS:
+			var metadata := _selected_save_slot_metadata()
+			if bool(metadata.get("can_load", false)):
+				load_slot_requested.emit(_save_slot_selection + 1)
+			else:
+				_last_feedback = str(metadata.get("error", "这个槽位没有可读取的存档。"))
 	queue_redraw()
+
+
+func _draw_save_slot_page() -> void:
+	# SDLPal 原版一次显示五个槽位；扩展到 100 槽时保持相同密度，用左右键翻 20 页。
+	_draw_classic_box(Vector2i(2, 7), 8, 7, 0, 0)
+	var is_loading := current_page == Page.LOAD_SLOTS
+	_draw_pal_text("读取存档" if is_loading else "保存游戏", Vector2i(15, 17), _palette_color(COLOR_CONFIRMED), true)
+	var selected := _selected_save_slot_metadata()
+	if not bool(selected.get("exists", false)):
+		_draw_pal_text("空存档", Vector2i(15, 43), _palette_color(COLOR_INACTIVE), true)
+	elif not bool(selected.get("can_load", false)):
+		_draw_pal_text(_save_slot_error_label(str(selected.get("error", ""))), Vector2i(15, 43), _palette_color(COLOR_INACTIVE), true)
+	else:
+		var location := PalSceneCatalog.name_for_scene_index(int(selected.get("scene_index", -1)))
+		var location_lines := _wrap_pal_text(location, 145, 2)
+		for line_index in range(location_lines.size()):
+			_draw_pal_text(location_lines[line_index], Vector2i(15, 38 + line_index * 16), _palette_color(COLOR_NORMAL), true)
+		var save_time := _fit_pal_text(_format_save_time(str(selected.get("saved_at", ""))), SAVE_DETAIL_TEXT_WIDTH)
+		_draw_pal_text(save_time, Vector2i(15, 72), _palette_color(0x3c), true)
+		var party: Array = selected.get("party", [])
+		for member_index in range(mini(3, party.size())):
+			var member: Dictionary = party[member_index]
+			var role_index := int(member.get("role_index", -1))
+			var position := SAVE_DETAIL_PARTY_POSITION + Vector2i(0, member_index * SAVE_DETAIL_PARTY_SPACING)
+			if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+				continue
+			_draw_ui_frame(UI_FRAME_PLAYER_FACE_FIRST + role_index, position)
+			_draw_pal_text(database.get_word(database.player_roles.name_word_for(role_index)), position + Vector2i(34, -2), _palette_color(COLOR_NORMAL), true)
+			_draw_pal_text("Lv.%d" % int(member.get("level", 0)), position + Vector2i(34, 13), _palette_color(COLOR_CONFIRMED), true)
+	var start := _save_slot_page_start()
+	for row in range(PalSaveManager.SLOTS_PER_PAGE):
+		var slot_index := start + row
+		var slot := slot_index + 1
+		var metadata := _save_slots[slot_index] if slot_index >= 0 and slot_index < _save_slots.size() else {}
+		var can_select := not is_loading or bool(metadata.get("can_load", false))
+		var color_index := COLOR_NORMAL if can_select else COLOR_INACTIVE
+		if slot_index == _save_slot_selection:
+			color_index = _selected_color_index() if can_select else COLOR_SELECTED_INACTIVE
+		var box_position := SAVE_SLOT_BOX_POSITION + Vector2i(0, row * SAVE_SLOT_ROW_HEIGHT)
+		_draw_single_line_box(box_position, 7, 0)
+		_draw_pal_text("存档 %03d" % slot, SAVE_SLOT_TEXT_POSITION + Vector2i(0, row * SAVE_SLOT_ROW_HEIGHT), _palette_color(color_index), true)
+		if bool(metadata.get("can_load", false)):
+			# 数字按四位数右对齐；基准点预留右侧内边距，避免个位覆盖窗口边框。
+			_draw_number(int(metadata.get("save_count", 0)), 4, Vector2i(SAVE_SLOT_COUNT_POSITION_X, 21 + row * SAVE_SLOT_ROW_HEIGHT), UI_FRAME_NUMBER_YELLOW)
+
+
+func _save_slot_page_start() -> int:
+	return int(_save_slot_selection / PalSaveManager.SLOTS_PER_PAGE) * PalSaveManager.SLOTS_PER_PAGE
+
+
+func _selected_save_slot_metadata() -> Dictionary:
+	return _save_slots[_save_slot_selection] if _save_slot_selection >= 0 and _save_slot_selection < _save_slots.size() else {}
+
+
+func _save_slot_error_label(error: String) -> String:
+	if "资源版本" in error:
+		return "资源版本不匹配"
+	if "版本不兼容" in error:
+		return "存档版本不兼容"
+	return "存档文件已损坏"
+
+
+func _format_save_time(saved_at: String) -> String:
+	# 文件保留完整本地时间，320×200 菜单只显示“月-日 时:分”以免越过边框。
+	return saved_at.substr(5, 11) if saved_at.length() >= 16 else saved_at
+
+
+func _fit_pal_text(text: String, maximum_width: int) -> String:
+	# 存档可能来自较新的格式；即使时间字段变长，也必须限制在经典窗口的内边界内。
+	if _pal_text_width(text) <= maximum_width:
+		return text
+	var fitted := text
+	var suffix := "…"
+	while not fitted.is_empty() and _pal_text_width(fitted + suffix) > maximum_width:
+		fitted = fitted.substr(0, fitted.length() - 1)
+	return fitted + suffix
+
+
+func _wrap_pal_text(text: String, maximum_width: int, maximum_lines: int) -> Array[String]:
+	var lines: Array[String] = []
+	var current := ""
+	var current_width := 0
+	var consumed := 0
+	for character in text:
+		var width := 16 if _font_glyphs.has(str(character)) else 8
+		if not current.is_empty() and current_width + width > maximum_width:
+			lines.append(current)
+			current = ""
+			current_width = 0
+			if lines.size() >= maximum_lines:
+				break
+		current += character
+		current_width += width
+		consumed += 1
+	if lines.size() < maximum_lines and not current.is_empty():
+		lines.append(current)
+	if consumed < text.length() and not lines.is_empty():
+		var suffix := "…"
+		while not lines[-1].is_empty() and _pal_text_width(lines[-1] + suffix) > maximum_width:
+			lines[-1] = lines[-1].substr(0, lines[-1].length() - 1)
+		lines[-1] += suffix
+	return lines
+
+
+func _pal_text_width(text: String) -> int:
+	var width := 0
+	for character in text:
+		width += 16 if _font_glyphs.has(str(character)) else 8
+	return width
 
 
 func _change_selected_volume(delta: int) -> void:
@@ -830,7 +993,7 @@ func _load_classic_resources() -> void:
 	if metadata_file != null:
 		var parsed = JSON.parse_string(metadata_file.get_as_text())
 		if parsed is Dictionary:
-			_font_glyphs = parsed.get("glyphs", {})
+			_font_glyphs = PalClassicFont.with_compatibility_aliases(parsed.get("glyphs", {}))
 	var atlas_path := ProjectSettings.globalize_path(database.root_path.path_join("text/font_atlas.png"))
 	var atlas_image := Image.load_from_file(atlas_path)
 	if not atlas_image.is_empty():

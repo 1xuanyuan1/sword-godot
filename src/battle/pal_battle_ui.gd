@@ -610,7 +610,7 @@ func _load_classic_resources() -> void:
 	if metadata_file != null:
 		var parsed = JSON.parse_string(metadata_file.get_as_text())
 		if parsed is Dictionary:
-			_font_glyphs = parsed.get("glyphs", {})
+			_font_glyphs = PalClassicFont.with_compatibility_aliases(parsed.get("glyphs", {}))
 	var atlas_image := Image.load_from_file(ProjectSettings.globalize_path(database.root_path.path_join("text/font_atlas.png")))
 	if not atlas_image.is_empty():
 		_font_texture = ImageTexture.create_from_image(atlas_image)

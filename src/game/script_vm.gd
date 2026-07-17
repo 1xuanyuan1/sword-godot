@@ -102,6 +102,9 @@ const BATTLE_RESULT_FLED := 3
 func configure(content_database: PalContentDatabase, game_session: GameSession = null) -> void:
 	database = content_database
 	session = game_session
+	# 新游戏与读档都从空的调用上下文继续；不能沿用读档前最后一次事件目标。
+	_last_event_object_id = 0
+	_auto_frame_number = 0
 	if session != null and database != null:
 		session.initialize_role_state(database.player_roles)
 	_equipment_manager.database = database

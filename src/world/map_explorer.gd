@@ -16,6 +16,7 @@ const FIELD_MAGIC_STAGE_SUCCESS := 1
 
 var _database := PalContentDatabase.new()
 var _session := GameSession.new()
+var _save_manager := PalSaveManager.new()
 var _map_data: PalMapData
 var _tile_sprite: PalSprite
 var _scene_events: Array[PalEventObject] = []
@@ -23,6 +24,8 @@ var _map_view: TextureRect
 var _tile_world: PalTileMapWorld
 var _ui_layer: CanvasLayer
 var _status: Label
+var _location_toast: PanelContainer
+var _location_toast_label: Label
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
 var _equipment_manager := PalEquipmentManager.new()
@@ -52,6 +55,11 @@ var _pending_magic_stage: int = 0
 var _use_legacy_renderer: bool = false
 var _touch_scan_active: bool = false
 var _touch_scan_next_index: int = 0
+var _save_system_available: bool = false
+var _system_toast_serial: int = 0
+var _location_toast_serial: int = 0
+var _loaded_scene_index: int = -1
+var _pending_location_toast: String = ""
 
 
 func _ready() -> void:
@@ -60,11 +68,13 @@ func _ready() -> void:
 	if not _database.load_generated():
 		_set_error(_database.error_message + "。请返回资源实验室重新导入。")
 		return
+	_save_system_available = _save_manager.configure(_database)
 	_session.reset_new_game()
 	if not _equipment_manager.configure(_database, _session):
 		_set_error(_equipment_manager.error_message)
 		return
 	_game_menu.configure(_database, _session)
+	_refresh_save_slot_summaries()
 	_game_menu.audio_settings_changed.connect(_on_audio_settings_changed)
 	_rng_player.configure(_database)
 	_audio_player = AudioPlayer.new()
@@ -139,6 +149,31 @@ func _build_interface() -> void:
 	_status.add_theme_color_override("font_color", Color("f8fafc"))
 	_ui_layer.add_child(_status)
 
+	# 地点提示独立于 PalDialogBox，避免场景进入脚本立刻播放对话时互相覆盖。
+	_location_toast = PanelContainer.new()
+	_location_toast.name = "LocationToast"
+	_location_toast.position = Vector2(104, 28)
+	_location_toast.size = Vector2(112, 24)
+	_location_toast.custom_minimum_size = Vector2(112, 24)
+	_location_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var location_style := StyleBoxFlat.new()
+	location_style.bg_color = Color(0, 0, 0, 0.88)
+	location_style.border_color = Color("d6a85f")
+	location_style.set_border_width_all(1)
+	location_style.corner_radius_top_left = 2
+	location_style.corner_radius_top_right = 2
+	location_style.corner_radius_bottom_left = 2
+	location_style.corner_radius_bottom_right = 2
+	_location_toast.add_theme_stylebox_override("panel", location_style)
+	_location_toast_label = Label.new()
+	_location_toast_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_location_toast_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_location_toast_label.add_theme_font_size_override("font_size", 10)
+	_location_toast_label.add_theme_color_override("font_color", Color.WHITE)
+	_location_toast.add_child(_location_toast_label)
+	_location_toast.hide()
+	_ui_layer.add_child(_location_toast)
+
 	_dialog_box = PalDialogBox.new()
 	_dialog_box.name = "DialogBox"
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -150,6 +185,8 @@ func _build_interface() -> void:
 	_game_menu.item_use_requested.connect(_on_item_use_requested)
 	_game_menu.item_equip_requested.connect(_on_item_equip_requested)
 	_game_menu.magic_use_requested.connect(_on_magic_use_requested)
+	_game_menu.save_slot_requested.connect(_on_save_slot_requested)
+	_game_menu.load_slot_requested.connect(_on_load_slot_requested)
 	_ui_layer.add_child(_game_menu)
 
 	_rng_player = PalRngPlayer.new()
@@ -184,6 +221,7 @@ func _process(delta: float) -> void:
 		return
 	if _screen_fade_active:
 		return
+	_show_pending_location_toast()
 	_script_frame_accumulator += minf(delta, 0.5)
 	var auto_world_changed := false
 	while _script_frame_accumulator >= SCRIPT_FRAME_SECONDS:
@@ -253,6 +291,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
 			else:
+				_refresh_save_slot_summaries()
 				_game_menu.open_main()
 			get_viewport().set_input_as_handled()
 		return
@@ -486,6 +525,9 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 		return
 	_refresh_world()
 	_status.text = "方向键｜空格交互｜Esc 菜单｜F10 返回｜场景%d/地图%d｜%s" % [scene_index + 1, scene.map_number, "CPU 基准" if _use_legacy_renderer else "TileMapLayer"]
+	if run_enter_script:
+		_pending_location_toast = PalSceneCatalog.toast_name_for_transition(_loaded_scene_index, scene_index)
+	_loaded_scene_index = scene_index
 	if run_enter_script:
 		_run_scene_enter_script(scene_index)
 
@@ -754,6 +796,109 @@ func _on_battle_finished(result: int) -> void:
 func _on_audio_settings_changed(_music_volume: int, _sound_volume: int) -> void:
 	if _audio_player != null:
 		_audio_player.apply_session_volumes()
+
+
+func _on_save_slot_requested(slot: int) -> void:
+	if not _save_system_available:
+		_game_menu.close_menu()
+		_show_system_toast("存档不可用：%s" % _save_manager.error_message)
+		return
+	if not _save_manager.save_slot(slot, _session):
+		_game_menu.close_menu()
+		_show_system_toast("保存失败：%s" % _save_manager.error_message)
+		return
+	_refresh_save_slot_summaries()
+	_game_menu.close_menu()
+	_show_system_toast("已保存到存档 %03d" % slot)
+
+
+func _on_load_slot_requested(slot: int) -> void:
+	if not _save_system_available:
+		_game_menu.close_menu()
+		_show_system_toast("读档不可用：%s" % _save_manager.error_message)
+		return
+	if not _save_manager.load_slot(slot, _session):
+		_game_menu.close_menu()
+		_show_system_toast("读取失败：%s" % _save_manager.error_message)
+		return
+	_reset_transient_state_for_load()
+	if not _equipment_manager.configure(_database, _session):
+		_set_error("读档后无法重建装备效果：%s" % _equipment_manager.error_message)
+		return
+	_script_vm.configure(_database, _session)
+	_game_menu.configure(_database, _session)
+	_refresh_save_slot_summaries()
+	if _audio_player != null:
+		_audio_player.configure(_database, _session)
+	_load_scene(_session.scene_index, false)
+	if _audio_player != null:
+		_audio_player.play_music(_session.music_number, true, 0.0)
+	_show_system_toast("已读取存档 %03d" % slot)
+
+
+func _reset_transient_state_for_load() -> void:
+	_game_menu.close_menu()
+	_dialog_box.hide_dialog()
+	_rng_player.stop_playback(false)
+	_battle_view.hide()
+	_script_vm.stop()
+	if _fade_tween != null and _fade_tween.is_valid():
+		_fade_tween.kill()
+	_fade_tween = null
+	_screen_fade_active = false
+	_fade_in_after_scene_change = false
+	_fade_overlay.visible = false
+	_fade_overlay.modulate.a = 0.0
+	_pending_scene_index = -1
+	_active_trigger_event = null
+	_active_scene_enter_index = -1
+	_pending_used_item_id = 0
+	_pending_magic_object_id = 0
+	_pending_magic_caster_role = -1
+	_pending_magic_target_role = -1
+	_pending_magic_stage = FIELD_MAGIC_STAGE_USE
+	_pending_location_toast = ""
+	_location_toast_serial += 1
+	if _location_toast != null:
+		_location_toast.hide()
+	_reset_touch_scan()
+	_player_sprites.clear()
+	_event_sprites.clear()
+	_move_cooldown = 0.0
+	_showing_walk_frame = false
+	if _audio_player != null:
+		_audio_player.stop_all()
+
+
+func _refresh_save_slot_summaries() -> void:
+	_game_menu.configure_save_slots(_save_manager.slot_summaries() if _save_system_available else [], _save_manager.current_slot)
+
+
+func _show_system_toast(message: String) -> void:
+	_system_toast_serial += 1
+	var serial := _system_toast_serial
+	_dialog_box.begin(3)
+	_dialog_box.show_message(message)
+	_dialog_box.reveal_all()
+	get_tree().create_timer(1.5).timeout.connect(func() -> void:
+		if serial == _system_toast_serial and _script_vm != null and not _script_vm.waiting_for_dialog:
+			_dialog_box.hide_dialog()
+	)
+
+
+func _show_pending_location_toast() -> void:
+	if _pending_location_toast.is_empty() or _location_toast == null or _location_toast_label == null:
+		return
+	var location_name := _pending_location_toast
+	_pending_location_toast = ""
+	_location_toast_serial += 1
+	var serial := _location_toast_serial
+	_location_toast_label.text = location_name
+	_location_toast.show()
+	get_tree().create_timer(1.8).timeout.connect(func() -> void:
+		if serial == _location_toast_serial and _location_toast != null:
+			_location_toast.hide()
+	)
 
 
 func _on_audio_missing(kind: String, number: int, _path: String) -> void:

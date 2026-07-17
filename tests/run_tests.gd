@@ -27,6 +27,7 @@ func _init() -> void:
 	_test_voc_decoder()
 	_test_music_reference_collection()
 	_test_content_structures()
+	_test_classic_font_aliases()
 	_test_explorer_manual_search()
 	_test_explorer_touch_scan()
 	_test_item_definition()
@@ -78,6 +79,19 @@ func _expect(condition: bool, message: String) -> void:
 	_checks += 1
 	if not condition:
 		_failures.append(message)
+
+
+func _test_classic_font_aliases() -> void:
+	var original := {
+		"戲": [0, 0, 16, 15],
+		"檔": [16, 0, 16, 15],
+		"棧": [32, 0, 16, 15],
+		"間": [48, 0, 16, 15],
+	}
+	var resolved := PalClassicFont.with_compatibility_aliases(original)
+	_expect(resolved.get("戏") == original["戲"] and resolved.get("档") == original["檔"], "classic font maps simplified game/save labels to original Big5 bitmap glyphs")
+	_expect(resolved.get("栈") == original["棧"] and resolved.get("间") == original["間"], "classic font maps simplified location labels without falling back to a system font")
+	_expect(not original.has("戏") and not original.has("档"), "classic font compatibility does not mutate imported glyph metadata")
 
 
 func _test_binary_helpers() -> void:
@@ -1546,10 +1560,11 @@ func _test_explorer_hud_canvas_layer() -> void:
 	explorer._build_interface()
 	_expect(explorer._ui_layer is CanvasLayer and explorer._ui_layer.layer > 0, "explorer HUD uses an independent foreground CanvasLayer")
 	_expect(explorer._status.get_parent() == explorer._ui_layer, "status label stays outside the Camera2D world canvas")
+	_expect(explorer._location_toast.get_parent() == explorer._ui_layer and explorer._location_toast.position == Vector2(104, 28) and explorer._location_toast.size == Vector2(112, 24), "scene location toast stays centered below the HUD status line")
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
-	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index(), "screen fade covers the complete world and HUD during scene transitions")
+	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index() and explorer._fade_overlay.get_index() > explorer._location_toast.get_index(), "screen fade covers the complete world, location toast and HUD during scene transitions")
 	_expect(explorer._tile_world.get_parent() == explorer, "TileMap world remains on the Camera2D world canvas")
 	explorer.free()
 
@@ -1660,6 +1675,38 @@ func _test_game_menu_inventory() -> void:
 	menu._main_selection = 3
 	menu._confirm_selection()
 	_expect(menu.current_page == PalGameMenu.Page.SYSTEM and menu._system_selection == 2, "classic system submenu opens from the fourth main item")
+	var save_summaries: Array[Dictionary] = []
+	for slot in range(1, PalSaveManager.SLOT_COUNT + 1):
+		save_summaries.append({"slot": slot, "exists": false, "can_load": false, "save_count": 0, "saved_at": "", "scene_index": -1, "map_number": 0, "party": [], "error": ""})
+	save_summaries[0] = {"slot": 1, "exists": true, "can_load": true, "save_count": 3, "saved_at": "2026-07-17 18:30:00", "scene_index": 11, "map_number": 12, "party": [{"role_index": 0, "level": 8}, {"role_index": 1, "level": 7}], "error": ""}
+	menu.configure_save_slots(save_summaries, 1)
+	_expect(PalSceneCatalog.name_for_scene_index(0).begins_with("余杭·客栈") and PalSceneCatalog.name_for_scene_index(14) == "仙灵岛·岸", "save UI scene catalog maps DOS scene indices to Chinese locations")
+	_expect(PalSceneCatalog.area_name_for_scene_index(14) == "仙灵岛" and PalSceneCatalog.toast_name_for_transition(3, 14) == "仙灵岛", "scene transitions expose a compact destination area name")
+	_expect(PalSceneCatalog.toast_name_for_transition(14, 15).is_empty() and PalSceneCatalog.toast_name_for_transition(-1, 14).is_empty(), "initial load and transitions inside one area do not repeat the location toast")
+	_expect(menu._format_save_time("2026-07-17 18:30:00") == "07-17 18:30", "save UI shortens full timestamps to fit the classic frame")
+	menu._system_selection = 0
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.SAVE_SLOTS and menu._save_slot_selection == 0, "system save entry opens the first of one hundred slots")
+	var save_requests: Array[int] = []
+	menu.save_slot_requested.connect(func(slot: int) -> void: save_requests.append(slot))
+	menu._confirm_selection()
+	_expect(save_requests == [1], "save slot confirmation emits the one-based slot number")
+	menu._move_selection(Vector2i(1, 0))
+	_expect(menu._save_slot_selection == 5 and menu._save_slot_page_start() == 5, "save slot left/right navigation changes five-slot pages")
+	menu.go_back()
+	menu._system_selection = 1
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.LOAD_SLOTS, "system load entry opens the same paged slot browser")
+	menu._save_slot_selection = 0
+	var load_requests: Array[int] = []
+	menu.load_slot_requested.connect(func(slot: int) -> void: load_requests.append(slot))
+	menu._confirm_selection()
+	_expect(load_requests == [1], "load slot confirmation only emits for a valid populated slot")
+	menu._save_slot_selection = 1
+	menu._confirm_selection()
+	_expect(load_requests == [1], "empty load slots stay disabled")
+	menu.current_page = PalGameMenu.Page.SYSTEM
+	menu._system_selection = 2
 	var settings: Array = []
 	menu.audio_settings_changed.connect(func(music: int, sound: int) -> void: settings.append([music, sound]))
 	menu._move_selection(Vector2i(-1, 0))

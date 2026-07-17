@@ -20,3 +20,11 @@
 ## 原版游戏
 
 本仓库不分发任何原版游戏资源。《仙剑奇侠传》的名称、美术、音乐、文本、游戏数据和商标权利归各自权利人所有。
+
+## PalResearch
+
+存档页使用的中文地点目录依据 PalResearch 的 `PalScript/SceneID.txt` 整理，只保存场景编号与地点名称的研究对照，不复制原版资源。
+
+- 仓库：<https://github.com/palxex/palresearch>
+- 参考提交：`dc4b063ffc0029a1e0046da738f0e65a6daa9c50`
+- 原始研究资料及作者鸣谢见该仓库的 `AUTHORS.txt`

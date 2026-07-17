@@ -126,7 +126,28 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_system_audio.png"))
-	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页与系统音量页视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+	var save_summaries: Array[Dictionary] = []
+	for slot in range(1, PalSaveManager.SLOT_COUNT + 1):
+		save_summaries.append({"slot": slot, "exists": false, "can_load": false, "save_count": 0, "saved_at": "", "scene_index": -1, "map_number": 0, "party": [], "error": ""})
+	save_summaries[0] = {
+		"slot": 1,
+		"exists": true,
+		"can_load": true,
+		"save_count": 12,
+		"saved_at": "2026-07-17 18:30:00",
+		"scene_index": 0,
+		"map_number": 12,
+		"party": [{"role_index": 0, "level": 8}, {"role_index": 1, "level": 7}],
+		"error": "",
+	}
+	save_summaries[1] = {"slot": 2, "exists": true, "can_load": false, "save_count": 0, "saved_at": "", "scene_index": -1, "map_number": 0, "party": [], "error": "存档文件结构损坏"}
+	menu.configure_save_slots(save_summaries, 1)
+	menu._system_selection = 0
+	menu._confirm_selection()
+	await process_frame
+	await process_frame
+	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_save_slots.png"))
+	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页与 100 槽存档页视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
 		field_magic_id,
 		session.attack_strength_for(0),
 		session.magic_strength_for(0),

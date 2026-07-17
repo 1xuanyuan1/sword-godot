@@ -33,6 +33,13 @@
 
 这些测试只使用代码构造的字节和状态，可以在 GitHub CI 执行，必须覆盖格式边界、ScriptVM 基础行为、TileSet 坐标、自定义数据，以及装备六槽、背包交换和脚本效果。
 
+版本化存档格式、100 槽、校验和及损坏诊断：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_save_system_tests.gd
+```
+
 地图阻挡改动必须覆盖 32×16 菱形的北部、half 1、东部、南部和东南部区域，以及玩家左上视口边界；禁止在世界层、TileMap 层和 ScriptVM 中复制三份 half 推断公式。
 
 EventObject 阻挡测试还要区分移动碰撞 `<16` 与队伍挤占 `≤12`，覆盖 15/16 边界及正 `vanish_time` 状态，避免临时隐藏错误地变成可穿过。
@@ -70,6 +77,15 @@ RNG 剧情动画引用、导入完整性和 HUD 播放回归：
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_local_event_auto_script_test.gd
 ```
+
+完整 PAL 内容的存读档往返与装备重建：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_save_system_test.gd
+```
+
+需要复现运行时 bug 时，在问题发生前使用一个独立槽保存并记录操作步骤。代码修复后，只要格式版本和内容指纹兼容即可继续读档；存档属于本机用户数据，不得加入 Git。
 
 客栈手动搜索范围和真实触发脚本回归：
 

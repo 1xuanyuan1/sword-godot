@@ -12,6 +12,8 @@ flowchart LR
     D --> P[PalEquipmentManager]
     P --> E
     E <--> F
+    E <--> Q[PalSaveManager]
+    D --> Q
     D --> G[MapExplorer]
     D --> O[PalBattlePreview / PalBattleController / PalBattleUI]
     E --> O
@@ -32,6 +34,7 @@ flowchart LR
 | `PalDataImporter` | 一次导入的校验结果和生成路径 | 游戏运行、存档、剧情状态 |
 | `PalContentDatabase` | 场景、脚本、事件、物品、毒、角色定义和资源缓存 | 玩家当前金钱、位置、背包 |
 | `GameSession` | 当前场景、队伍、位置、轨迹、背包、金钱、角色等级/HP/MP/仙术、毒与九种状态、六槽装备及其效果、调色板 | 解码原版文件、绘制 UI |
+| `PalSaveManager` | 100 个 Godot 存档槽、格式版本、内容指纹、校验和与剧情运行时快照 | 兼容原版 `.rpg`、保存半句对话或战斗中间帧 |
 | `PalEquipmentManager` | 当前一次装备脚本的部位上下文和诊断 | 持久保存装备、直接绘制装备页 |
 | `ScriptVM` | 当前指令入口、等待原因、自动脚本调度 | 持久化内容、直接绘制画面 |
 | `MapExplorer` | 输入与各模块的编排、当前场景事件引用 | 重新解释资源格式 |
@@ -53,6 +56,8 @@ flowchart LR
 5. `MapExplorer` 根据 `scene_index` 取得 `map_number`、场景事件和进入脚本。
 6. `PalTileMapWorld` 实例化该 `map_number` 对应的 TileMap 场景；多个剧情场景可以复用同一地图资源。
 7. `ScriptVM` 执行场景进入脚本，并通过信号请求重绘、对话、人物动作或场景切换。
+
+系统菜单保存时，`PalSaveManager` 从 `GameSession` 和运行时内容数据库复制队伍、背包、装备、Scene、EventObject 与脚本游标，再写入 `user://saves/`。读档先验证格式、内容指纹和 SHA-256，随后恢复会话与可变剧情数据，由装备管理器重建派生属性、地图层重载场景但不重跑进入脚本。完整边界见[Godot 版本化存档系统](SAVE_SYSTEM.md)。
 
 `PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 默认走该路径，命令行用户参数 `--pal-map-backend=legacy` 可临时启用 CPU 基准。
 
