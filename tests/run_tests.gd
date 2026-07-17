@@ -1785,6 +1785,12 @@ func _test_game_menu_inventory() -> void:
 	menu.save_slot_requested.connect(func(slot: int) -> void: save_requests.append(slot))
 	menu._confirm_selection()
 	_expect(save_requests == [1], "save slot confirmation emits the one-based slot number")
+	menu._save_slot_selection = 4
+	menu._move_selection(Vector2i(0, 1))
+	_expect(menu._save_slot_selection == 5 and menu._save_slot_page_start() == 5, "save slot down navigation crosses from slot five to slot six")
+	menu._move_selection(Vector2i(0, -1))
+	_expect(menu._save_slot_selection == 4 and menu._save_slot_page_start() == 0, "save slot up navigation returns from slot six to slot five")
+	menu._save_slot_selection = 0
 	menu._move_selection(Vector2i(1, 0))
 	_expect(menu._save_slot_selection == 5 and menu._save_slot_page_start() == 5, "save slot left/right navigation changes five-slot pages")
 	menu.go_back()

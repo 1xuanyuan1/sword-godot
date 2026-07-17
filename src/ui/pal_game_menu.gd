@@ -679,9 +679,9 @@ func _move_selection(direction: Vector2i) -> void:
 			if direction.x != 0:
 				_save_slot_selection = posmod(_save_slot_selection + direction.x * PalSaveManager.SLOTS_PER_PAGE, PalSaveManager.SLOT_COUNT)
 			elif direction.y != 0:
-				var page_start := _save_slot_page_start()
-				var row := posmod(_save_slot_selection - page_start + direction.y, PalSaveManager.SLOTS_PER_PAGE)
-				_save_slot_selection = page_start + row
+				# 上下键按 1–100 连续移动，让第 5 槽向下自然进入第 6 槽；
+				# 左右键仍按五槽整页移动并保留当前行。
+				_save_slot_selection = posmod(_save_slot_selection + direction.y, PalSaveManager.SLOT_COUNT)
 	queue_redraw()
 
 
