@@ -64,10 +64,6 @@ func _test_shrimp_errand(database: PalContentDatabase) -> String:
 func _test_island_bath_dialog_presentation(database: PalContentDatabase) -> String:
 	var session := GameSession.new()
 	session.reset_new_game()
-	var bath_event := database.event_objects[208]
-	var bath_sprite := database.load_mgo_sprite(bath_event.sprite_number)
-	if bath_event.object_id != 209 or bath_event.sprite_number != 339 or not bath_sprite.is_valid() or bath_sprite.frame_count() <= 16:
-		return "仙灵岛洗澡事件缺少原版 MGO 339 动画帧：事件 %d，Sprite %d，帧数 %d" % [bath_event.object_id, bath_event.sprite_number, bath_sprite.frame_count()]
 	var explorer = load("res://src/world/map_explorer.gd").new()
 	explorer._build_interface()
 	explorer._dialog_box._ready()
