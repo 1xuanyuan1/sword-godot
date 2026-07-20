@@ -13,6 +13,29 @@ keywords:
 
 ## 变更记录
 
+## 2026-07-20
+
+### [FT-054] [feat] 完成 TD-003 召唤、梦蛇与完整系统闭环
+
+- **关联需求**: M3 完整系统
+- **关联 TODO**: TD-003
+- **功能描述**: 在既有菜单、状态/场外仙术、物品、六槽装备、剧情商店、毒与状态及特殊物品脚本基础上，补齐玩家召唤和变身仙术的最后缺口。风神等 `TYPE_SUMMON` 按 SDLPal 使用 `F.MKF[specific + 10]` 播放神将，并从 OBJECT 表查找召唤记录指定的第二段仙术以播放 FIRE 特效；梦蛇 `TYPE_TRANCE` 强制作用于施法者，在变色后重建脚本写入的临时战斗 Sprite。召唤类型合击同步支持敌方全体目标、伤害与经典 HP 消耗。至此 TD-003 完成，后续隐藏经验和更完整战斗演出仍由 TD-005 跟踪。
+- **验证情况**: 136 项合成战斗逻辑检查通过；真实 DOS 数据确认风神 315、梦蛇 295、对应神将 Sprite 和第二段 FIRE 资源均可执行，85/85 个敌术、84/49 个使用/投掷物品及 27/22/10 个敌人脚本入口继续通过。Godot 4.7 真实 OpenGL 窗口回归生成并实际检查风神召唤与梦蛇变身 320×200 像素截图。
+- **涉及文件**:
+  - `src/content/pal_content_database.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_battle_logic_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `README.md`
+  - `docs/BATTLE.md`
+  - `docs/CLASSIC_UI.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

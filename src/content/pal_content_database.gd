@@ -400,6 +400,15 @@ func magic_definition_for_object(object_id: int) -> PalMagicDefinition:
 	return magics[object.magic_number] if object != null and object.magic_number >= 0 and object.magic_number < magics.size() else null
 
 
+## 返回 OBJECT 表中第一个映射到指定 DATA.MKF 仙术记录的对象编号。
+## 召唤仙术的 `effect_sprite` 实际保存第二段效果仙术编号，SDLPal 也从对象表头开始查找。
+func magic_object_id_for_magic_number(magic_number: int) -> int:
+	for object in magic_objects:
+		if object != null and object.magic_number == magic_number:
+			return object.object_id
+	return 0
+
+
 ## 通过 OBJECT 敌人对象编号返回对应基础属性；映射无效时返回 `null`。
 func enemy_definition_for_object(object_id: int) -> PalEnemyDefinition:
 	var object := enemy_object_definition(object_id)

@@ -71,6 +71,53 @@ func _init() -> void:
 	if database.player_roles.cooperative_magic_for(0) != 386 or database.player_roles.covered_by_role(0) != 2 or item_session.cooperative_magic_for(0, database.player_roles) != 386 or not item_controller.can_pending_player_use_cooperative_magic():
 		_fail("李逍遥合体气功或 PLAYERROLES 保护关系解析错误")
 		return
+	var summon_definition := database.magic_definition_for_object(315)
+	var summon_effect_object_id := database.magic_object_id_for_magic_number(summon_definition.effect_sprite) if summon_definition != null else 0
+	var summon_effect_definition := database.magic_definition_for_object(summon_effect_object_id)
+	if summon_definition == null or summon_definition.magic_type != PalMagicDefinition.TYPE_SUMMON or not database.load_player_battle_sprite(summon_definition.specific + 10).is_valid():
+		_fail("风神 315 没有解析为带 F.MKF 神将 Sprite 的召唤仙术")
+		return
+	if summon_effect_object_id <= 0 or summon_effect_definition == null or not database.load_magic_effect_sprite(summon_effect_definition.effect_sprite).is_valid():
+		_fail("风神 315 没有按召唤记录的 effect_sprite 找到后续 FIRE 特效")
+		return
+	var summon_session := GameSession.new()
+	summon_session.party_roles = PackedInt32Array([0])
+	summon_session.initialize_role_state(database.player_roles)
+	summon_session.learned_magics_by_role[0] = PackedInt32Array([315])
+	summon_session.role_hp[0] = summon_session.role_max_hp[0]
+	summon_session.role_max_mp[0] = 999
+	summon_session.role_mp[0] = 999
+	summon_session.role_dexterity[0] = 999
+	var summon_controller := PalBattleController.new()
+	if not summon_controller.start_battle(database, summon_session, 18, 21, 72) or not summon_controller.submit_magic(315, 0):
+		_fail("真实风神 315 无法在首战控制器中提交")
+		return
+	var summon_mp_before := summon_session.role_mp[0]
+	var summon_result := summon_controller.execute_next_action()
+	if summon_result == null or summon_result.unsupported or summon_result.target_index != -1 or summon_result.hits.size() != 2 or summon_session.role_mp[0] != summon_mp_before - summon_definition.mp_cost:
+		var result_summary := "null" if summon_result == null else "type=%d unsupported=%s target=%d hits=%d" % [summon_result.action_type, summon_result.unsupported, summon_result.target_index, summon_result.hits.size()]
+		_fail("真实风神 315 没有扣除 MP 并伤害敌方全体：%s，MP %d→%d（消耗 %d）" % [result_summary, summon_mp_before, summon_session.role_mp[0], summon_definition.mp_cost])
+		return
+	var trance_definition := database.magic_definition_for_object(295)
+	if trance_definition == null or trance_definition.magic_type != PalMagicDefinition.TYPE_TRANCE:
+		_fail("梦蛇 295 没有解析为变身仙术")
+		return
+	var trance_session := GameSession.new()
+	trance_session.party_roles = PackedInt32Array([1])
+	trance_session.initialize_role_state(database.player_roles)
+	trance_session.learned_magics_by_role[1] = PackedInt32Array([295])
+	trance_session.role_hp[1] = trance_session.role_max_hp[1]
+	trance_session.role_max_mp[1] = 999
+	trance_session.role_mp[1] = 999
+	trance_session.role_dexterity[1] = 999
+	var trance_controller := PalBattleController.new()
+	if not trance_controller.start_battle(database, trance_session, 18, 21, 74) or not trance_controller.submit_magic(295, 99):
+		_fail("真实梦蛇 295 无法作为施法者自身目标提交")
+		return
+	var trance_result := trance_controller.execute_next_action()
+	if trance_result == null or trance_result.unsupported or trance_result.target_index != 0 or trance_session.battle_sprite_for(1, database.player_roles.battle_sprite_for(1)) != 5:
+		_fail("真实梦蛇 295 没有把赵灵儿的临时战斗 Sprite 切换为 5")
+		return
 	var enemy_magic_count := 0
 	var supported_enemy_magic_count := 0
 	for enemy in database.enemies:
@@ -142,7 +189,7 @@ func _init() -> void:
 	if not unsupported.is_empty():
 		_fail("真实敌人战斗脚本仍有未支持入口：%s" % unsupported)
 		return
-	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、合击/保护关系、升级规则、%d 组 FIRE 特效、%d/%d 个已接入/全部敌术、%d/%d 个使用/投掷物品及 %d/%d/%d 个敌人回合/就绪/战后脚本入口均可加载；敌队 22 对白、25 逃跑、46 双掉落可执行，首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size(), supported_enemy_magic_count, enemy_magic_count, supported_use_items, supported_throw_items, script_audit.get("turn", 0), script_audit.get("ready", 0), script_audit.get("end", 0)])
+	print("PASS: %d 个脚本敌队、%d 个脚本战场、6 名角色、合击/保护关系、升级规则、风神/梦蛇、%d 组 FIRE 特效、%d/%d 个已接入/全部敌术、%d/%d 个使用/投掷物品及 %d/%d/%d 个敌人回合/就绪/战后脚本入口均可加载；敌队 22 对白、25 逃跑、46 双掉落可执行，首战为敌队 18 / 战场 21" % [referenced_teams.size(), referenced_battlefields.size(), effect_numbers.size(), supported_enemy_magic_count, enemy_magic_count, supported_use_items, supported_throw_items, script_audit.get("turn", 0), script_audit.get("ready", 0), script_audit.get("end", 0)])
 	quit(0)
 
 

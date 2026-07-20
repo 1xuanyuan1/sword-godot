@@ -431,7 +431,10 @@ func submit_magic(magic_object_id: int, target_index: int) -> bool:
 		return false
 	var object := database.magic_object_definition(magic_object_id)
 	var definition := database.magic_definition_for_object(magic_object_id)
-	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY, PalMagicDefinition.TYPE_SUMMON]:
+	if definition.magic_type == PalMagicDefinition.TYPE_TRANCE:
+		# 经典模式的梦蛇不打开队员选择，始终作用于施法者自己。
+		target_index = party_index
+	elif object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY, PalMagicDefinition.TYPE_SUMMON]:
 		target_index = -1
 	elif object.is_used_on_enemy():
 		if target_index < 0 or target_index >= enemies.size() or not enemies[target_index].is_alive():
@@ -467,7 +470,7 @@ func can_pending_player_use_cooperative_magic() -> bool:
 	var magic_object_id := pending_cooperative_magic_object_id()
 	var object := database.magic_object_definition(magic_object_id)
 	var definition := database.magic_definition_for_object(magic_object_id)
-	return object != null and definition != null and object.is_used_on_enemy() and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD] and _signed_word(definition.base_damage) > 0
+	return object != null and definition != null and object.is_used_on_enemy() and definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_SUMMON] and _signed_word(definition.base_damage) > 0
 
 
 ## 为当前角色提交合击；群体合击会把目标规范化为 -1，并立即结束本回合余下指令选择。
@@ -479,7 +482,7 @@ func submit_cooperative_magic(target_index: int) -> bool:
 	var magic_object_id := pending_cooperative_magic_object_id()
 	var object := database.magic_object_definition(magic_object_id)
 	var definition := database.magic_definition_for_object(magic_object_id)
-	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_SUMMON]:
 		target_index = -1
 	elif target_index < 0 or target_index >= enemies.size() or not enemies[target_index].is_alive():
 		return false
@@ -869,7 +872,9 @@ func _assign_repeated_magic(player: PlayerState, party_index: int) -> void:
 		return
 	player.action_type = ActionType.MAGIC
 	player.action_id = player.previous_action_id
-	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY, PalMagicDefinition.TYPE_SUMMON]:
+	if definition.magic_type == PalMagicDefinition.TYPE_TRANCE:
+		player.target_index = party_index
+	elif object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_APPLY_TO_PARTY, PalMagicDefinition.TYPE_SUMMON]:
 		player.target_index = -1
 	elif object.is_used_on_enemy():
 		player.target_index = _find_alive_enemy_from(player.previous_target_index)
@@ -885,7 +890,7 @@ func _assign_repeated_cooperative_magic(player: PlayerState) -> void:
 	var definition := database.magic_definition_for_object(player.previous_action_id)
 	player.action_type = ActionType.COOPERATIVE_MAGIC
 	player.action_id = player.previous_action_id
-	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD]:
+	if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_SUMMON]:
 		player.target_index = -1
 	else:
 		player.target_index = _find_alive_enemy_from(player.previous_target_index)
@@ -1071,7 +1076,8 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 	var object := database.magic_object_definition(player.action_id)
 	var definition := database.magic_definition_for_object(player.action_id)
 	result.magic_object_id = player.action_id
-	result.target_index = player.target_index
+	var actor_party_index := player.party_index
+	result.target_index = actor_party_index if definition != null and definition.magic_type == PalMagicDefinition.TYPE_TRANCE else player.target_index
 	if object == null or definition == null or not _magic_effect_is_supported(object, definition):
 		result.unsupported = true
 		result.summary = "该仙术的状态或脚本效果尚未接入"
@@ -1084,14 +1090,13 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 	# 原版自动战斗仍检查当前 MP 是否足够，但执行时不扣除 MP。
 	if not _auto_battle:
 		session.increase_role_hp_mp(player.role_index, 0, -definition.mp_cost)
-	var actor_party_index := player.party_index
 	var use_outcome: Dictionary = _run_battle_effect_script(object.script_on_use, false, false, actor_party_index, result)
 	if not bool(use_outcome.get("success", true)):
 		result.summary = "%s施展%s失败" % [_role_name(player.role_index), database.get_word(player.action_id)]
 		return
 	if object.is_used_on_enemy():
-		_run_battle_effect_script(object.script_on_success, false, true, player.target_index, result)
-		var target_indices := living_enemy_indices() if player.target_index < 0 else PackedInt32Array([_find_alive_enemy_from(player.target_index)])
+		_run_battle_effect_script(object.script_on_success, false, true, result.target_index, result)
+		var target_indices := living_enemy_indices() if result.target_index < 0 else PackedInt32Array([_find_alive_enemy_from(result.target_index)])
 		if _signed_word(definition.base_damage) > 0:
 			for target_index in target_indices:
 				if target_index < 0:
@@ -1099,7 +1104,7 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 				var damage := _calculate_player_magic_damage(player.role_index, target_index, definition)
 				result.hits.append(_apply_enemy_damage(target_index, maxi(1, damage), false))
 	else:
-		_run_battle_effect_script(object.script_on_success, false, false, player.target_index, result)
+		_run_battle_effect_script(object.script_on_success, false, false, result.target_index, result)
 	result.summary = "%s施展%s" % [_role_name(player.role_index), database.get_word(player.action_id)]
 
 
@@ -1174,8 +1179,8 @@ func _magic_effect_is_supported(object: PalMagicObjectDefinition, definition: Pa
 	if not _battle_effect_script_is_supported(object.script_on_use) or not _battle_effect_script_is_supported(object.script_on_success):
 		return false
 	if object.is_used_on_enemy():
-		return definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD] and (_signed_word(definition.base_damage) > 0 or object.script_on_use > 0 or object.script_on_success > 0)
-	return definition.magic_type in [PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY] and (object.script_on_use > 0 or object.script_on_success > 0)
+		return definition.magic_type in [PalMagicDefinition.TYPE_NORMAL, PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_SUMMON] and (_signed_word(definition.base_damage) > 0 or object.script_on_use > 0 or object.script_on_success > 0)
+	return definition.magic_type in [PalMagicDefinition.TYPE_APPLY_TO_PLAYER, PalMagicDefinition.TYPE_APPLY_TO_PARTY, PalMagicDefinition.TYPE_TRANCE] and (object.script_on_use > 0 or object.script_on_success > 0)
 
 
 func _battle_effect_script_is_supported(entry_index: int) -> bool:

@@ -43,6 +43,7 @@ var _background: TextureRect
 var _fighter_root: Node2D
 var _magic_root: Node2D
 var _battle_ui: PalBattleUI
+var _summon_node: Sprite2D
 var _script_dialog_box: PalDialogBox
 var _error_label: Label
 var _enemy_team_id: int = 18
@@ -714,7 +715,16 @@ func _execute_next_action() -> void:
 func _play_action_result(result: PalBattleController.ActionResult) -> void:
 	_pending_blow_displacement = 0
 	if not result.script_events.is_empty():
-		await _play_script_events(result.script_events)
+		var immediate_events: Array[PalBattleController.ScriptEvent] = []
+		var defer_trance_sprite := false
+		if result.action_type == PalBattleController.ActionType.MAGIC:
+			var magic := _database.magic_definition_for_object(result.magic_object_id)
+			defer_trance_sprite = magic != null and magic.magic_type == PalMagicDefinition.TYPE_TRANCE
+		for event in result.script_events:
+			if not defer_trance_sprite or event.type != PalBattleController.ScriptEventType.PLAYER_SPRITE:
+				immediate_events.append(event)
+		if not immediate_events.is_empty():
+			await _play_script_events(immediate_events)
 	if not result.script_hits.is_empty():
 		await _play_script_hits(result)
 	if result.unsupported:
@@ -996,6 +1006,9 @@ func _play_player_magic(result: PalBattleController.ActionResult) -> void:
 	var object := _database.magic_object_definition(result.magic_object_id)
 	if definition == null or object == null:
 		return
+	if definition.magic_type == PalMagicDefinition.TYPE_SUMMON:
+		await _play_player_summon_magic(result, object, definition)
+		return
 	var actor_index := result.actor_index
 	var original_foot := _player_foot_positions[actor_index]
 	var casting_foot := original_foot
@@ -1010,14 +1023,80 @@ func _play_player_magic(result: PalBattleController.ActionResult) -> void:
 	var effect_sprite := _database.load_magic_effect_sprite(definition.effect_sprite)
 	if effect_sprite != null and effect_sprite.is_valid():
 		await _play_magic_effect_sprite(effect_sprite, definition, result, casting_foot)
-	else:
+	elif definition.magic_type != PalMagicDefinition.TYPE_TRANCE:
 		_battle_ui.show_message("仙术特效资源缺失，请重新导入 Data", 1000)
 		if _audio_player != null:
 			_audio_player.play_sound(definition.sound)
 		await _wait_frames(4)
-	await _show_magic_result(result, object, definition)
+	if definition.magic_type == PalMagicDefinition.TYPE_TRANCE:
+		await _play_trance_transition(result, casting_foot)
+	else:
+		await _show_magic_result(result, object, definition)
 	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
 	await _wait_frames(5)
+
+
+func _play_player_summon_magic(result: PalBattleController.ActionResult, object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> void:
+	if result.actor_index < 0 or result.actor_index >= _player_nodes.size():
+		return
+	var actor_index := result.actor_index
+	var original_foot := _player_foot_positions[actor_index]
+	var casting_foot := original_foot
+	for step in range(4, 0, -1):
+		casting_foot -= Vector2i(step, step / 2)
+		_set_player_frame(actor_index, _player_current_frames[actor_index], casting_foot)
+		await _wait_frames(1)
+	await _wait_frames(2)
+	_set_player_frame(actor_index, 5, casting_foot)
+	if _audio_player != null:
+		var role_index := _controller.players[actor_index].role_index
+		_audio_player.play_sound(_database.player_roles.magic_sound_for(role_index))
+	for shift in range(1, 11):
+		for party_index in range(_player_nodes.size()):
+			var shift_foot := casting_foot if party_index == actor_index else _player_foot_positions[party_index]
+			_set_player_frame(party_index, _player_current_frames[party_index], shift_foot, shift)
+		await _wait_frames(1)
+	for node in _player_nodes:
+		if node != null:
+			node.hide()
+	var summon_sprite := _database.load_player_battle_sprite(definition.specific + 10)
+	if summon_sprite == null or not summon_sprite.is_valid():
+		_battle_ui.show_message("召唤神将 Sprite 缺失，请重新导入 Data", 1000)
+		_sync_player_fighters()
+		await _wait_frames(4)
+		return
+	var summon_foot := Vector2i(240 + definition.x_offset, 165 + definition.y_offset)
+	_summon_node = _add_fighter(summon_sprite, summon_foot, "SummonedGod")
+	var delay_seconds := clampf((definition.speed + 5) * 0.01, 0.01, 0.2)
+	for frame_index in range(summon_sprite.frame_count()):
+		_apply_fighter_frame(_summon_node, summon_sprite, summon_foot, frame_index, 0)
+		await get_tree().create_timer(delay_seconds).timeout
+	var effect_object_id := _database.magic_object_id_for_magic_number(definition.effect_sprite)
+	var effect_definition := _database.magic_definition_for_object(effect_object_id)
+	var effect_sprite := _database.load_magic_effect_sprite(effect_definition.effect_sprite) if effect_definition != null else null
+	if effect_sprite != null and effect_sprite.is_valid():
+		await _play_magic_effect_sprite(effect_sprite, effect_definition, result, summon_foot, false)
+	else:
+		_battle_ui.show_message("召唤后续仙术特效缺失", 1000)
+		await _wait_frames(4)
+	await _show_magic_result(result, object, definition)
+	if _summon_node != null:
+		_summon_node.free()
+		_summon_node = null
+	_sync_player_fighters()
+	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
+	await _wait_frames(5)
+
+
+func _play_trance_transition(result: PalBattleController.ActionResult, casting_foot: Vector2i) -> void:
+	if result.actor_index < 0 or result.actor_index >= _player_nodes.size():
+		return
+	for shift in range(6):
+		_set_player_frame(result.actor_index, _player_current_frames[result.actor_index], casting_foot, shift * 2)
+		await _wait_frames(1)
+	# 成功脚本已经把临时战斗 Sprite 写入 GameSession，此时才重建节点以复现梦蛇变身时序。
+	_sync_player_fighters()
+	await _wait_frames(4)
 
 
 func _play_player_use_item(result: PalBattleController.ActionResult) -> void:
@@ -1063,6 +1142,9 @@ func _play_cooperative_magic(result: PalBattleController.ActionResult) -> void:
 	var definition := _database.magic_definition_for_object(result.magic_object_id)
 	var object := _database.magic_object_definition(result.magic_object_id)
 	if definition == null or object == null:
+		return
+	if definition.magic_type == PalMagicDefinition.TYPE_SUMMON:
+		await _play_player_summon_magic(result, object, definition)
 		return
 	var original_feet := _player_foot_positions.duplicate()
 	var cooperative_feet := original_feet.duplicate()
@@ -1179,7 +1261,7 @@ func _play_player_flee(result: PalBattleController.ActionResult) -> void:
 	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
 
 
-func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition, result: PalBattleController.ActionResult, casting_foot: Vector2i) -> void:
+func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition, result: PalBattleController.ActionResult, casting_foot: Vector2i, animate_caster: bool = true) -> void:
 	var effect_positions := _magic_effect_positions(definition, result)
 	if effect_positions.is_empty():
 		return
@@ -1199,7 +1281,8 @@ func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition
 	for animation_index in range(total_frames):
 		var frame_index := animation_index if animation_index < frame_count else repeat_start + posmod(animation_index - repeat_start, maxi(1, frame_count - repeat_start))
 		if animation_index == repeat_start:
-			_set_player_frame(result.actor_index, 6, casting_foot)
+			if animate_caster:
+				_set_player_frame(result.actor_index, 6, casting_foot)
 			if _audio_player != null:
 				_audio_player.play_sound(definition.sound)
 		var frame := RleDecoder.decode(sprite.get_frame(frame_index))
@@ -1234,6 +1317,9 @@ func _magic_effect_positions(definition: PalMagicDefinition, result: PalBattleCo
 				positions.append(_player_foot_positions[result.target_index])
 		PalMagicDefinition.TYPE_APPLY_TO_PARTY:
 			positions = _player_foot_positions.duplicate()
+		PalMagicDefinition.TYPE_TRANCE:
+			if result.actor_index >= 0 and result.actor_index < _player_foot_positions.size():
+				positions.append(_player_foot_positions[result.actor_index])
 	for index in range(positions.size()):
 		positions[index] += Vector2i(definition.x_offset, definition.y_offset)
 	return positions

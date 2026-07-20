@@ -26,7 +26,9 @@ func _init() -> void:
 	_test_victory_rewards_and_level_up()
 	_test_single_target_healing_magic()
 	_test_offensive_magic_damage()
+	_test_player_summon_and_trance_magic()
 	_test_cooperative_magic()
+	_test_summon_cooperative_magic()
 	_test_player_status_magic_and_silence()
 	_test_player_action_statuses()
 	_test_protect_and_haste_modifiers()
@@ -365,6 +367,36 @@ func _test_offensive_magic_damage() -> void:
 	_expect(session.role_mp[0] == 45 and controller.enemies[0].hp == 999 - result.hits[0].damage, "offensive magic consumes MP and updates enemy HP")
 
 
+func _test_player_summon_and_trance_magic() -> void:
+	var database := _synthetic_database([
+		_enemy_definition(999, 1, 1, 0, 0, false),
+		_enemy_definition(999, 1, 1, 0, 0, false),
+	])
+	database.player_roles.dexterities[0] = 999
+	database.player_roles.magic_strengths[0] = 80
+	database.scripts = [
+		PalScriptEntry.new(),
+		_script_entry(0x0031, PackedInt32Array([5, 0, 0])),
+		_script_entry(0x0000),
+	]
+	_add_magic(database, 106, PalMagicDefinition.TYPE_SUMMON, 12, 50, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE | PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	_add_magic(database, 107, PalMagicDefinition.TYPE_TRANCE, 8, 0, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE, 1)
+	var session := _session_for(database, PackedInt32Array([0]))
+	session.learned_magics_by_role[0] = PackedInt32Array([106, 107])
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 73)
+	_expect(controller.submit_magic(106, 0) and controller.players[0].target_index == -1, "summon magic normalizes a selected enemy to the whole enemy party")
+	var summon_result := controller.execute_next_action()
+	_expect(summon_result != null and summon_result.target_index == -1 and summon_result.hits.size() == 2 and summon_result.hits.all(func(hit: PalBattleController.Hit) -> bool: return hit.target_is_enemy and hit.damage > 0), "summon magic damages every living enemy")
+	_expect(session.role_mp[0] == 38, "summon magic consumes its configured MP cost")
+	controller.execute_remaining_actions()
+	_expect(controller.submit_magic(107, 99) and controller.players[0].target_index == 0, "trance magic ignores an external target and always selects its caster")
+	var trance_result := controller.execute_next_action()
+	_expect(trance_result != null and trance_result.target_index == 0 and not trance_result.unsupported, "trance magic executes as a supported self-targeted action")
+	_expect(session.battle_sprite_for(0, 0) == 5 and trance_result.script_events.any(func(event: PalBattleController.ScriptEvent) -> bool: return event.type == PalBattleController.ScriptEventType.PLAYER_SPRITE and event.value == 0 and event.secondary == 5), "trance success script applies the temporary battle Sprite to the caster")
+	_expect(session.role_mp[0] == 30, "trance magic consumes MP only after its use script succeeds")
+
+
 func _test_cooperative_magic() -> void:
 	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
 	database.player_roles.cooperative_magics[0] = 105
@@ -392,6 +424,23 @@ func _test_cooperative_magic() -> void:
 	var unhealthy_controller := PalBattleController.new()
 	unhealthy_controller.start_battle(database, unhealthy_session, 0, 0, 32)
 	_expect(not unhealthy_controller.can_pending_player_use_cooperative_magic(), "cooperative magic requires at least two non-dying healthy contributors")
+
+
+func _test_summon_cooperative_magic() -> void:
+	var database := _synthetic_database([
+		_enemy_definition(999, 1, 1, 0, 0, false),
+		_enemy_definition(999, 1, 1, 0, 0, false),
+	])
+	database.player_roles.cooperative_magics[0] = 108
+	database.player_roles.dexterities[0] = 999
+	_add_magic(database, 108, PalMagicDefinition.TYPE_SUMMON, 11, 70, PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	var session := _session_for(database, PackedInt32Array([0, 1]))
+	var controller := PalBattleController.new()
+	controller.start_battle(database, session, 0, 0, 75)
+	_expect(controller.can_pending_player_use_cooperative_magic() and controller.submit_cooperative_magic(0), "summon-type cooperative magic can be submitted by two healthy contributors")
+	var result := controller.execute_next_action()
+	_expect(result != null and result.action_type == PalBattleController.ActionType.COOPERATIVE_MAGIC and result.target_index == -1 and result.hits.size() == 2, "summon-type cooperative magic targets and damages the whole enemy party")
+	_expect(session.role_hp[0] == 89 and session.role_hp[1] == 89, "summon-type cooperative magic preserves the classic per-contributor HP cost")
 
 
 func _test_player_status_magic_and_silence() -> void:

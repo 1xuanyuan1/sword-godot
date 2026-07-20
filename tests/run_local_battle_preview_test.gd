@@ -372,6 +372,73 @@ func _run() -> void:
 	await create_timer(0.6).timeout
 
 	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview._session.learned_magics_by_role[0] = PackedInt32Array([315])
+	preview._session.role_max_mp[0] = 999
+	preview._session.role_mp[0] = 999
+	preview._session.role_dexterity[0] = 999
+	if not preview._controller.submit_magic(315, 0):
+		_fail("真实风神 315 无法提交到战斗样板")
+		return
+	preview._submit_defend()
+	var summon_result: PalBattleController.ActionResult
+	for _step in range(8):
+		var candidate := preview._controller.execute_next_action()
+		if candidate == null:
+			break
+		if candidate.action_type == PalBattleController.ActionType.MAGIC:
+			summon_result = candidate
+			break
+	if summon_result == null or summon_result.magic_object_id != 315 or summon_result.hits.size() != 2:
+		_fail("真实风神 315 没有生成敌方全体伤害结果")
+		return
+	preview._play_player_magic(summon_result)
+	var summon_image: Image
+	for _step in range(300):
+		await create_timer(0.03).timeout
+		if preview._summon_node != null and is_instance_valid(preview._summon_node) and preview._summon_node.visible:
+			summon_image = viewport.get_texture().get_image()
+			break
+	var summon_path := output_directory.path_join("battle_summon_wind_god.png")
+	if summon_image == null or summon_image.save_png(summon_path) != OK:
+		_fail("风神动画没有在 F.MKF 神将出现时写入截图")
+		return
+	for _step in range(360):
+		await create_timer(0.03).timeout
+		if preview._summon_node == null and preview._magic_root.get_child_count() == 0:
+			break
+	if preview._summon_node != null or preview._magic_root.get_child_count() != 0 or preview._player_nodes.any(func(node: Sprite2D) -> bool: return not node.visible):
+		_fail("风神动画结束后没有清除神将/仙术节点或恢复队员")
+		return
+
+	preview.load_battle(18, 21, PackedInt32Array([1]))
+	preview._session.learned_magics_by_role[1] = PackedInt32Array([295])
+	preview._session.role_max_mp[1] = 999
+	preview._session.role_mp[1] = 999
+	preview._session.role_dexterity[1] = 999
+	if not preview._controller.submit_magic(295, 99):
+		_fail("真实梦蛇 295 无法提交到战斗样板")
+		return
+	preview._input_mode = PalBattlePreview.InputMode.WAITING
+	preview._battle_ui.set_mode(PalBattleUI.Mode.WAITING)
+	var trance_result := preview._controller.execute_next_action()
+	if trance_result == null or trance_result.magic_object_id != 295 or trance_result.target_index != 0 or preview._session.battle_sprite_for(1, preview._database.player_roles.battle_sprite_for(1)) != 5:
+		_fail("真实梦蛇 295 没有对施法者自己切换临时战斗 Sprite")
+		return
+	preview._play_player_magic(trance_result)
+	var trance_image: Image
+	var dream_snake_sprite := preview._database.load_player_battle_sprite(5)
+	for _step in range(240):
+		await create_timer(0.03).timeout
+		if not preview._player_sprites.is_empty() and preview._player_sprites[0] == dream_snake_sprite and preview._player_nodes[0].visible:
+			trance_image = viewport.get_texture().get_image()
+			break
+	var trance_path := output_directory.path_join("battle_trance_dream_snake.png")
+	if trance_image == null or trance_image.save_png(trance_path) != OK:
+		_fail("梦蛇动画没有在战斗 Sprite 5 出现时写入截图")
+		return
+	await create_timer(0.5).timeout
+
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
 	var poison_result := PalBattleController.ActionResult.new()
 	poison_result.action_type = PalBattleController.ActionType.POISON
 	poison_result.poison_tick = true
@@ -446,7 +513,7 @@ func _run() -> void:
 		_fail("无法写入敌人回合脚本对白截图")
 		return
 	preview._script_dialog_box.hide_dialog()
-	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、风神召唤、梦蛇变身、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, summon_path, trance_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 
 
