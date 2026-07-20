@@ -71,6 +71,22 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-057] [feat] 商店增加队伍装备属性差预览
+
+- **关联需求**: TD-003 菜单、物品、装备、商店、法术与状态系统增强
+- **关联 TODO**: 无
+- **功能描述**: 买入页选中装备商品时，商品框与持有量、金钱区域整体上移并收短，在底部以战斗 HUD 头像展示当前三人队伍；可装备角色的头像右侧显示相对当前同部位装备变化最大的两项属性差，不能装备者弱化显示。预览通过隔离会话执行真实装备脚本，兼容多属性装备且不会修改正式现金、背包、装备、毒或角色数值。
+- **验证情况**: 348 项主合成检查、25 项装备系统检查、83 项 TD-001 操作码行为检查和中文文档检查通过；Godot 4.7 真实 OpenGL 窗口使用铁护腕生成并实际检查 320×200 三人装备对比截图，李逍遥显示 `+3防`，其余角色正确显示替换现有饰品造成的负属性差，商品、价格、确认区和头像栏均无遮挡。
+- **涉及文件**:
+  - `src/game/pal_equipment_manager.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `tests/run_equipment_tests.gd`
+  - `tests/run_local_td001_visual_test.gd`
+  - `docs/CLASSIC_UI.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

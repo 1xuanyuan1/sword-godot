@@ -100,6 +100,21 @@ func _run() -> void:
 	if not menu._shop_ids.is_empty():
 		menu._confirm_shop_selection()
 		await _capture(viewport, "td001_shop_buy_confirm.png")
+	var equipment_shop := _shop_selection_for_item(database, 250)
+	if equipment_shop.is_empty():
+		_fail("本地商店中没有可用于装备差值截图的装备")
+		return
+	var equipment_manager := PalEquipmentManager.new()
+	if not equipment_manager.configure(database, session):
+		_fail("商店装备差值无法重建当前装备：%s" % equipment_manager.error_message)
+		return
+	session.party_roles = PackedInt32Array([0, 1, 2])
+	menu.open_shop(equipment_shop[0], true)
+	menu._shop_selection = equipment_shop[1]
+	await _capture(viewport, "td003_shop_equipment_comparison.png")
+	if menu._shop_equipment_previews.size() != session.party_roles.size():
+		_fail("商店没有为当前队伍生成完整装备差值")
+		return
 	var sellable_id := _first_sellable_item(database)
 	if sellable_id > 0:
 		session.set_item_count(sellable_id, 2)
@@ -184,6 +199,21 @@ func _first_sellable_item(database: PalContentDatabase) -> int:
 		if item != null and item.object_id > 0 and item.is_sellable():
 			return item.object_id
 	return 0
+
+
+func _shop_selection_for_item(database: PalContentDatabase, preferred_item_id: int) -> PackedInt32Array:
+	var fallback := PackedInt32Array()
+	for store in database.stores:
+		for item_index in range(store.item_ids.size()):
+			var item_id := store.item_ids[item_index]
+			var item := database.item_definition(item_id)
+			if item == null or not item.is_equipable():
+				continue
+			if fallback.is_empty():
+				fallback = PackedInt32Array([store.store_id, item_index])
+			if item_id == preferred_item_id:
+				return PackedInt32Array([store.store_id, item_index])
+	return fallback
 
 
 func _palette_color(palette: PackedByteArray, index: int, alpha: float) -> Color:

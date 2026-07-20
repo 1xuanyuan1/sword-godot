@@ -95,6 +95,17 @@ const SHOP_PRICE_DIGITS := 6
 const SHOP_NUMBER_DIGIT_WIDTH := 6
 const SHOP_CONTENT_RIGHT := 276
 const SHOP_ITEM_HITBOX_POSITION := Vector2i(128, 14)
+const SHOP_COMPARISON_BOX_ROWS := 5
+const SHOP_COMPARISON_VISIBLE_ROWS := 6
+const SHOP_COMPARISON_OWNED_BOX_POSITION := Vector2i(20, 76)
+const SHOP_COMPARISON_OWNED_TEXT_POSITION := Vector2i(30, 86)
+const SHOP_COMPARISON_OWNED_NUMBER_POSITION := Vector2i(69, 91)
+const SHOP_COMPARISON_CASH_BOX_POSITION := Vector2i(20, 112)
+const SHOP_COMPARISON_CASH_TEXT_POSITION := Vector2i(30, 122)
+const SHOP_COMPARISON_CASH_NUMBER_POSITION := Vector2i(69, 127)
+const SHOP_PARTY_INFO_POSITION := Vector2i(45, 160)
+const SHOP_PARTY_INFO_SPACING := 78
+const SHOP_STAT_LABELS := ["攻", "灵", "防", "身", "逃"]
 const COLOR_NORMAL := 0x4f
 const COLOR_INACTIVE := 0x18
 const COLOR_CONFIRMED := 0x2c
@@ -143,6 +154,8 @@ var _shop_ids: Array[int] = []
 var _shop_selection: int = 0
 var _shop_confirming: bool = false
 var _shop_confirmation_selection: int = 0
+var _shop_preview_item_id: int = -1
+var _shop_equipment_previews: Array[Dictionary] = []
 var _ui_sprite: PalSprite
 var _palette: PackedByteArray = PackedByteArray()
 var _ui_textures: Dictionary = {}
@@ -228,6 +241,8 @@ func open_shop(store_id: int, buying: bool) -> void:
 	_shop_selection = clampi(_shop_selection, 0, maxi(0, _shop_ids.size() - 1))
 	_shop_confirming = false
 	_shop_confirmation_selection = 0
+	_shop_preview_item_id = -1
+	_shop_equipment_previews.clear()
 	current_page = Page.SHOP_BUY if buying else Page.SHOP_SELL
 	show()
 	queue_redraw()
@@ -427,8 +442,10 @@ func _gui_input(event: InputEvent) -> void:
 				_shop_confirmation_selection = 0 if point.y < 128 else 1
 				_confirm_selection()
 			else:
-				for index in range(_shop_ids.size()):
-					if _shop_item_hitbox(index).has_point(point):
+				var start := _shop_list_start()
+				for slot in range(mini(_shop_visible_rows(), _shop_ids.size() - start)):
+					var index := start + slot
+					if _shop_item_hitbox(slot).has_point(point):
 						_shop_selection = index
 						_confirm_selection()
 						break
@@ -858,15 +875,23 @@ func _draw_confirmation() -> void:
 
 func _draw_shop_page() -> void:
 	var buying := current_page == Page.SHOP_BUY
-	_draw_classic_box(SHOP_BOX_POSITION, SHOP_BOX_ROWS, SHOP_BOX_COLUMNS, 1, 0)
-	_draw_single_line_box(Vector2i(20, 141), 5, 6)
-	_draw_pal_text(database.get_word(21), Vector2i(30, 151), _palette_color(COLOR_NORMAL), true)
-	_draw_number(session.cash, 6, Vector2i(69, 156), UI_FRAME_NUMBER_YELLOW)
+	var show_comparison := _shop_shows_equipment_comparison()
+	_draw_classic_box(SHOP_BOX_POSITION, SHOP_COMPARISON_BOX_ROWS if show_comparison else SHOP_BOX_ROWS, SHOP_BOX_COLUMNS, 1, 0)
+	var cash_box_position := SHOP_COMPARISON_CASH_BOX_POSITION if show_comparison else Vector2i(20, 141)
+	var cash_text_position := SHOP_COMPARISON_CASH_TEXT_POSITION if show_comparison else Vector2i(30, 151)
+	var cash_number_position := SHOP_COMPARISON_CASH_NUMBER_POSITION if show_comparison else Vector2i(69, 156)
+	_draw_single_line_box(cash_box_position, 5, 6)
+	_draw_pal_text(database.get_word(21), cash_text_position, _palette_color(COLOR_NORMAL), true)
+	_draw_number(session.cash, 6, cash_number_position, UI_FRAME_NUMBER_YELLOW)
 	if _shop_ids.is_empty():
 		_draw_pal_text("没有可出售物品" if not buying else "商店没有商品", SHOP_ITEM_NAME_POSITION + Vector2i(0, 3), _palette_color(COLOR_INACTIVE), true)
 		return
 	_shop_selection = clampi(_shop_selection, 0, _shop_ids.size() - 1)
-	for index in range(_shop_ids.size()):
+	var selected_id := _shop_ids[_shop_selection]
+	var selected_item := database.item_definition(selected_id)
+	var start := _shop_list_start()
+	for slot in range(mini(_shop_visible_rows(), _shop_ids.size() - start)):
+		var index := start + slot
 		var item_id := _shop_ids[index]
 		var item := database.item_definition(item_id)
 		if item == null:
@@ -875,16 +900,19 @@ func _draw_shop_page() -> void:
 		var color_index := COLOR_NORMAL if can_trade else COLOR_INACTIVE
 		if index == _shop_selection:
 			color_index = _selected_color_index() if can_trade else COLOR_SELECTED_INACTIVE
-		_draw_pal_text(database.get_word(item_id), SHOP_ITEM_NAME_POSITION + Vector2i(0, index * SHOP_ROW_HEIGHT), _palette_color(color_index), true)
-		_draw_number(item.price if buying else item.price / 2, SHOP_PRICE_DIGITS, SHOP_PRICE_POSITION + Vector2i(0, index * SHOP_ROW_HEIGHT), UI_FRAME_NUMBER_YELLOW)
-	var selected_id := _shop_ids[_shop_selection]
-	var selected_item := database.item_definition(selected_id)
+		_draw_pal_text(database.get_word(item_id), SHOP_ITEM_NAME_POSITION + Vector2i(0, slot * SHOP_ROW_HEIGHT), _palette_color(color_index), true)
+		_draw_number(item.price if buying else item.price / 2, SHOP_PRICE_DIGITS, SHOP_PRICE_POSITION + Vector2i(0, slot * SHOP_ROW_HEIGHT), UI_FRAME_NUMBER_YELLOW)
 	if selected_item != null:
 		_draw_ui_frame(UI_FRAME_ITEM_BOX, Vector2i(40, 8))
 		_draw_item_bitmap(selected_item.bitmap, Vector2i(48, 15))
-		_draw_single_line_box(Vector2i(20, 100), 5, 6)
-		_draw_pal_text(database.get_word(35), Vector2i(30, 110), _palette_color(COLOR_NORMAL), true)
-		_draw_number(session.item_count(selected_id) + session.equipped_item_count(selected_id), 6, Vector2i(69, 115), UI_FRAME_NUMBER_YELLOW)
+		var owned_box_position := SHOP_COMPARISON_OWNED_BOX_POSITION if show_comparison else Vector2i(20, 100)
+		var owned_text_position := SHOP_COMPARISON_OWNED_TEXT_POSITION if show_comparison else Vector2i(30, 110)
+		var owned_number_position := SHOP_COMPARISON_OWNED_NUMBER_POSITION if show_comparison else Vector2i(69, 115)
+		_draw_single_line_box(owned_box_position, 5, 6)
+		_draw_pal_text(database.get_word(35), owned_text_position, _palette_color(COLOR_NORMAL), true)
+		_draw_number(session.item_count(selected_id) + session.equipped_item_count(selected_id), 6, owned_number_position, UI_FRAME_NUMBER_YELLOW)
+		if show_comparison:
+			_draw_shop_equipment_comparison(selected_item)
 	if _shop_confirming:
 		_draw_classic_box(Vector2i(92, 92), 1, 3, 0, 6)
 		for index in range(2):
@@ -902,6 +930,84 @@ func _shop_item_hitbox(index: int) -> Rect2i:
 		SHOP_ITEM_HITBOX_POSITION + Vector2i(0, index * SHOP_ROW_HEIGHT),
 		Vector2i(SHOP_CONTENT_RIGHT - SHOP_ITEM_HITBOX_POSITION.x, SHOP_ROW_HEIGHT)
 	)
+
+
+func _shop_visible_rows() -> int:
+	return SHOP_COMPARISON_VISIBLE_ROWS if _shop_shows_equipment_comparison() else PalStoreDefinition.ITEM_COUNT
+
+
+func _shop_list_start() -> int:
+	if _shop_ids.is_empty():
+		return 0
+	var visible_rows := _shop_visible_rows()
+	return clampi(_shop_selection - visible_rows + 1, 0, maxi(0, _shop_ids.size() - visible_rows))
+
+
+func _shop_shows_equipment_comparison() -> bool:
+	if current_page != Page.SHOP_BUY or session == null or session.party_roles.is_empty() or _shop_ids.is_empty():
+		return false
+	var item := database.item_definition(_shop_ids[clampi(_shop_selection, 0, _shop_ids.size() - 1)])
+	return item != null and item.is_equipable()
+
+
+func _draw_shop_equipment_comparison(item: PalItemDefinition) -> void:
+	_refresh_shop_equipment_previews(item.object_id)
+	var party_count := mini(session.party_roles.size(), 3)
+	var comparison_left := SHOP_PARTY_INFO_POSITION.x + int((3 - party_count) * SHOP_PARTY_INFO_SPACING / 2.0)
+	for party_index in range(party_count):
+		var role_index := session.party_roles[party_index]
+		var preview: Dictionary = _shop_equipment_previews[party_index]
+		var can_equip := bool(preview.get("can_equip", false))
+		var position := Vector2i(comparison_left + party_index * SHOP_PARTY_INFO_SPACING, SHOP_PARTY_INFO_POSITION.y)
+		_draw_ui_frame(UI_FRAME_PLAYER_INFO, position)
+		_draw_ui_frame(
+			UI_FRAME_PLAYER_FACE_FIRST + role_index,
+			position + Vector2i(-2, -4),
+			Color.WHITE if can_equip else Color(0.38, 0.38, 0.38, 0.9)
+		)
+		if not can_equip:
+			_draw_pal_text("不可用", position + Vector2i(28, 9), _palette_color(COLOR_INACTIVE), true)
+			continue
+		if not bool(preview.get("valid", false)):
+			_draw_pal_text("无比较", position + Vector2i(28, 9), _palette_color(COLOR_INACTIVE), true)
+			continue
+		var differences := _shop_stat_difference_indices(preview.get("deltas", PackedInt32Array()), 2)
+		if differences.is_empty():
+			_draw_pal_text("无变化", position + Vector2i(28, 9), _palette_color(COLOR_NORMAL), true)
+			continue
+		for difference_row in range(differences.size()):
+			var stat_index: int = differences[difference_row]
+			var delta: int = preview.deltas[stat_index]
+			var label := "%s%d%s" % ["+" if delta > 0 else "", delta, SHOP_STAT_LABELS[stat_index]]
+			var color_index := COLOR_EQUIPPED if delta > 0 else COLOR_INACTIVE
+			_draw_pal_text(label, position + Vector2i(28, 1 + difference_row * 16), _palette_color(color_index), true)
+
+
+func _refresh_shop_equipment_previews(item_id: int) -> void:
+	if _shop_preview_item_id == item_id and _shop_equipment_previews.size() == session.party_roles.size():
+		return
+	_shop_preview_item_id = item_id
+	_shop_equipment_previews.clear()
+	var equipment_manager := PalEquipmentManager.new()
+	equipment_manager.database = database
+	equipment_manager.session = session
+	for role_index in session.party_roles:
+		_shop_equipment_previews.append(equipment_manager.preview_stat_differences(item_id, role_index))
+
+
+func _shop_stat_difference_indices(deltas: PackedInt32Array, limit: int) -> PackedInt32Array:
+	var result := PackedInt32Array()
+	for _slot in range(limit):
+		var strongest := -1
+		for stat_index in range(mini(deltas.size(), SHOP_STAT_LABELS.size())):
+			if deltas[stat_index] == 0 or stat_index in result:
+				continue
+			if strongest < 0 or absi(deltas[stat_index]) > absi(deltas[strongest]):
+				strongest = stat_index
+		if strongest < 0:
+			break
+		result.append(strongest)
+	return result
 
 
 func _confirm_shop_selection() -> void:
