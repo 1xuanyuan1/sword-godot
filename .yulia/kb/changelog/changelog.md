@@ -36,6 +36,23 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-055] [feat] 推进林家堡夜间剧情到林月如入队
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从比武招亲胜利后的场景 33 连续执行林家堡定亲宴、客房安排、内院夜谈、赵灵儿夜间离开和后院误会。固定一次性场景入口、人物换位、音乐 74/51/34 的切换与两秒淡出、0.6 秒渐隐、后院追逐 EventObject，以及最终李逍遥/林月如 `[0, 2]` 队伍和林月如剧情 Sprite 245；不以单个脚本可解释代替跨场景连续状态验收。
+- **验证情况**: 真实 DOS 资源主线回归从新游戏连续通过到林月如入队；脚本 `12619–13246`、消息编号 `3457–3749`、场景 33/34/35/37、关键 EventObject 574/576/582/597/603、场景稳定入口和队伍状态均有断言，未输出或提交原版对白文本。
+- **涉及文件**:
+  - `tests/run_local_early_mainline_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

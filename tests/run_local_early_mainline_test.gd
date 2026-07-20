@@ -34,7 +34,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、仙灵岛洗澡、水月宫过夜与首次返航、御剑教学、水月宫惨案、林月如城外、苏州客栈与比武招亲后进入林家堡主线完成")
+	print("PASS: 买虾、仙灵岛洗澡、水月宫过夜与首次返航、御剑教学、水月宫惨案、林月如城外、苏州客栈、比武招亲及林家堡夜间月如入队主线完成")
 	quit(0)
 
 
@@ -1310,6 +1310,124 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 		failure = "比武招亲后队伍或战斗音乐状态不正确：队伍 %s，战斗 BGM %d" % [session.party_roles, session.battle_music_number]
 	elif camera_offsets.is_empty() or camera_offsets[-1] != Vector2i.ZERO:
 		failure = "比武招亲切场景时没有复位剧情镜头：%s" % [camera_offsets]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 林家堡内厅从定亲宴连续演到休息安排，随后切入客房并恢复普通探索入口。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	music_requests.clear()
+	fade_requests.clear()
+	vm.run_trigger(database.scenes[33].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林家堡定亲宴遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3457, 3585) or next_entries != [12859]:
+		failure = "林家堡定亲宴消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [37] or session.scene_index != 37:
+		failure = "林家堡定亲宴后没有切到休息客房：场景 %s/%d" % [requested_scenes, session.scene_index]
+	elif music_requests != [[74, true, 0.0]] or session.music_number != 74:
+		failure = "林家堡定亲宴音乐状态不正确：%s/%d" % [music_requests, session.music_number]
+	elif database.event_objects[572].state != 0 or database.event_objects[576].state != 0 or database.event_objects[577].state != 0 or database.event_objects[578].state != 0:
+		failure = "定亲宴结束后内厅人物没有按脚本退场：%d/%d/%d/%d" % [database.event_objects[572].state, database.event_objects[576].state, database.event_objects[577].state, database.event_objects[578].state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[33].script_on_enter = next_entries[0]
+
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[37].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林家堡客房进入剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3586, 3592) or next_entries != [12890]:
+		failure = "林家堡客房进入消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif music_requests != [[51, true, 0.0]] or session.music_number != 51 or session.party_world_position() != Vector2i(1536, 1072):
+		failure = "林家堡客房音乐或落点不正确：音乐 %s/%d，位置 %s" % [music_requests, session.music_number, session.party_world_position()]
+	elif session.party_roles != PackedInt32Array([0]):
+		failure = "林家堡客房阶段队伍不应提前加入赵灵儿或林月如：%s" % [session.party_roles]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[37].script_on_enter = next_entries[0]
+
+	# 经客房与内院两段对话安装夜间事件：林家堡人物换位，李逍遥得知灵儿异常离开。
+	messages.clear()
+	next_entries.clear()
+	var room_attendant := database.event_objects[601]
+	session.scene_index = 35
+	vm.run_trigger(room_attendant.trigger_script, room_attendant.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林家堡客房安排遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3596, 3620) or next_entries != [12941]:
+		failure = "林家堡客房安排消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif database.event_objects[590].state != 2 or database.event_objects[592].state != 2 or database.event_objects[593].state != 2 or database.event_objects[591].trigger_script != 13531:
+		failure = "客房安排没有开启内院人物或后续入口：状态 %d/%d/%d，入口 %d" % [database.event_objects[590].state, database.event_objects[592].state, database.event_objects[593].state, database.event_objects[591].trigger_script]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	room_attendant.trigger_script = next_entries[0]
+
+	messages.clear()
+	next_entries.clear()
+	var courtyard_linger := database.event_objects[590]
+	session.scene_index = 34
+	vm.run_trigger(courtyard_linger.trigger_script, courtyard_linger.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林家堡内院夜谈遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3627, 3673) or next_entries != [13041]:
+		failure = "林家堡内院夜谈消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif database.event_objects[573].trigger_script != 13063 or database.event_objects[574].state != 2 or database.event_objects[575].state != 2 or database.event_objects[575].direction != 3 or database.event_objects[577].state != 2 or database.event_objects[578].state != 2 or database.event_objects[594].state != 2:
+		failure = "内院夜谈没有安装灵儿离开事件或人物状态：入口 %d，状态 %d/%d/%d/%d/%d，方向 %d" % [database.event_objects[573].trigger_script, database.event_objects[574].state, database.event_objects[575].state, database.event_objects[577].state, database.event_objects[578].state, database.event_objects[594].state, database.event_objects[575].direction]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	courtyard_linger.trigger_script = next_entries[0]
+
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	fade_requests.clear()
+	var missing_linger_event := database.event_objects[573]
+	session.scene_index = 33
+	vm.run_trigger(missing_linger_event.trigger_script, missing_linger_event.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "赵灵儿夜间离开剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3689, 3727) or next_entries != [13166]:
+		failure = "赵灵儿夜间离开消息或未来入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif music_requests != [[0, false, 2.0], [34, true, 0.0]] or fade_requests != [[true, 0.6]] or session.music_number != 34:
+		failure = "赵灵儿离开时的音乐或渐隐时序不正确：音乐 %s/%d，渐隐 %s" % [music_requests, session.music_number, fade_requests]
+	elif database.scenes[35].script_on_enter != 581 or database.scenes[36].script_on_enter != 581:
+		failure = "赵灵儿离开后没有关闭两间客房的一次性进入脚本：%d/%d" % [database.scenes[35].script_on_enter, database.scenes[36].script_on_enter]
+	elif database.event_objects[602].state != 2 or database.event_objects[596].state != 2 or database.event_objects[597].state != 2 or database.event_objects[598].state != 2 or database.event_objects[599].state != 2 or database.event_objects[581].state != 2 or database.event_objects[575].auto_script != 13434:
+		failure = "赵灵儿离开后没有开启后院追逐事件：%d/%d/%d/%d/%d/%d，自动入口 %d" % [database.event_objects[602].state, database.event_objects[596].state, database.event_objects[597].state, database.event_objects[598].state, database.event_objects[599].state, database.event_objects[581].state, database.event_objects[575].auto_script]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	missing_linger_event.trigger_script = next_entries[0]
+
+	# 后院误会让林月如正式加入追寻队伍，并将李逍遥切到对应剧情造型。
+	messages.clear()
+	next_entries.clear()
+	var rear_courtyard_event := database.event_objects[596]
+	session.scene_index = 34
+	vm.run_trigger(rear_courtyard_event.trigger_script, rear_courtyard_event.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林家堡后院误会遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3732, 3749) or next_entries != [13173]:
+		failure = "林家堡后院误会消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([0, 2]) or database.player_roles.scene_sprite_numbers[2] != 245:
+		failure = "林家堡后院误会后林月如没有入队或剧情造型错误：队伍 %s，造型 %d" % [session.party_roles, database.player_roles.scene_sprite_numbers[2]]
+	elif rear_courtyard_event.state != 0 or database.event_objects[573].state != 2 or database.event_objects[575].state != 2 or database.event_objects[577].state != 2 or database.event_objects[578].state != 2 or database.event_objects[581].state != 2:
+		failure = "林月如入队后当前接触点或后续追逐人物状态不正确：%d/%d/%d/%d/%d/%d" % [rear_courtyard_event.state, database.event_objects[573].state, database.event_objects[575].state, database.event_objects[577].state, database.event_objects[578].state, database.event_objects[581].state]
 	vm.free()
 	return failure
 
