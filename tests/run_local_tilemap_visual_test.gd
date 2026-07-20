@@ -34,6 +34,13 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "ghost_altar_plot", "scene": 66, "position": Vector2i(1344, 1120), "night": false, "party": [0, 1, 2]},
 	{"name": "ghost_altar_rescued", "scene": 76, "position": Vector2i(1216, 976), "night": false, "party": [0, 2]},
 	{"name": "yangzhou_approach", "scene": 82, "position": Vector2i(224, 848), "night": false, "party": [0, 2]},
+	{"name": "yangzhou_gate", "scene": 78, "position": Vector2i(432, 1192), "night": false, "party": [0, 2]},
+	{"name": "yangzhou_inn_night", "scene": 92, "position": Vector2i(768, 528), "night": true, "party": [0], "event_states": {1814: 0, 1815: 2, 1835: 1}},
+	{"name": "yangzhou_rooftop_night", "scene": 84, "position": Vector2i(752, 248), "night": true, "party": [2, 0]},
+	{"name": "yangzhou_widow_house", "scene": 88, "position": Vector2i(1056, 1104), "night": false, "party": [0, 2], "event_states": {1725: 0, 1726: 2}},
+	{"name": "yangzhou_well_tunnel", "scene": 91, "position": Vector2i(848, 1528), "night": false, "party": [2, 0]},
+	{"name": "yangzhou_court", "scene": 80, "position": Vector2i(1504, 1056), "night": false, "party": [0, 2]},
+	{"name": "toad_valley_approach", "scene": 104, "position": Vector2i(224, 1072), "night": false, "party": [0, 2]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
