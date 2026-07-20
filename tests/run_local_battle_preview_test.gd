@@ -227,6 +227,11 @@ func _run() -> void:
 	if preview._input_mode != PalBattlePreview.InputMode.MAGIC_LIST or preview._battle_ui.selected_magic_object() <= 0:
 		_fail("选择仙术图标后没有打开角色的真实仙术列表")
 		return
+	var selected_magic_id := preview._battle_ui.selected_magic_object()
+	var selected_magic_description := preview._battle_ui._selected_magic_description()
+	if selected_magic_description.is_empty() or selected_magic_description != preview._database.get_item_description(selected_magic_id):
+		_fail("战斗仙术列表没有读取选中仙术的 DESC.DAT 说明")
+		return
 	if magic_image == null or magic_image.save_png(magic_path) != OK:
 		_fail("无法写入仙术列表截图")
 		return
@@ -666,7 +671,7 @@ func _run() -> void:
 	if preview._script_dialog_waiting or preview._script_dialog_box.visible:
 		_fail("战斗对白完整显示后的第二次空格没有继续脚本")
 		return
-	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、飞龙探云手、胖苗持久地形、风神召唤、梦蛇变身、普攻/双剑二连击、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, steal_path, terrain_path, summon_path, trance_path, attack_path, dual_path, enemy_magic_path, poison_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、仙术说明、玩家/敌人仙术、飞龙探云手、胖苗持久地形、风神召唤、梦蛇变身、普攻/双剑二连击、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, steal_path, terrain_path, summon_path, trance_path, attack_path, dual_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 
 

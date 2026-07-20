@@ -204,6 +204,10 @@ func selected_magic_enabled() -> bool:
 	return bool(_magic_entries[selected_magic_index].get("enabled", false)) if selected_magic_index >= 0 and selected_magic_index < _magic_entries.size() else false
 
 
+func _selected_magic_description() -> String:
+	return database.get_item_description(selected_magic_object()) if database != null else ""
+
+
 ## 打开经典“其他”菜单，保留上一次选择位置。
 func open_misc_menu() -> void:
 	selected_misc_index = clampi(selected_misc_index, 0, MISC_ITEM_POSITIONS.size() - 1)
@@ -423,16 +427,26 @@ func _draw_enemy_vitals() -> void:
 
 func _draw_magic_menu() -> void:
 	_draw_single_line_box(Vector2i.ZERO, 5, 0)
-	_draw_pal_text(database.get_word(21), Vector2i(10, 10), _palette_color(COLOR_MENU_NORMAL))
-	_draw_number(session.cash, 6, Vector2i(49, 14), UI_FRAME_NUMBER_YELLOW)
-	_draw_single_line_box(Vector2i(215, 0), 5, 0)
-	var party_index := controller.pending_party_index()
 	var role_index := controller.pending_role_index()
 	var current_mp := session.role_mp[role_index] if role_index >= 0 and role_index < session.role_mp.size() else 0
 	var needed_mp := int(_magic_entries[selected_magic_index].get("mp_cost", 0)) if selected_magic_index >= 0 and selected_magic_index < _magic_entries.size() else 0
-	_draw_ui_frame(UI_FRAME_SLASH, Vector2i(260, 14))
-	_draw_number(needed_mp, 4, Vector2i(230, 14), UI_FRAME_NUMBER_YELLOW)
-	_draw_number(current_mp, 4, Vector2i(265, 14), UI_FRAME_NUMBER_CYAN)
+	var description := _selected_magic_description()
+	if description.is_empty():
+		_draw_pal_text(database.get_word(21), Vector2i(10, 10), _palette_color(COLOR_MENU_NORMAL))
+		_draw_number(session.cash, 6, Vector2i(49, 14), UI_FRAME_NUMBER_YELLOW)
+		_draw_single_line_box(Vector2i(215, 0), 5, 0)
+		_draw_ui_frame(UI_FRAME_SLASH, Vector2i(260, 14))
+		_draw_number(needed_mp, 4, Vector2i(230, 14), UI_FRAME_NUMBER_YELLOW)
+		_draw_number(current_mp, 4, Vector2i(265, 14), UI_FRAME_NUMBER_CYAN)
+	else:
+		# 与场外仙术页保持同一信息布局：左侧显示所需／当前 MP，右侧显示 DESC.DAT 说明。
+		_draw_ui_frame(UI_FRAME_SLASH, Vector2i(45, 14))
+		_draw_number(needed_mp, 4, Vector2i(15, 14), UI_FRAME_NUMBER_YELLOW)
+		_draw_number(current_mp, 4, Vector2i(50, 14), UI_FRAME_NUMBER_CYAN)
+		var description_y := 3
+		for line in description.split("*", false):
+			_draw_pal_text(line, Vector2i(102, description_y), _palette_color(0x3c), true)
+			description_y += 16
 	_draw_classic_box(Vector2i(10, 42), MAGIC_ROWS - 1, 16, 1)
 	for index in range(mini(MAGIC_ROWS * MAGIC_COLUMNS, _magic_entries.size())):
 		var entry := _magic_entries[index]
