@@ -17,6 +17,12 @@ signal magic_use_requested(magic_object_id: int, caster_role_index: int, target_
 signal save_slot_requested(slot: int)
 ## 玩家在 100 槽分页菜单确认有效存档时发出；接收方负责恢复场景和运行时状态。
 signal load_slot_requested(slot: int)
+## 直接打开的读档页被取消（用于 004E 无活动槽回退）。
+signal load_menu_cancelled
+## 000A 经典“是/否”选择结果。
+signal confirmation_completed(accepted: bool)
+## 0026/0027 商店关闭后通知 ScriptVM 恢复。
+signal shop_closed
 ## 玩家在系统页调整音乐或音效音量时发出；播放层应立即应用两个百分比。
 signal audio_settings_changed(music_volume: int, sound_volume: int)
 
@@ -32,6 +38,9 @@ enum Page {
 	MAGIC_TARGET,
 	SAVE_SLOTS,
 	LOAD_SLOTS,
+	CONFIRM,
+	SHOP_BUY,
+	SHOP_SELL,
 }
 
 const MAIN_MENU_POSITION := Vector2i(3, 37)
@@ -119,6 +128,11 @@ var _save_slots: Array[Dictionary] = []
 var _save_slot_selection: int = 0
 var _close_load_slots_on_cancel: bool = false
 var _last_feedback: String = ""
+var _confirmation_selection: int = 0
+var _shop_ids: Array[int] = []
+var _shop_selection: int = 0
+var _shop_confirming: bool = false
+var _shop_confirmation_selection: int = 0
 var _ui_sprite: PalSprite
 var _palette: PackedByteArray = PackedByteArray()
 var _ui_textures: Dictionary = {}
@@ -172,6 +186,43 @@ func open_load_slots(close_on_cancel: bool = false) -> void:
 	queue_redraw()
 
 
+## 打开脚本 000A 使用的经典“是/否”窗口。
+func open_confirmation() -> void:
+	if database == null or session == null:
+		return
+	_confirmation_selection = 0
+	current_page = Page.CONFIRM
+	show()
+	queue_redraw()
+
+
+## 打开经典买入或卖出页；卖出页只列出有 sellable 标志且数量大于零的物品。
+func open_shop(store_id: int, buying: bool) -> void:
+	if database == null or session == null:
+		shop_closed.emit()
+		return
+	_shop_ids.clear()
+	if buying:
+		var store := database.store_definition(store_id)
+		if store != null:
+			for item_id in store.item_ids:
+				if item_id > 0 and database.item_definition(item_id) != null:
+					_shop_ids.append(item_id)
+	else:
+		for raw_item_id in session.inventory:
+			var item_id := int(raw_item_id)
+			var item := database.item_definition(item_id)
+			if session.item_count(item_id) > 0 and item != null and item.is_sellable():
+				_shop_ids.append(item_id)
+		_shop_ids.sort()
+	_shop_selection = clampi(_shop_selection, 0, maxi(0, _shop_ids.size() - 1))
+	_shop_confirming = false
+	_shop_confirmation_selection = 0
+	current_page = Page.SHOP_BUY if buying else Page.SHOP_SELL
+	show()
+	queue_redraw()
+
+
 ## 直接打开物品选择页并重建可用物品列表。
 func open_inventory() -> void:
 	if database == null or session == null:
@@ -220,6 +271,16 @@ func close_menu() -> void:
 ## 返回上一级页面；主菜单上调用时关闭菜单。
 func go_back() -> void:
 	match current_page:
+		Page.CONFIRM:
+			close_menu()
+			confirmation_completed.emit(false)
+		Page.SHOP_BUY, Page.SHOP_SELL:
+			if _shop_confirming:
+				_shop_confirming = false
+				queue_redraw()
+			else:
+				close_menu()
+				shop_closed.emit()
 		Page.INVENTORY:
 			current_page = _inventory_return_page
 			queue_redraw()
@@ -248,6 +309,7 @@ func go_back() -> void:
 		Page.LOAD_SLOTS:
 			if _close_load_slots_on_cancel:
 				close_menu()
+				load_menu_cancelled.emit()
 			else:
 				current_page = Page.SYSTEM
 				queue_redraw()
@@ -347,6 +409,19 @@ func _gui_input(event: InputEvent) -> void:
 					_save_slot_selection = _save_slot_page_start() + row
 					_confirm_selection()
 					break
+		Page.CONFIRM:
+			_confirmation_selection = 0 if point.y < 110 else 1
+			_confirm_selection()
+		Page.SHOP_BUY, Page.SHOP_SELL:
+			if _shop_confirming:
+				_shop_confirmation_selection = 0 if point.y < 128 else 1
+				_confirm_selection()
+			else:
+				for index in range(_shop_ids.size()):
+					if Rect2i(Vector2i(132, 14 + index * 18), Vector2i(176, 18)).has_point(point):
+						_shop_selection = index
+						_confirm_selection()
+						break
 	accept_event()
 	queue_redraw()
 
@@ -385,6 +460,10 @@ func _draw() -> void:
 			_draw_magic_target_page()
 		Page.SAVE_SLOTS, Page.LOAD_SLOTS:
 			_draw_save_slot_page()
+		Page.CONFIRM:
+			_draw_confirmation()
+		Page.SHOP_BUY, Page.SHOP_SELL:
+			_draw_shop_page()
 
 
 func _draw_main_menu() -> void:
@@ -644,6 +723,15 @@ func _draw_system_menu() -> void:
 
 func _move_selection(direction: Vector2i) -> void:
 	match current_page:
+		Page.CONFIRM:
+			var delta := direction.y if direction.y != 0 else direction.x
+			_confirmation_selection = posmod(_confirmation_selection + delta, 2)
+		Page.SHOP_BUY, Page.SHOP_SELL:
+			var delta := direction.y if direction.y != 0 else direction.x
+			if _shop_confirming:
+				_shop_confirmation_selection = posmod(_shop_confirmation_selection + delta, 2)
+			elif not _shop_ids.is_empty():
+				_shop_selection = posmod(_shop_selection + delta, _shop_ids.size())
 		Page.MAIN:
 			_main_selection = posmod(_main_selection + (direction.y if direction.y != 0 else direction.x), 4)
 		Page.INVENTORY_ACTION:
@@ -690,6 +778,12 @@ func _move_selection(direction: Vector2i) -> void:
 
 func _confirm_selection() -> void:
 	match current_page:
+		Page.CONFIRM:
+			var accepted := _confirmation_selection == 1
+			close_menu()
+			confirmation_completed.emit(accepted)
+		Page.SHOP_BUY, Page.SHOP_SELL:
+			_confirm_shop_selection()
 		Page.MAIN:
 			if _main_selection == 0:
 				_status_party_selection = clampi(_status_party_selection, 0, maxi(0, session.party_roles.size() - 1))
@@ -743,6 +837,83 @@ func _confirm_selection() -> void:
 			else:
 				_last_feedback = str(metadata.get("error", "这个槽位没有可读取的存档。"))
 	queue_redraw()
+
+
+func _draw_confirmation() -> void:
+	_draw_classic_box(Vector2i(118, 76), 1, 3, 0, 6)
+	for index in range(2):
+		var color_index := _selected_color_index() if index == _confirmation_selection else COLOR_NORMAL
+		_draw_pal_text(database.get_word(19 + index), Vector2i(136, 89 + index * 18), _palette_color(color_index), true)
+
+
+func _draw_shop_page() -> void:
+	var buying := current_page == Page.SHOP_BUY
+	_draw_classic_box(Vector2i(122, 8), 7, 9, 1, 0)
+	_draw_single_line_box(Vector2i(20, 141), 5, 6)
+	_draw_pal_text(database.get_word(21), Vector2i(30, 151), _palette_color(COLOR_NORMAL), true)
+	_draw_number(session.cash, 6, Vector2i(69, 156), UI_FRAME_NUMBER_YELLOW)
+	if _shop_ids.is_empty():
+		_draw_pal_text("没有可出售物品" if not buying else "商店没有商品", Vector2i(144, 24), _palette_color(COLOR_INACTIVE), true)
+		return
+	_shop_selection = clampi(_shop_selection, 0, _shop_ids.size() - 1)
+	for index in range(_shop_ids.size()):
+		var item_id := _shop_ids[index]
+		var item := database.item_definition(item_id)
+		if item == null:
+			continue
+		var can_trade := session.cash >= item.price and session.item_count(item_id) < 99 if buying else session.item_count(item_id) > 0
+		var color_index := COLOR_NORMAL if can_trade else COLOR_INACTIVE
+		if index == _shop_selection:
+			color_index = _selected_color_index() if can_trade else COLOR_SELECTED_INACTIVE
+		_draw_pal_text(database.get_word(item_id), Vector2i(150, 21 + index * 18), _palette_color(color_index), true)
+		_draw_number(item.price if buying else item.price / 2, 6, Vector2i(286, 26 + index * 18), UI_FRAME_NUMBER_YELLOW)
+	var selected_id := _shop_ids[_shop_selection]
+	var selected_item := database.item_definition(selected_id)
+	if selected_item != null:
+		_draw_ui_frame(UI_FRAME_ITEM_BOX, Vector2i(40, 8))
+		_draw_item_bitmap(selected_item.bitmap, Vector2i(48, 15))
+		_draw_single_line_box(Vector2i(20, 100), 5, 6)
+		_draw_pal_text(database.get_word(35), Vector2i(30, 110), _palette_color(COLOR_NORMAL), true)
+		_draw_number(session.item_count(selected_id) + session.equipped_item_count(selected_id), 6, Vector2i(69, 115), UI_FRAME_NUMBER_YELLOW)
+	if _shop_confirming:
+		_draw_classic_box(Vector2i(92, 92), 1, 3, 0, 6)
+		for index in range(2):
+			var color_index := _selected_color_index() if index == _shop_confirmation_selection else COLOR_NORMAL
+			_draw_pal_text(database.get_word(19 + index), Vector2i(110, 105 + index * 18), _palette_color(color_index), true)
+
+
+func _confirm_shop_selection() -> void:
+	if _shop_ids.is_empty():
+		return
+	if not _shop_confirming:
+		_shop_confirming = true
+		_shop_confirmation_selection = 0
+		return
+	var accepted := _shop_confirmation_selection == 1
+	_shop_confirming = false
+	if not accepted:
+		return
+	var item_id := _shop_ids[_shop_selection]
+	var item := database.item_definition(item_id)
+	if item == null:
+		return
+	if current_page == Page.SHOP_BUY:
+		if session.cash < item.price:
+			_last_feedback = "金钱不足。"
+			return
+		if session.item_count(item_id) >= 99:
+			_last_feedback = "这个物品已经达到 99 个。"
+			return
+		session.cash -= item.price
+		session.set_item_count(item_id, session.item_count(item_id) + 1)
+	else:
+		if session.item_count(item_id) <= 0 or not item.is_sellable():
+			return
+		session.change_item_count(item_id, -1)
+		session.cash += item.price / 2
+		if session.item_count(item_id) <= 0:
+			_shop_ids.remove_at(_shop_selection)
+			_shop_selection = clampi(_shop_selection, 0, maxi(0, _shop_ids.size() - 1))
 
 
 func _draw_save_slot_page() -> void:
