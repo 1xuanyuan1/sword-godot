@@ -30,6 +30,8 @@ var scenes: Array[PalSceneDefinition] = []
 var event_objects: Array[PalEventObject] = []
 ## `ScriptVM` 使用的完整脚本表。
 var scripts: Array[PalScriptEntry] = []
+## `DATA.MKF #0` 中的九格商店物品表。
+var stores: Array[PalStoreDefinition] = []
 ## DOS OBJECT 表中的物品定义。
 var items: Array[PalItemDefinition] = []
 ## DOS OBJECT 表按敌人结构解释后的定义；索引与对象编号一致。
@@ -82,6 +84,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	scenes.clear()
 	event_objects.clear()
 	scripts.clear()
+	stores.clear()
 	items.clear()
 	enemy_objects.clear()
 	magic_objects.clear()
@@ -113,6 +116,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
 	var script_bytes := _read_file(core.path_join("scripts.bin"))
 	var object_bytes := _read_file(core.path_join("objects_dos.bin"))
+	var store_bytes := _read_file(root_path.path_join("data/00.bin"))
 	var enemy_bytes := _read_file(root_path.path_join("data/01.bin"))
 	var enemy_team_bytes := _read_file(root_path.path_join("data/02.bin"))
 	var magic_bytes := _read_file(root_path.path_join("data/04.bin"))
@@ -122,7 +126,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	var level_experience_bytes := _read_file(root_path.path_join("data/14.bin"))
 	if not error_message.is_empty():
 		return false
-	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0 or enemy_bytes.size() % PalEnemyDefinition.BYTE_SIZE != 0 or enemy_team_bytes.size() % PalEnemyTeam.BYTE_SIZE != 0 or magic_bytes.size() % PalMagicDefinition.BYTE_SIZE != 0 or battlefield_bytes.size() % PalBattlefield.BYTE_SIZE != 0:
+	if event_bytes.size() % PalEventObject.BYTE_SIZE != 0 or scene_bytes.size() % PalSceneDefinition.BYTE_SIZE != 0 or script_bytes.size() % PalScriptEntry.BYTE_SIZE != 0 or object_bytes.size() % PalItemDefinition.BYTE_SIZE != 0 or store_bytes.size() % PalStoreDefinition.BYTE_SIZE != 0 or enemy_bytes.size() % PalEnemyDefinition.BYTE_SIZE != 0 or enemy_team_bytes.size() % PalEnemyTeam.BYTE_SIZE != 0 or magic_bytes.size() % PalMagicDefinition.BYTE_SIZE != 0 or battlefield_bytes.size() % PalBattlefield.BYTE_SIZE != 0:
 		error_message = "生成数据库的结构长度不匹配"
 		return false
 	for offset in range(0, event_bytes.size(), PalEventObject.BYTE_SIZE):
@@ -133,6 +137,8 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		scenes.append(PalSceneDefinition.from_bytes(scene_bytes, offset))
 	for offset in range(0, script_bytes.size(), PalScriptEntry.BYTE_SIZE):
 		scripts.append(PalScriptEntry.from_bytes(script_bytes, offset))
+	for offset in range(0, store_bytes.size(), PalStoreDefinition.BYTE_SIZE):
+		stores.append(PalStoreDefinition.from_bytes(store_bytes, offset, stores.size()))
 	for offset in range(0, object_bytes.size(), PalItemDefinition.BYTE_SIZE):
 		var object_id := items.size()
 		items.append(PalItemDefinition.from_bytes(object_bytes, offset, object_id))
@@ -337,6 +343,11 @@ func item_definition(object_id: int) -> PalItemDefinition:
 	return items[object_id] if object_id >= 0 and object_id < items.size() else null
 
 
+## 返回指定商店定义，编号越界时返回 `null`。
+func store_definition(store_id: int) -> PalStoreDefinition:
+	return stores[store_id] if store_id >= 0 and store_id < stores.size() else null
+
+
 ## 返回指定敌队定义，编号越界时返回 `null`。
 func enemy_team_definition(team_id: int) -> PalEnemyTeam:
 	return enemy_teams[team_id] if team_id >= 0 and team_id < enemy_teams.size() else null
@@ -350,6 +361,32 @@ func enemy_object_definition(object_id: int) -> PalEnemyObjectDefinition:
 ## 返回 OBJECT 表中的仙术视图，编号越界时返回 `null`。
 func magic_object_definition(object_id: int) -> PalMagicObjectDefinition:
 	return magic_objects[object_id] if object_id >= 0 and object_id < magic_objects.size() else null
+
+
+## 按 OBJECT 联合体的 `rgwData[2 + field]` 同步修改所有解析视图，对应脚本 0090。
+## DOS 对象没有显式类型标签，因此不能只更新当前调用方猜测的某一种视图。
+func set_object_script(object_id: int, field: int, script_entry: int) -> bool:
+	if object_id < 0 or object_id >= items.size() or field < 0 or field > 2:
+		return false
+	var item := items[object_id]
+	var magic := magic_objects[object_id]
+	var enemy := enemy_objects[object_id]
+	var poison = poisons[object_id]
+	match field:
+		0:
+			item.script_on_use = script_entry
+			magic.script_on_success = script_entry
+			enemy.script_on_turn_start = script_entry
+			poison.player_script = script_entry
+		1:
+			item.script_on_equip = script_entry
+			magic.script_on_use = script_entry
+			enemy.script_on_battle_end = script_entry
+		2:
+			item.script_on_throw = script_entry
+			enemy.script_on_ready = script_entry
+			poison.enemy_script = script_entry
+	return true
 
 
 ## 返回 OBJECT 表中的毒定义视图，编号越界时返回 `null`。

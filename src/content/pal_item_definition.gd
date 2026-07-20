@@ -74,3 +74,8 @@ func can_equip_by_role(role_index: int) -> bool:
 ## 使用目标是否为全体队员。
 func applies_to_all() -> bool:
 	return (flags & FLAG_APPLY_TO_ALL) != 0
+
+
+## 返回物品是否允许出现在经典出售菜单。
+func is_sellable() -> bool:
+	return (flags & FLAG_SELLABLE) != 0

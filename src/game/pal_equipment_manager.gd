@@ -15,6 +15,10 @@ var error_message: String = ""
 var last_unequipped_item: int = 0
 ## 本地数据中遇到、但当前装备层尚未实现的操作码集合。
 var unsupported_operations: PackedInt32Array = PackedInt32Array()
+## 装备脚本产生的 M.MSG 消息，界面可在装备完成后显示。
+var script_messages: PackedInt32Array = PackedInt32Array()
+## 最近一次装备脚本的 PAL 脚本成功标志。
+var script_success: bool = true
 
 var database: PalContentDatabase
 var session: GameSession
@@ -30,6 +34,8 @@ func configure(content_database: PalContentDatabase, game_session: GameSession) 
 	error_message = ""
 	last_unequipped_item = 0
 	unsupported_operations = PackedInt32Array()
+	script_messages = PackedInt32Array()
+	script_success = true
 	if database == null or session == null or database.player_roles == null:
 		error_message = "装备系统缺少内容数据库、会话或 PLAYERROLES"
 		return false
@@ -144,30 +150,13 @@ func remove_equipment_from_script(role_index: int, one_based_slot: int) -> bool:
 ## 从背包和当前队伍的装备槽中移除最多 `amount` 个指定对象，并返回实际数量。
 ## 对齐脚本 `0020`：先扣背包，不足部分直接清空装备槽，不把被移除装备放回背包。
 func remove_item_including_equipment(item_id: int, amount: int) -> int:
-	if session == null or item_id <= 0 or amount <= 0:
-		return 0
-	var remaining := amount
-	var inventory_removed := mini(remaining, session.item_count(item_id))
-	if inventory_removed > 0:
-		session.change_item_count(item_id, -inventory_removed)
-		remaining -= inventory_removed
-	for role_index in session.party_roles:
-		if remaining <= 0:
-			break
-		for slot_index in range(GameSession.EQUIPMENT_SLOT_COUNT):
-			if session.equipped_item(role_index, slot_index) != item_id:
-				continue
-			session.clear_equipment_effects(role_index, slot_index)
-			session.replace_equipped_item(role_index, slot_index, 0)
-			remaining -= 1
-			if remaining <= 0:
-				break
-	session.equipment_effects_ready = true
-	return amount - remaining
+	return session.remove_item_including_equipment(item_id, amount) if session != null else 0
 
 
 func _run_equip_script(item: PalItemDefinition, role_index: int, exchange_inventory: bool, expected_slot: int = -1) -> bool:
 	_current_slot = -1
+	script_messages = PackedInt32Array()
+	script_success = true
 	var entry_index := item.script_on_equip
 	for _step in range(MAX_SCRIPT_STEPS):
 		if entry_index <= 0 or entry_index >= database.scripts.size():
@@ -191,6 +180,22 @@ func _run_equip_script(item: PalItemDefinition, role_index: int, exchange_invent
 			0x002D:
 				if _current_slot >= 0:
 					session.set_equipment_status(_current_slot, entry.operands[0], role_index, entry.operands[1])
+			0x001e:
+				var delta := entry.operands[0] - 0x10000 if entry.operands[0] >= 0x8000 else entry.operands[0]
+				if delta < 0 and session.cash < -delta and entry.operands[1] > 0:
+					entry_index = entry.operands[1]
+					continue
+				session.cash += delta
+			0x0029:
+				var poison := database.poison_definition(entry.operands[1])
+				if poison != null:
+					session.add_role_poison(role_index, entry.operands[1], poison.player_script)
+			0x003e:
+				pass
+			0x0041:
+				script_success = false
+			0xffff:
+				script_messages.append(entry.operands[0])
 			_:
 				# 少量后期饰品会施加 99 级毒等特殊效果；先保留诊断，不能把未知脚本伪造成普通数值。
 				if entry.operation not in unsupported_operations:
@@ -251,6 +256,11 @@ func _role_name(role_index: int) -> String:
 	if database == null or database.player_roles == null:
 		return "角色%d" % role_index
 	return database.get_word(database.player_roles.name_word_for(role_index))
+
+
+## 装备脚本解释器的声明支持集，供上下文审计从物品装备入口校验。
+static func is_equipment_opcode_supported(operation: int) -> bool:
+	return operation in [0x0000, 0x0017, 0x0018, 0x001a, 0x001e, 0x0023, 0x0029, 0x002d, 0x003e, 0x0041, 0xffff]
 
 
 func _warn_about_unsupported_operations() -> void:

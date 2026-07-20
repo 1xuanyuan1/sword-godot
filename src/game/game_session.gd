@@ -62,6 +62,16 @@ var sound_volume: int = AUDIO_VOLUME_MAX
 var world_layer: int = 0
 ## 当前队伍中的 PLAYERROLES 索引。
 var party_roles: PackedInt32Array = PackedInt32Array([0])
+## `0098` 设置的最多两名跟随者 MGO Sprite 编号；原版操作数不是 PLAYERROLES 索引。
+var follower_sprite_numbers: PackedInt32Array = PackedInt32Array()
+## 收妖类仙术积累的炼物值。
+var collect_value: int = 0
+## `0062/0063` 修改追逐范围的剩余场景更新周期。
+var chase_speed_change_cycles: int = 0
+## 临时追逐范围倍率：0 暂停、1 普通、3 加速。
+var chase_range_multiplier: int = 1
+## `008A` 只为紧随其后的战斗启用自动指令；战斗开始后立即消费。
+var auto_battle_pending: bool = false
 ## 脚本临时指定的绝对人物帧，-1 表示使用普通步态。
 var party_script_frames: PackedInt32Array = PackedInt32Array([-1, -1, -1])
 ## 物品对象编号到数量的映射。
@@ -306,6 +316,118 @@ func add_magic(role_index: int, magic_id: int) -> bool:
 		return false
 	magics.append(magic_id)
 	learned_magics_by_role[role_index] = magics
+	return true
+
+
+## 移除指定角色已经学会的仙术对象；未学会或索引无效时返回 `false`。
+func remove_magic(role_index: int, magic_id: int) -> bool:
+	if role_index < 0 or role_index >= learned_magics_by_role.size() or magic_id <= 0:
+		return false
+	var magics := learned_magics_by_role[role_index]
+	var magic_index := magics.find(magic_id)
+	if magic_index < 0:
+		return false
+	magics.remove_at(magic_index)
+	learned_magics_by_role[role_index] = magics
+	return true
+
+
+## 按 PLAYERROLES 字段组编号增减一名角色的基础属性，对应 `0019`。
+## 官方在 WORD 上叠加有符号增量，因此结果保留 16 位回绕语义。
+func change_role_attribute(group_index: int, role_index: int, delta: int) -> bool:
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return false
+	var target: PackedInt32Array
+	match group_index:
+		6:
+			target = role_levels
+		7:
+			target = role_max_hp
+		8:
+			target = role_max_mp
+		9:
+			target = role_hp
+		10:
+			target = role_mp
+		17:
+			target = role_attack_strength
+		18:
+			target = role_magic_strength
+		19:
+			target = role_defense
+		20:
+			target = role_dexterity
+		21:
+			target = role_flee_rate
+		_:
+			return false
+	if role_index >= target.size():
+		return false
+	target[role_index] = (target[role_index] + delta) & 0xffff
+	return true
+
+
+## 按 PLAYERROLES 字段组直接设置基础属性，对应非装备上下文中的 001A。
+func set_role_attribute(group_index: int, role_index: int, value: int) -> bool:
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return false
+	var target: PackedInt32Array
+	match group_index:
+		6:
+			target = role_levels
+		7:
+			target = role_max_hp
+		8:
+			target = role_max_mp
+		9:
+			target = role_hp
+		10:
+			target = role_mp
+		17:
+			target = role_attack_strength
+		18:
+			target = role_magic_strength
+		19:
+			target = role_defense
+		20:
+			target = role_dexterity
+		21:
+			target = role_flee_rate
+		_:
+			return false
+	if role_index >= target.size():
+		return false
+	target[role_index] = value & 0xffff
+	return true
+
+
+## 按官方随机成长直接提升剧情等级；默认清空该角色的主经验。
+func level_up_role(role_index: int, level_count: int, random_int: Callable = Callable(), reset_experience: bool = true) -> bool:
+	if role_index < 0 or role_index >= role_levels.size() or level_count <= 0:
+		return false
+	if role_index >= role_max_hp.size() or role_index >= role_max_mp.size() or role_index >= role_attack_strength.size() or role_index >= role_magic_strength.size() or role_index >= role_defense.size() or role_index >= role_dexterity.size() or role_index >= role_flee_rate.size():
+		return false
+	role_levels[role_index] = mini(PalLevelProgression.MAX_LEVEL, role_levels[role_index] + level_count)
+	for _level in range(level_count):
+		role_max_hp[role_index] = mini(999, role_max_hp[role_index] + 10 + _level_random_int(random_int, 0, 7))
+		role_max_mp[role_index] = mini(999, role_max_mp[role_index] + 8 + _level_random_int(random_int, 0, 5))
+		role_attack_strength[role_index] = mini(999, role_attack_strength[role_index] + 4 + _level_random_int(random_int, 0, 1))
+		role_magic_strength[role_index] = mini(999, role_magic_strength[role_index] + 4 + _level_random_int(random_int, 0, 1))
+		role_defense[role_index] = mini(999, role_defense[role_index] + 2 + _level_random_int(random_int, 0, 1))
+		role_dexterity[role_index] = mini(999, role_dexterity[role_index] + 2 + _level_random_int(random_int, 0, 1))
+		role_flee_rate[role_index] = mini(999, role_flee_rate[role_index] + 2)
+	if reset_experience and role_index < role_experience.size():
+		role_experience[role_index] = 0
+	return true
+
+
+## 返回当前队伍是否全部满血；空队伍或角色状态越界时返回 `false`。
+func is_party_full_hp() -> bool:
+	if party_roles.is_empty():
+		return false
+	for role_index in party_roles:
+		if role_index < 0 or role_index >= role_hp.size() or role_index >= role_max_hp.size() or role_hp[role_index] < role_max_hp[role_index]:
+			return false
 	return true
 
 
@@ -646,6 +768,30 @@ func change_item_count(item_id: int, amount: int) -> int:
 	return item_count(item_id) - previous
 
 
+## 从背包和当前队伍装备中移除指定对象；用于 0020 在探索与战斗效果间共享语义。
+func remove_item_including_equipment(item_id: int, amount: int) -> int:
+	if item_id <= 0 or amount <= 0:
+		return 0
+	var remaining := amount
+	var inventory_removed := mini(remaining, item_count(item_id))
+	if inventory_removed > 0:
+		change_item_count(item_id, -inventory_removed)
+		remaining -= inventory_removed
+	for role_index in party_roles:
+		if remaining <= 0:
+			break
+		for slot_index in range(EQUIPMENT_SLOT_COUNT):
+			if equipped_item(role_index, slot_index) != item_id:
+				continue
+			clear_equipment_effects(role_index, slot_index)
+			replace_equipped_item(role_index, slot_index, 0)
+			remaining -= 1
+			if remaining <= 0:
+				break
+	equipment_effects_ready = true
+	return amount - remaining
+
+
 ## 恢复当前复刻阶段的新游戏默认状态，并初始化队伍轨迹。
 func reset_new_game() -> void:
 	scene_index = 0
@@ -659,6 +805,11 @@ func reset_new_game() -> void:
 	battlefield_number = 0
 	world_layer = 0
 	party_roles = PackedInt32Array([0])
+	follower_sprite_numbers = PackedInt32Array()
+	collect_value = 0
+	chase_speed_change_cycles = 0
+	chase_range_multiplier = 1
+	auto_battle_pending = false
 	inventory.clear()
 	role_levels = PackedInt32Array()
 	role_max_hp = PackedInt32Array()
@@ -751,3 +902,7 @@ func _stat_with_equipment(base_values: PackedInt32Array, role_index: int, group_
 		return 0
 	# SDLPal 在 WORD 上逐槽相加；负数效果以二补码保存，因此这里必须逐次回绕。
 	return (base_values[role_index] + equipment_effect_total(role_index, group_index)) & 0xffff
+
+
+static func _level_random_int(random_int: Callable, from_value: int, to_value: int) -> int:
+	return int(random_int.call(from_value, to_value)) if random_int.is_valid() else randi_range(from_value, to_value)

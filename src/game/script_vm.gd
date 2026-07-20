@@ -6,6 +6,15 @@
 class_name ScriptVM
 extends Node
 
+enum CommonFlow { ADVANCE, REPEAT, JUMP }
+
+class CommonInstructionResult:
+	var handled: bool = false
+	var flow: int = CommonFlow.ADVANCE
+	var jump_entry: int = 0
+	var script_failed: bool = false
+	var world_changed: bool = false
+
 ## 每条指令执行前发出，供测试和调试器记录入口、操作码及参数。
 signal instruction_started(index: int, operation: int, operands: PackedInt32Array)
 ## 遇到尚未实现的操作码或安全指令上限时发出。
@@ -35,6 +44,24 @@ signal screen_fade_requested(fade_out: bool, duration_seconds: float)
 signal rng_animation_requested(animation_number: int, start_frame: int, end_frame: int, frames_per_second: int)
 ## 请求打开一场阻塞剧情的经典战斗；`is_boss` 为真时不允许逃跑。
 signal battle_requested(enemy_team_id: int, battlefield_id: int, is_boss: bool)
+## 请求经典“是/否”确认框；选择“否”后由 VM 跳到 000A 的失败入口。
+signal confirmation_requested
+## 请求打开经典商店；`buying` 为真时 `store_id` 对应 DATA.MKF #0 的商店记录。
+signal shop_requested(store_id: int, buying: bool)
+## 请求等待任意键；输入层确认后必须调用 `complete_key_wait()`。
+signal key_wait_requested
+## 请求读取当前活动槽；无可读活动槽时 UI 应打开读档页。
+signal load_current_save_requested
+## 请求按当前调色板的指定索引颜色渐入/渐出。
+signal color_fade_requested(color_index: int, fade_from_color: bool, duration_seconds: float)
+## 请求红色 Game Over 渐变。
+signal game_over_requested(duration_seconds: float)
+## 请求用当前正式场景做一次交叉渐变。
+signal scene_fade_requested(duration_seconds: float)
+## 请求专用结局播放器执行一项 DOS 结局动作。
+signal ending_requested(kind: int, first: int, second: int, third: int)
+## 请求备份当前 320×200 画面，供后续结局合成使用。
+signal screen_backup_requested
 ## 请求探索控制器切换到从 0 开始的场景索引。
 signal scene_change_requested(scene_index: int)
 ## PLAYERROLES 场景 Sprite 或队伍成员发生变化。
@@ -45,6 +72,16 @@ signal party_step_performed
 signal party_walk_finished
 ## 剧情镜头相对队伍跟随视口的偏移发生变化；探索渲染器应立即同步。
 signal camera_offset_requested(offset: Vector2i)
+## 请求屏幕震动若干帧；探索层只移动正式画布/TileMap 相机。
+signal screen_shake_requested(frame_count: int, level: int)
+## 设置逐行波动强度和有符号推进量。
+signal screen_wave_requested(amplitude: int, progression: int)
+## 当前场景地图编号被动态替换，应重载 TileMapLayer 且不重跑进入脚本。
+signal map_change_requested(scene_index: int)
+## 跟随者 Sprite 表发生变化。
+signal followers_changed
+## 脚本请求统一退出流程；测试可仅记录信号。
+signal quit_requested
 
 const MAX_INSTRUCTIONS_PER_RUN := 10000
 
@@ -68,6 +105,14 @@ var waiting_for_screen_fade: bool = false
 var waiting_for_rng: bool = false
 ## 是否正在等待战斗覆盖层返回胜负。
 var waiting_for_battle: bool = false
+## 是否等待 000A 的是/否结果。
+var waiting_for_confirmation: bool = false
+## 是否等待 0026/0027 商店关闭。
+var waiting_for_shop: bool = false
+## 是否等待 004D 的任意键。
+var waiting_for_key: bool = false
+## 是否等待 004E 完成读档或进入读档菜单。
+var waiting_for_load: bool = false
 ## 最近一次条件指令是否成功，供后续分支判断。
 var script_success: bool = true
 ## 本轮 `0081` 是否已把一个面对的事件提升为下一帧接触触发。
@@ -97,11 +142,15 @@ var _reported_auto_instructions: Dictionary = {}
 var _current_rng_animation: int = 0
 var _battle_defeat_entry: int = 0
 var _battle_flee_entry: int = 0
+var _confirmation_no_entry: int = 0
 var _equipment_manager := PalEquipmentManager.new()
 
 const BATTLE_RESULT_VICTORY := 1
 const BATTLE_RESULT_DEFEAT := 2
 const BATTLE_RESULT_FLED := 3
+const ENDING_ANIMATION := 0
+const ENDING_SCROLL_FBP := 1
+const ENDING_SHOW_FBP_EFFECT := 2
 
 
 #region Public lifecycle
@@ -131,7 +180,7 @@ func set_scene_map(map_data: PalMapData) -> void:
 ## 从指定脚本入口执行一个触发事件。
 ## VM 忙碌或入口无效时不修改状态并返回原入口；暂停或结束时返回未来入口。
 func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
-	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or running or waiting_for_dialog or waiting_for_screen_fade or waiting_for_rng or waiting_for_battle:
+	if database == null or entry_index <= 0 or entry_index >= database.scripts.size() or is_busy():
 		return entry_index
 	if event_object_id == 0xffff:
 		event_object_id = _last_event_object_id
@@ -146,8 +195,13 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	waiting_for_screen_fade = false
 	waiting_for_rng = false
 	waiting_for_battle = false
+	waiting_for_confirmation = false
+	waiting_for_shop = false
+	waiting_for_key = false
+	waiting_for_load = false
 	_battle_defeat_entry = 0
 	_battle_flee_entry = 0
+	_confirmation_no_entry = 0
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
 	_camera_pan_active = false
@@ -204,6 +258,49 @@ func complete_battle(result: int) -> void:
 	_continue_execution()
 
 
+## 回传 000A 确认结果；“否”跳到操作数入口，“是”继续下一条。
+func complete_confirmation(accepted: bool) -> void:
+	if not waiting_for_confirmation:
+		return
+	waiting_for_confirmation = false
+	if not accepted:
+		_cursor = _confirmation_no_entry
+	_confirmation_no_entry = 0
+	running = true
+	_continue_execution()
+
+
+## 通知 VM 经典商店已关闭并继续脚本。
+func complete_shop() -> void:
+	if not waiting_for_shop:
+		return
+	waiting_for_shop = false
+	running = true
+	_continue_execution()
+
+
+## 通知 VM 004D 已收到任意按键并继续脚本。
+func complete_key_wait() -> void:
+	if not waiting_for_key:
+		return
+	waiting_for_key = false
+	running = true
+	_continue_execution()
+
+
+## 004E 的控制流不会回到原脚本；读档成功或取消读档页后统一结束等待。
+func complete_load_request() -> void:
+	if not waiting_for_load:
+		return
+	waiting_for_load = false
+	_finish(0)
+
+
+## 返回 VM 是否占用触发入口或等待任一阻塞式外部操作。
+func is_busy() -> bool:
+	return running or waiting_for_dialog or waiting_for_frames or waiting_for_party_walk or waiting_for_party_ride or waiting_for_screen_fade or waiting_for_rng or waiting_for_battle or waiting_for_confirmation or waiting_for_shop or waiting_for_key or waiting_for_load
+
+
 ## 立即清空所有等待、调用栈和对话状态，并发出 `dialog_ended`。
 func stop() -> void:
 	running = false
@@ -214,8 +311,13 @@ func stop() -> void:
 	waiting_for_screen_fade = false
 	waiting_for_rng = false
 	waiting_for_battle = false
+	waiting_for_confirmation = false
+	waiting_for_shop = false
+	waiting_for_key = false
+	waiting_for_load = false
 	_battle_defeat_entry = 0
 	_battle_flee_entry = 0
+	_confirmation_no_entry = 0
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0
@@ -230,7 +332,7 @@ func stop() -> void:
 ## 返回本帧是否可能改变世界画面。
 func tick_frame() -> bool:
 	_auto_frame_number += 1
-	if waiting_for_screen_fade or waiting_for_rng or waiting_for_battle:
+	if waiting_for_screen_fade or waiting_for_rng or waiting_for_battle or waiting_for_confirmation or waiting_for_shop or waiting_for_key or waiting_for_load:
 		return false
 	# SDLPal pauses scene updates while waiting for a dialog key.
 	var world_changed := false if waiting_for_dialog or _close_dialog_after_frame_wait else _tick_auto_scripts()
@@ -273,6 +375,19 @@ func _continue_execution() -> int:
 			return _pause_at_dialog_boundary()
 		instruction_started.emit(_cursor, entry.operation, entry.operands)
 		var next_cursor := _cursor + 1
+		var common := _interpret_common_instruction(entry, _event_object_id)
+		if common.handled:
+			if common.script_failed:
+				script_success = false
+			match common.flow:
+				CommonFlow.ADVANCE:
+					_cursor = next_cursor
+				CommonFlow.JUMP:
+					_cursor = common.jump_entry
+				CommonFlow.REPEAT:
+					pass
+			executed += 1
+			continue
 		match entry.operation:
 			# 停止脚本；触发入口保持在本轮入口，适合可重复事件。
 			0x0000:
@@ -311,6 +426,11 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				redraw_requested.emit(entry.operands[1])
+			# 概率跳转；随机值大于等于 operand[0] 时跳 operand[1]。
+			0x0006:
+				if randi_range(1, 100) >= entry.operands[0]:
+					_cursor = entry.operands[1]
+					continue
 			# 启动敌队 operand[0]；战败跳 operand[1]，operand[2] 非零时允许逃跑并作为逃跑入口。
 			0x0007:
 				if _dialog_has_body:
@@ -332,46 +452,25 @@ func _continue_execution() -> int:
 					return _pause_at_dialog_boundary()
 				dialog_ended.emit()
 				return _wait_for_frames(next_cursor, entry.operands[0] if entry.operands[0] > 0 else 1)
-			# 触发脚本中的当前 EventObject 向南/西/北/东走一步；乘船等剧情会在重绘之间连续使用。
-			0x000b, 0x000c, 0x000d, 0x000e:
-				var event := _event_by_id(_event_object_id)
-				if event != null:
-					event.direction = entry.operation - 0x000b
-					_npc_walk_one_step(event, 2)
-			# 设置当前事件方向和当前帧；对应 operand[0]/operand[1]，0xFFFF 表示不修改。
-			0x000f:
-				var event := _event_by_id(_event_object_id)
-				if event != null:
-					if entry.operands[0] != 0xffff:
-						event.direction = entry.operands[0]
-					if entry.operands[1] != 0xffff:
-						event.current_frame = entry.operands[1]
-			# 把 operand[0] 事件放到队伍相对位置，operand[1]/operand[2] 为有符号偏移。
-			0x0012:
-				var event := _resolve_event(entry.operands[0])
-				if event != null and session != null:
-					event.position = session.party_world_position() + Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
-			# 把 operand[0] 事件放到绝对世界坐标 operand[1], operand[2]。
-			0x0013:
-				var event := _resolve_event(entry.operands[0])
-				if event != null:
-					event.position = Vector2i(entry.operands[1], entry.operands[2])
-			# 设置当前触发事件的动作帧为 operand[0]，并把方向重置为南。
-			0x0014:
-				var event := _event_by_id(_event_object_id)
-				if event != null:
-					event.current_frame = entry.operands[0]
-					event.direction = GameSession.DIR_SOUTH
-			# 设置队员动作：方向 operand[0]、动作 operand[1]、队员索引 operand[2]。
-			0x0015:
+			# 经典“是/否”选择；正文等待已由循环顶部先完成，关闭正文后才显示确认框。
+			0x000a:
+				dialog_ended.emit()
+				_cursor = next_cursor
+				_confirmation_no_entry = entry.operands[0]
+				running = false
+				waiting_for_confirmation = true
+				confirmation_requested.emit()
+				return _cursor
+			# 非装备流程也可能直接写装备效果槽；operand[0]-0B 为部位。
+			0x0017:
 				if session != null:
-					session.set_party_gesture(entry.operands[0], entry.operands[1], entry.operands[2])
-			# 设置 operand[0] 事件的方向 operand[1] 和当前帧 operand[2]。
-			0x0016:
-				var event := _resolve_event(entry.operands[0])
-				if event != null and entry.operands[0] != 0:
-					event.direction = entry.operands[1]
-					event.current_frame = entry.operands[2]
+					var slot_index := entry.operands[0] - 0x0b
+					script_success = session.set_equipment_effect(slot_index, entry.operands[1], _event_object_id, entry.operands[2])
+			# 直接设置角色基础字段；显式角色操作数从 1 开始。
+			0x001a:
+				if session != null:
+					var role_index := _event_object_id if entry.operands[2] == 0 else entry.operands[2] - 1
+					script_success = session.set_role_attribute(entry.operands[0], role_index, entry.operands[1])
 			# 增减角色体力、真气或两者；operand[0] 非零时作用于全队，否则作用于当前角色。
 			# 对齐 SDLPal script.c 的 001B–001D，供场外治疗仙术与剧情物品共用。
 			0x001b, 0x001c, 0x001d:
@@ -444,6 +543,23 @@ func _continue_execution() -> int:
 			0x002f:
 				if session != null:
 					session.remove_role_status(_event_object_id, entry.operands[0])
+			# 给当前角色或全队加入毒状态；脚本游标由毒对象定义持有。
+			0x0029:
+				if session != null:
+					var poison := database.poison_definition(entry.operands[1])
+					if poison != null:
+						var targets := session.party_roles if entry.operands[0] != 0 else PackedInt32Array([_event_object_id])
+						for role_index in targets:
+							if randi_range(1, 100) > session.poison_resistance_for(role_index):
+								session.add_role_poison(role_index, entry.operands[1], poison.player_script)
+			# 打开经典买入/卖出页；关闭后从下一条继续。
+			0x0026, 0x0027:
+				dialog_ended.emit()
+				_cursor = next_cursor
+				running = false
+				waiting_for_shop = true
+				shop_requested.emit(entry.operands[0], entry.operation == 0x0026)
+				return _cursor
 			# 卸下指定角色装备；operand[1] 为 0 时清空六槽，否则使用 1–6 的部位编号。
 			0x0023:
 				if session != null:
@@ -451,17 +567,6 @@ func _continue_execution() -> int:
 						script_success = false
 					else:
 						_equipment_manager.remove_equipment_from_script(entry.operands[0], entry.operands[1])
-			# 把 operand[0] 事件的自动脚本入口改为 operand[1]。
-			0x0024:
-				var event := _resolve_event(entry.operands[0])
-				if event != null and entry.operands[0] != 0:
-					event.auto_script = entry.operands[1]
-					event.auto_script_idle_count = 0
-			# 把 operand[0] 事件的触发脚本入口改为 operand[1]。
-			0x0025:
-				var event := _resolve_event(entry.operands[0])
-				if event != null and entry.operands[0] != 0:
-					event.trigger_script = entry.operands[1]
 			# 开始屏幕中央普通对话；operand[0] 为文字颜色。
 			0x003b:
 				if _dialog_has_body:
@@ -527,11 +632,19 @@ func _continue_execution() -> int:
 				_cursor = teleport_entry
 				_event_object_id = _last_event_object_id
 				continue
-			# 设置 operand[0] 事件的触发模式为 operand[1]。
-			0x0040:
-				var event := _resolve_event(entry.operands[0])
-				if event != null and entry.operands[0] != 0:
-					event.trigger_mode = entry.operands[1]
+			# 把收妖值转换为商店 0 的随机物品。
+			0x0034:
+				var store := database.store_definition(0)
+				if session == null or session.collect_value <= 0 or store == null:
+					_cursor = entry.operands[0]
+					continue
+				var consumed := mini(9, randi_range(1, session.collect_value))
+				if consumed > store.item_ids.size():
+					_cursor = entry.operands[0]
+					continue
+				var item_id := store.item_ids[consumed - 1]
+				session.collect_value -= consumed
+				session.set_item_count(item_id, mini(99, session.item_count(item_id) + 1))
 			# 切换背景音乐为 operand[0]；播放层通过信号完成实际音频切换。
 			0x0043:
 				if session != null:
@@ -549,18 +662,35 @@ func _continue_execution() -> int:
 					var world_x := entry.operands[0] * 32 + entry.operands[2] * 16
 					var world_y := entry.operands[1] * 16 + entry.operands[2] * 8
 					session.set_party_world_position(Vector2i(world_x, world_y))
-			# 播放 operand[0] 音效。
-			0x0047:
-				sound_requested.emit(entry.operands[0])
-			# 设置 operand[0] 事件状态为 signed(operand[1])。
-			0x0049:
-				var event := _resolve_event(entry.operands[0])
-				if event != null and entry.operands[0] != 0:
-					event.state = _signed_word(entry.operands[1])
 			# 设置下一场战斗使用的战场背景与五灵修正编号。
 			0x004a:
 				if session != null:
 					session.battlefield_number = entry.operands[0]
+			# 等待任意键；与 000A/商店一样，不能越过尚未确认的对话正文。
+			0x004d:
+				_cursor = next_cursor
+				running = false
+				waiting_for_key = true
+				key_wait_requested.emit()
+				return _cursor
+			# 读取活动存档槽。官方立即终止当前脚本；无活动存档由 UI 回退到读档菜单。
+			0x004e:
+				_cursor = 0
+				running = false
+				waiting_for_load = true
+				load_current_save_requested.emit()
+				return 0
+			# Game Over 红色渐变完成后继续（通常下一条会读取活动槽）。
+			0x004f:
+				var duration := 1.28
+				if get_signal_connection_list(&"game_over_requested").is_empty():
+					game_over_requested.emit(duration)
+				else:
+					_cursor = next_cursor
+					running = false
+					waiting_for_screen_fade = true
+					game_over_requested.emit(duration)
+					return _cursor
 			# 屏幕渐隐/渐显；默认速度对应官方 PAL_FadeOut/PAL_FadeIn 的约 0.6 秒。
 			0x0050, 0x0051:
 				# 0051 在官方源码中先把速度转为 SHORT；剧情常用 0xFFFF 表示默认速度，
@@ -576,25 +706,6 @@ func _continue_execution() -> int:
 					waiting_for_screen_fade = true
 					screen_fade_requested.emit(fade_out, fade_duration)
 					return _cursor
-			# 临时隐藏当前触发事件；operand[0] 为帧数，0 使用原版默认 800。
-			0x0052:
-				var event := _event_by_id(_event_object_id)
-				if event != null:
-					event.state *= -1
-					event.vanish_time = entry.operands[0] if entry.operands[0] > 0 else 800
-			# 切换到当前编号的日间调色板。
-			0x0053:
-				if session != null:
-					session.night_palette = false
-			# 切换到当前编号的夜间调色板。
-			0x0054:
-				if session != null:
-					session.night_palette = true
-			# 为 operand[1] 指定角色加入仙术 operand[0]；角色为 0 时沿用当前调用角色。
-			0x0055:
-				if session != null:
-					var role_index := _event_object_id if entry.operands[1] == 0 else entry.operands[1] - 1
-					session.add_magic(role_index, entry.operands[0])
 			# 切换到 1-based 的 operand[0] 场景，并在下一安全时机载入。
 			0x0059:
 				if session != null and entry.operands[0] > 0 and entry.operands[0] <= database.scenes.size():
@@ -602,36 +713,20 @@ func _continue_execution() -> int:
 					session.scene_index = entry.operands[0] - 1
 					session.world_layer = 0
 					scene_change_requested.emit(session.scene_index)
-			# 将角色 operand[0] 的普通场景 Sprite 改为 operand[1]。
-			0x0065:
-				if database.player_roles != null and entry.operands[0] < database.player_roles.scene_sprite_numbers.size():
-					var role_index := entry.operands[0]
-					database.player_roles.scene_sprite_numbers[role_index] = entry.operands[1]
-					# SDLPal 会在场景更新时按新 Sprite 恢复站立帧。Godot 版单独保存
-					# 剧情动作，因此必须在换装时丢弃旧造型的绝对帧；紧随其后的
-					# 0015 若需要新动作，会在同一段脚本中重新设置。
-					if session != null:
-						session.clear_party_gestures_for_role(role_index)
-					player_sprites_changed.emit()
-			# 让 operand[0] 事件移动 signed(operand[1]), signed(operand[2]) 并推进步态。
-			0x006c:
-				var event := _resolve_event(entry.operands[0])
-				if event != null:
-					event.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
-					event.current_frame = (event.current_frame + 1) % maxi(1, event.sprite_frames)
-			# 修改 1-based 场景的进入/传送脚本；两个新入口都为零时同时清空。
-			0x006d:
-				var scene_number := entry.operands[0]
-				if scene_number > 0 and scene_number <= database.scenes.size():
-					var scene := database.scenes[scene_number - 1]
-					if entry.operands[1] == 0 and entry.operands[2] == 0:
-						scene.script_on_enter = 0
-						scene.script_on_teleport = 0
-					else:
-						if entry.operands[1] != 0:
-							scene.script_on_enter = entry.operands[1]
-						if entry.operands[2] != 0:
-							scene.script_on_teleport = entry.operands[2]
+			# 隐身回合只在战斗中有可观察效果；场外沿用官方的成功空操作语义。
+			0x005c:
+				pass
+			0x005d:
+				if session == null or not session.role_has_poison(_event_object_id, entry.operands[0]):
+					_cursor = entry.operands[1]
+					continue
+			0x005f:
+				if session != null and _event_object_id >= 0 and _event_object_id < session.role_hp.size():
+					session.role_hp[_event_object_id] = 0
+			0x0061:
+				if session == null or not session.role_has_poison_by_level(_event_object_id, 0, database):
+					_cursor = entry.operands[0]
+					continue
 			# 队伍移动一步：operand[0]/[1] 为世界偏移，operand[2]×8 为逻辑层。
 			0x006e:
 				if session != null:
@@ -639,13 +734,6 @@ func _continue_execution() -> int:
 					session.record_party_step(session.party_direction, movement)
 					session.world_layer = entry.operands[2] * 8
 					party_step_performed.emit()
-			# 若 operand[0] 事件状态等于 signed(operand[1])，同步当前触发事件状态。
-			0x006f:
-				var invoking_event := _event_by_id(_event_object_id)
-				var compared_event := _resolve_event(entry.operands[0])
-				var target_state := _signed_word(entry.operands[1])
-				if invoking_event != null and compared_event != null and compared_event.state == target_state:
-					invoking_event.state = target_state
 			# 队伍走到 operand[0]/[1] 格、operand[2] half；0070/007A/007B 速度依次为 2/4/8。
 			0x0070, 0x007a, 0x007b:
 				if session != null:
@@ -694,16 +782,17 @@ func _continue_execution() -> int:
 			# 官方 SDLPal `script.c` 将 0078 保留为空操作；继续下一条而不是误报未支持。
 			0x0078:
 				pass
-			# 直接移动 operand[0] 事件，operand[1]/[2] 为有符号世界偏移。
-			0x007d:
-				var event := _resolve_event(entry.operands[0])
-				if event != null:
-					event.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
-			# 设置 operand[0] 事件的逻辑层为 signed(operand[1])。
-			0x007e:
-				var event := _resolve_event(entry.operands[0])
-				if event != null:
-					event.layer = _signed_word(entry.operands[1])
+			# 队伍中存在指定名字词条的角色时跳转。
+			0x0079:
+				var found := false
+				if session != null and database.player_roles != null:
+					for role_index in session.party_roles:
+						if database.player_roles.name_word_for(role_index) == entry.operands[0]:
+							found = true
+							break
+				if found:
+					_cursor = entry.operands[1]
+					continue
 			# 平移或复位剧情镜头；队伍世界位置保持不变。
 			0x007f:
 				if entry.operands[0] == 0 and entry.operands[1] == 0:
@@ -717,13 +806,6 @@ func _continue_execution() -> int:
 				else:
 					var camera_step := Vector2i(_signed_word(entry.operands[0]), _signed_word(entry.operands[1]))
 					return _wait_for_camera_pan(next_cursor, camera_step, maxi(1, _signed_word(entry.operands[2])))
-			# 在当前编号的日间／夜间调色板之间切换；参考 SDLPal `script.c` 的 0080。
-			0x0080:
-				if session != null:
-					session.night_palette = not session.night_palette
-				# 官方 op0=0 会在调色板渐变期间持续更新场景；当前渲染器先同步最终调色板画面。
-				if entry.operands[0] == 0:
-					redraw_requested.emit(0)
 			# 队伍未面向/接近 operand[0] 事件时跳到 operand[2]；operand[1] 为距离级别。
 			0x0081:
 				if _is_party_facing_event(entry.operands[0], entry.operands[1]):
@@ -733,12 +815,25 @@ func _continue_execution() -> int:
 					script_success = false
 					_cursor = entry.operands[2]
 					continue
+			# 从/向当前调色板的指定颜色渐变；operand[1] 是每步延时，operand[2] 非零表示从颜色恢复。
+			0x008c:
+				var duration := float(entry.operands[1] if entry.operands[1] > 0 else 1) * 0.64
+				if get_signal_connection_list(&"color_fade_requested").is_empty():
+					color_fade_requested.emit(entry.operands[0] & 0xff, entry.operands[2] != 0, duration)
+				else:
+					_cursor = next_cursor
+					running = false
+					waiting_for_screen_fade = true
+					color_fade_requested.emit(entry.operands[0] & 0xff, entry.operands[2] != 0, duration)
+					return _cursor
 			# 恢复场景画面并开启下一页对话，同时保持当前说话人与肖像上下文。
 			0x008e:
 				if _dialog_has_body:
 					return _pause_at_dialog_boundary()
 				dialog_page_break.emit()
 				redraw_requested.emit(0)
+			0x0090:
+				database.set_object_script(entry.operands[0], entry.operands[2], entry.operands[1])
 			# 按 signed operand[0] 渐变当前场景；负数渐隐，正数渐显。
 			0x0093:
 				var step := _signed_word(entry.operands[0])
@@ -761,6 +856,13 @@ func _continue_execution() -> int:
 				if compared_event != null and compared_event.state == _signed_word(entry.operands[1]):
 					_cursor = entry.operands[2]
 					continue
+			# DOS 结局动画由专用播放器阻塞执行。
+			0x0096:
+				_cursor = next_cursor
+				running = false
+				waiting_for_screen_fade = true
+				ending_requested.emit(ENDING_ANIMATION, 0, 0, 0)
+				return _cursor
 			# 将 operand[0] 到 operand[1]（含两端）的 EventObject 状态批量改为 signed(operand[2])。
 			0x009a:
 				var target_state := _signed_word(entry.operands[2])
@@ -768,6 +870,16 @@ func _continue_execution() -> int:
 					var event := _event_by_id(event_object_id)
 					if event != null:
 						event.state = target_state
+			# 重新生成当前正式场景后做一次经典淡入。
+			0x009b:
+				redraw_requested.emit(0)
+				if not get_signal_connection_list(&"scene_fade_requested").is_empty():
+					_cursor = next_cursor
+					running = false
+					waiting_for_screen_fade = true
+					scene_fade_requested.emit(1.2)
+					return _cursor
+				scene_fade_requested.emit(1.2)
 			# 把所有队员收拢到队长位置，下一次正常移动后恢复跟随编队。
 			0x00a1:
 				if session != null:
@@ -777,6 +889,16 @@ func _continue_execution() -> int:
 				if session != null:
 					session.music_number = entry.operands[1]
 				music_requested.emit(entry.operands[1], true, 0.0)
+			# DOS 结局 FBP 滚动和带 MGO 特效的 FBP 显示由结局播放器完成。
+			0x00a4, 0x00a5:
+				_cursor = next_cursor
+				running = false
+				waiting_for_screen_fade = true
+				var kind := ENDING_SCROLL_FBP if entry.operation == 0x00a4 else ENDING_SHOW_FBP_EFFECT
+				ending_requested.emit(kind, entry.operands[0], entry.operands[1], entry.operands[2])
+				return _cursor
+			0x00a6:
+				screen_backup_requested.emit()
 			# 延迟 operand[0]×80ms；10 FPS VM 换算为相应脚本帧数。
 			0x0085:
 				# SDLPal delays operand × 80 ms; scene scripts advance at 10 FPS here.
@@ -824,8 +946,13 @@ func _finish(next_entry: int) -> int:
 	waiting_for_screen_fade = false
 	waiting_for_rng = false
 	waiting_for_battle = false
+	waiting_for_confirmation = false
+	waiting_for_shop = false
+	waiting_for_key = false
+	waiting_for_load = false
 	_battle_defeat_entry = 0
 	_battle_flee_entry = 0
+	_confirmation_no_entry = 0
 	_dialog_has_body = false
 	_dialog_is_toast = false
 	_frames_remaining = 0
@@ -944,6 +1071,308 @@ func _set_camera_offset(offset: Vector2i) -> void:
 	camera_offset_requested.emit(_camera_offset)
 
 
+## 解释触发、自动和即时脚本共用的非阻塞指令；调度器只负责应用流程结果。
+func _interpret_common_instruction(entry: PalScriptEntry, invoking_event_object_id: int) -> CommonInstructionResult:
+	var result := CommonInstructionResult.new()
+	match entry.operation:
+		0x000b, 0x000c, 0x000d, 0x000e:
+			result.handled = true
+			var event := _event_by_id(invoking_event_object_id)
+			if event != null:
+				event.direction = entry.operation - 0x000b
+				_npc_walk_one_step(event, 2)
+				result.world_changed = true
+		0x000f:
+			result.handled = true
+			var event := _event_by_id(invoking_event_object_id)
+			if event != null:
+				if entry.operands[0] != 0xffff:
+					event.direction = entry.operands[0]
+				if entry.operands[1] != 0xffff:
+					event.current_frame = entry.operands[1]
+				result.world_changed = true
+		0x0012, 0x0013:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null:
+				if entry.operation == 0x0012 and session != null:
+					event.position = session.party_world_position() + Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
+				elif entry.operation == 0x0013:
+					event.position = Vector2i(entry.operands[1], entry.operands[2])
+				result.world_changed = true
+		0x0014:
+			result.handled = true
+			var event := _event_by_id(invoking_event_object_id)
+			if event != null:
+				event.current_frame = entry.operands[0]
+				event.direction = GameSession.DIR_SOUTH
+				result.world_changed = true
+		0x0015:
+			result.handled = true
+			if session != null:
+				session.set_party_gesture(entry.operands[0], entry.operands[1], entry.operands[2])
+				result.world_changed = true
+		0x0016:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null and entry.operands[0] != 0:
+				event.direction = entry.operands[1]
+				event.current_frame = entry.operands[2]
+				result.world_changed = true
+		0x0019:
+			result.handled = true
+			if session != null:
+				var role_index := invoking_event_object_id if entry.operands[2] == 0 else entry.operands[2] - 1
+				result.world_changed = session.change_role_attribute(entry.operands[0], role_index, _signed_word(entry.operands[1]))
+		0x0024, 0x0025:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null and entry.operands[0] != 0:
+				if entry.operation == 0x0024:
+					event.auto_script = entry.operands[1]
+					event.auto_script_idle_count = 0
+				else:
+					event.trigger_script = entry.operands[1]
+		0x0035:
+			result.handled = true
+			screen_shake_requested.emit(entry.operands[0], entry.operands[1] if entry.operands[1] > 0 else 4)
+		0x0040:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null and entry.operands[0] != 0:
+				event.trigger_mode = entry.operands[1]
+		0x0041:
+			result.handled = true
+			result.script_failed = true
+		0x0047:
+			result.handled = true
+			sound_requested.emit(entry.operands[0])
+		0x0049:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null and entry.operands[0] != 0:
+				event.state = _signed_word(entry.operands[1])
+				result.world_changed = true
+		0x004b:
+			result.handled = true
+			var event := _event_by_id(invoking_event_object_id)
+			if event != null:
+				event.vanish_time = -15
+				result.world_changed = true
+		0x0052:
+			result.handled = true
+			var event := _event_by_id(invoking_event_object_id)
+			if event != null:
+				event.state *= -1
+				event.vanish_time = entry.operands[0] if entry.operands[0] > 0 else 800
+				result.world_changed = true
+		0x0053, 0x0054:
+			result.handled = true
+			if session != null:
+				session.night_palette = entry.operation == 0x0054
+				result.world_changed = true
+		0x0055, 0x0056:
+			result.handled = true
+			if session != null:
+				var role_index := invoking_event_object_id if entry.operands[1] == 0 else entry.operands[1] - 1
+				if entry.operation == 0x0055:
+					session.add_magic(role_index, entry.operands[0])
+				else:
+					session.remove_magic(role_index, entry.operands[0])
+		0x0057:
+			result.handled = true
+			if session != null and invoking_event_object_id >= 0 and invoking_event_object_id < session.role_mp.size():
+				var factor := entry.operands[1] if entry.operands[1] > 0 else 8
+				var magic := database.magic_definition_for_object(entry.operands[0])
+				if magic != null:
+					magic.base_damage = session.role_mp[invoking_event_object_id] * factor
+				session.role_mp[invoking_event_object_id] = 0
+		0x0058:
+			result.handled = true
+			if session == null or session.item_count(entry.operands[0]) < _signed_word(entry.operands[1]):
+				result.flow = CommonFlow.JUMP
+				result.jump_entry = entry.operands[2]
+		0x005a:
+			result.handled = true
+			if session != null and invoking_event_object_id >= 0 and invoking_event_object_id < session.role_hp.size():
+				session.role_hp[invoking_event_object_id] /= 2
+		0x0062, 0x0063:
+			result.handled = true
+			if session != null:
+				session.chase_speed_change_cycles = entry.operands[0]
+				session.chase_range_multiplier = 0 if entry.operation == 0x0062 else 3
+		0x0065:
+			result.handled = true
+			if database.player_roles != null and entry.operands[0] < database.player_roles.scene_sprite_numbers.size():
+				var role_index := entry.operands[0]
+				database.player_roles.scene_sprite_numbers[role_index] = entry.operands[1]
+				if session != null:
+					session.clear_party_gestures_for_role(role_index)
+				player_sprites_changed.emit()
+				result.world_changed = true
+		0x006c:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null:
+				event.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
+				_advance_npc_frame(event)
+				result.world_changed = true
+		0x006d:
+			result.handled = true
+			var scene_number := entry.operands[0]
+			if scene_number > 0 and scene_number <= database.scenes.size():
+				var scene := database.scenes[scene_number - 1]
+				if entry.operands[1] == 0 and entry.operands[2] == 0:
+					scene.script_on_enter = 0
+					scene.script_on_teleport = 0
+				else:
+					if entry.operands[1] != 0:
+						scene.script_on_enter = entry.operands[1]
+					if entry.operands[2] != 0:
+						scene.script_on_teleport = entry.operands[2]
+		0x006f:
+			result.handled = true
+			var invoking_event := _event_by_id(invoking_event_object_id)
+			var compared_event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			var target_state := _signed_word(entry.operands[1])
+			if invoking_event != null and compared_event != null and compared_event.state == target_state:
+				invoking_event.state = target_state
+				result.world_changed = true
+		0x0071:
+			result.handled = true
+			screen_wave_requested.emit(entry.operands[0], _signed_word(entry.operands[1]))
+		0x0074:
+			result.handled = true
+			if session == null or not session.is_party_full_hp():
+				result.flow = CommonFlow.JUMP
+				result.jump_entry = entry.operands[0]
+		0x007d, 0x007e:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null:
+				if entry.operation == 0x007d:
+					event.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
+				else:
+					event.layer = _signed_word(entry.operands[1])
+				result.world_changed = true
+		0x0080:
+			result.handled = true
+			if session != null:
+				session.night_palette = not session.night_palette
+				result.world_changed = true
+			if entry.operands[0] == 0:
+				redraw_requested.emit(0)
+		0x0082:
+			result.handled = true
+			var event := _event_by_id(invoking_event_object_id)
+			if event == null:
+				result.script_failed = true
+			elif not _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 8):
+				result.flow = CommonFlow.REPEAT
+				result.world_changed = true
+			else:
+				result.world_changed = true
+		0x0083:
+			result.handled = true
+			var invoking_event := _event_by_id(invoking_event_object_id)
+			var target := _event_by_id(entry.operands[0])
+			if invoking_event == null or target == null or not _event_is_in_current_scene(entry.operands[0]) or _event_distance(target, invoking_event) >= entry.operands[1] * 32 + 16:
+				result.flow = CommonFlow.JUMP
+				result.jump_entry = entry.operands[2]
+				result.script_failed = true
+		0x0084:
+			result.handled = true
+			var target := _event_by_id(entry.operands[0])
+			if session == null or target == null or not _event_is_in_current_scene(entry.operands[0]):
+				result.flow = CommonFlow.JUMP
+				result.jump_entry = entry.operands[2]
+				result.script_failed = true
+			else:
+				var position := session.party_world_position() + Vector2i(-16 if session.party_direction in [GameSession.DIR_WEST, GameSession.DIR_SOUTH] else 16, -8 if session.party_direction in [GameSession.DIR_WEST, GameSession.DIR_NORTH] else 8)
+				if _map_position_is_blocked(position):
+					result.flow = CommonFlow.JUMP
+					result.jump_entry = entry.operands[2]
+					result.script_failed = true
+				else:
+					target.position = position
+					target.state = _signed_word(entry.operands[1])
+					result.world_changed = true
+		0x0086:
+			result.handled = true
+			if session == null or session.equipped_item_count(entry.operands[0]) < entry.operands[1]:
+				result.flow = CommonFlow.JUMP
+				result.jump_entry = entry.operands[2]
+		0x0087:
+			result.handled = true
+			var event := _common_target_event(entry.operands[0], invoking_event_object_id)
+			if event != null:
+				_advance_npc_frame(event)
+				result.world_changed = true
+		0x0088:
+			result.handled = true
+			if session != null:
+				var spent := mini(5000, session.cash)
+				session.cash -= spent
+				var magic := database.magic_definition_for_object(entry.operands[0])
+				if magic != null:
+					magic.base_damage = spent * 2 / 5
+		0x008a:
+			result.handled = true
+			if session != null:
+				session.auto_battle_pending = true
+		0x008b:
+			result.handled = true
+			if session != null:
+				session.palette_index = entry.operands[0]
+				result.world_changed = true
+			redraw_requested.emit(0)
+		0x008d:
+			result.handled = true
+			if session != null:
+				result.world_changed = session.level_up_role(invoking_event_object_id, entry.operands[0])
+		0x008f:
+			result.handled = true
+			if session != null:
+				session.cash /= 2
+		0x0095:
+			result.handled = true
+			if session != null and session.scene_index + 1 == entry.operands[0]:
+				result.flow = CommonFlow.JUMP
+				result.jump_entry = entry.operands[1]
+		0x0098:
+			result.handled = true
+			if session != null:
+				session.follower_sprite_numbers = PackedInt32Array()
+				for operand_index in range(2):
+					if entry.operands[operand_index] > 0:
+						session.follower_sprite_numbers.append(entry.operands[operand_index])
+				followers_changed.emit()
+				result.world_changed = true
+		0x0099:
+			result.handled = true
+			var scene_index := session.scene_index if session != null and entry.operands[0] == 0xffff else entry.operands[0] - 1
+			if scene_index >= 0 and scene_index < database.scenes.size():
+				database.scenes[scene_index].map_number = entry.operands[1]
+				if session != null and scene_index == session.scene_index:
+					map_change_requested.emit(scene_index)
+					result.world_changed = true
+		0x00a0:
+			result.handled = true
+			quit_requested.emit()
+	return result
+
+
+func _common_target_event(operand: int, invoking_event_object_id: int) -> PalEventObject:
+	return _event_by_id(invoking_event_object_id if operand == 0 or operand == 0xffff else operand)
+
+
+func _map_position_is_blocked(world_position: Vector2i) -> bool:
+	if _scene_map_data == null or not _scene_map_data.is_valid():
+		return true
+	var tile := PalMapCoordinates.world_to_tile(world_position)
+	return not PalMapCoordinates.is_valid_tile(tile) or PalMapData.is_blocked(_scene_map_data.tile_value(tile.x, tile.y, tile.z))
+
+
 func _event_by_id(event_object_id: int) -> PalEventObject:
 	if database == null or event_object_id <= 0 or event_object_id > database.event_objects.size():
 		return null
@@ -981,6 +1410,10 @@ func _is_party_facing_event(event_object_id: int, range: int) -> bool:
 func _tick_auto_scripts() -> bool:
 	if database == null or session == null or session.scene_index < 0 or session.scene_index >= database.scenes.size():
 		return false
+	if session.chase_speed_change_cycles > 0:
+		session.chase_speed_change_cycles -= 1
+		if session.chase_speed_change_cycles == 0:
+			session.chase_range_multiplier = 1
 	var changed := false
 	for event in database.events_for_scene(session.scene_index):
 		changed = _update_event_lifecycle(event) or changed
@@ -996,6 +1429,18 @@ func _run_auto_script_step(event: PalEventObject, jump_budget: int = 64) -> bool
 		_report_unsupported_auto(event.auto_script, database.scripts[event.auto_script].operation)
 		return false
 	var entry := database.scripts[event.auto_script]
+	var common := _interpret_common_instruction(entry, event.object_id)
+	if common.handled:
+		if common.script_failed:
+			script_success = false
+		match common.flow:
+			CommonFlow.ADVANCE:
+				event.auto_script += 1
+			CommonFlow.JUMP:
+				event.auto_script = common.jump_entry
+			CommonFlow.REPEAT:
+				pass
+		return common.world_changed
 	match entry.operation:
 		# 自动脚本停在当前入口；下一帧仍可重复检查。
 		0x0000:
@@ -1043,20 +1488,6 @@ func _run_auto_script_step(event: PalEventObject, jump_budget: int = 64) -> bool
 				event.auto_script_idle_count = 0
 				event.auto_script += 1
 			return false
-		# NPC 向南/西/北/东走一步，方向由操作码 000B–000E 决定。
-		0x000b, 0x000c, 0x000d, 0x000e:
-			event.direction = entry.operation - 0x000b
-			_npc_walk_one_step(event, 2)
-			event.auto_script += 1
-			return true
-		# 设置当前自动事件方向和当前帧，0xFFFF 表示不修改。
-		0x000f:
-			if entry.operands[0] != 0xffff:
-				event.direction = entry.operands[0]
-			if entry.operands[1] != 0xffff:
-				event.current_frame = entry.operands[1]
-			event.auto_script += 1
-			return true
 		# NPC 以速度 3 走到 operand[0]/[1] 格、operand[2] half；未到达则停在本入口。
 		0x0010:
 			var reached := _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 3)
@@ -1071,93 +1502,11 @@ func _run_auto_script_step(event: PalEventObject, jump_budget: int = 64) -> bool
 					event.auto_script += 1
 				return true
 			return false
-		# 设置当前自动事件动作帧，并按官方规则重置为朝南。
-		0x0014:
-			event.current_frame = entry.operands[0]
-			event.direction = GameSession.DIR_SOUTH
-			event.auto_script += 1
-			return true
-		# 设置队员脚本动作；自动脚本下一帧继续。
-		0x0015:
-			if session != null:
-				session.set_party_gesture(entry.operands[0], entry.operands[1], entry.operands[2])
-			event.auto_script += 1
-			return session != null
-		# 设置指定事件方向和动作帧。
-		0x0016:
-			var target := _resolve_auto_event(entry.operands[0], event)
-			if target != null and entry.operands[0] != 0:
-				target.direction = entry.operands[1]
-				target.current_frame = entry.operands[2]
-			event.auto_script += 1
-			return target != null
-		# 修改目标事件的自动脚本入口。
-		0x0024:
-			var target := _resolve_auto_event(entry.operands[0], event)
-			if target != null and entry.operands[0] != 0:
-				target.auto_script = entry.operands[1]
-				target.auto_script_idle_count = 0
-			event.auto_script += 1
-			return false
-		# 修改目标事件的触发脚本入口。
-		0x0025:
-			var target := _resolve_auto_event(entry.operands[0], event)
-			if target != null and entry.operands[0] != 0:
-				target.trigger_script = entry.operands[1]
-			event.auto_script += 1
-			return false
-		# 修改目标事件的触发模式。
-		0x0040:
-			var target := _resolve_auto_event(entry.operands[0], event)
-			if target != null and entry.operands[0] != 0:
-				target.trigger_mode = entry.operands[1]
-			event.auto_script += 1
-			return false
-		# 播放剧情指定的 VOC 音效。
-		0x0047:
-			sound_requested.emit(entry.operands[0])
-			event.auto_script += 1
-			return false
-		# 修改目标事件状态。
-		0x0049:
-			if entry.operands[0] != 0:
-				var target := _resolve_auto_event(entry.operands[0], event)
-				if target != null:
-					target.state = _signed_word(entry.operands[1])
-			event.auto_script += 1
-			return true
-		# 让当前事件暂时消失 15 帧，正计时到零后自动重现。
-		0x004b:
-			event.vanish_time = -15
-			event.auto_script += 1
-			return true
 		# 按范围和速度追逐队伍；operand[2] 非零时忽略阻挡。
 		0x004c:
 			_monster_chase_player(event, entry.operands[1] if entry.operands[1] > 0 else 4, entry.operands[0] if entry.operands[0] > 0 else 8, entry.operands[2] != 0)
 			event.auto_script += 1
 			return true
-		# 临时隐藏当前事件；计时结束后等事件离开视口再恢复正状态。
-		0x0052:
-			event.state *= -1
-			event.vanish_time = entry.operands[0] if entry.operands[0] > 0 else 800
-			event.auto_script += 1
-			return true
-		# 当比较事件达到指定状态时，同步当前自动事件状态。
-		0x006f:
-			var compared_event := _resolve_auto_event(entry.operands[0], event)
-			var target_state := _signed_word(entry.operands[1])
-			if compared_event != null and compared_event.state == target_state:
-				event.state = target_state
-			event.auto_script += 1
-			return true
-		# 移动目标事件并推进一帧 NPC 动画。
-		0x006c:
-			var target := _resolve_auto_event(entry.operands[0], event)
-			if target != null:
-				target.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
-				_advance_npc_frame(target)
-			event.auto_script += 1
-			return target != null
 		# NPC 隔帧以速度 4 走到目标；用于普通场景路线。
 		0x007c:
 			if ((event.object_id & 1) ^ (_auto_frame_number & 1)) != 0:
@@ -1166,38 +1515,6 @@ func _run_auto_script_step(event: PalEventObject, jump_budget: int = 64) -> bool
 					event.auto_script += 1
 				return true
 			return false
-		# 直接移动指定事件，不推进动作帧。
-		0x007d:
-			var target := _resolve_auto_event(entry.operands[0], event)
-			if target != null:
-				target.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
-			event.auto_script += 1
-			return target != null
-		# 设置指定事件的逻辑层。
-		0x007e:
-			var target := _resolve_auto_event(entry.operands[0], event)
-			if target != null:
-				target.layer = _signed_word(entry.operands[1])
-			event.auto_script += 1
-			return target != null
-		# NPC 以速度 8 走到目标；到达前保持当前入口。
-		0x0082:
-			if _npc_walk_to(event, entry.operands[0], entry.operands[1], entry.operands[2], 8):
-				event.auto_script += 1
-			return true
-		# 目标事件不在当前场景或离当前事件过远时跳到 operand[2]。
-		0x0083:
-			var target := _event_by_id(entry.operands[0])
-			if target == null or not _event_is_in_current_scene(entry.operands[0]) or _event_distance(target, event) >= entry.operands[1] * 32 + 16:
-				event.auto_script = entry.operands[2]
-			else:
-				event.auto_script += 1
-			return false
-		# 只推进当前事件动画，不改变位置。
-		0x0087:
-			_advance_npc_frame(event)
-			event.auto_script += 1
-			return true
 		# DOS 自动说明文字与新版占位指令只推进入口，不阻塞探索场景。
 		0xffff, 0x00a7:
 			event.auto_script += 1
@@ -1240,6 +1557,7 @@ func _event_distance(first: PalEventObject, second: PalEventObject) -> int:
 func _monster_chase_player(event: PalEventObject, speed: int, chase_range: int, floating: bool) -> void:
 	if session == null:
 		return
+	chase_range *= session.chase_range_multiplier
 	var offset := session.party_world_position() - event.position
 	if absi(offset.x) + absi(offset.y) * 2 < chase_range * 32:
 		if offset.y < 0:
@@ -1284,6 +1602,19 @@ func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool
 	while cursor > 0 and cursor < database.scripts.size() and executed < 256:
 		var entry := database.scripts[cursor]
 		var next_cursor := cursor + 1
+		var common := _interpret_common_instruction(entry, current_event_object_id)
+		if common.handled:
+			if common.script_failed:
+				script_success = false
+			match common.flow:
+				CommonFlow.ADVANCE:
+					cursor = next_cursor
+				CommonFlow.JUMP:
+					cursor = common.jump_entry
+				CommonFlow.REPEAT:
+					pass
+			executed += 1
+			continue
 		# 即时子脚本只接受不会暂停 UI 的安全操作码；含义与主解释器相同。
 		match entry.operation:
 			# 结束当前即时调用；有调用栈时返回上层。
@@ -1305,74 +1636,12 @@ func _run_instant_trigger_script(entry_index: int, event_object_id: int) -> bool
 				if entry.operands[1] > 0:
 					current_event_object_id = entry.operands[1]
 				continue
-			# 设置当前事件方向/帧。
-			0x000f:
-				var target := _event_by_id(current_event_object_id)
-				if target != null:
-					if entry.operands[0] != 0xffff:
-						target.direction = entry.operands[0]
-					if entry.operands[1] != 0xffff:
-						target.current_frame = entry.operands[1]
-			# 设置目标事件绝对位置。
-			0x0013:
-				var target := _instant_target_event(entry.operands[0], current_event_object_id)
-				if target != null:
-					target.position = Vector2i(entry.operands[1], entry.operands[2])
-			# 设置当前事件动作并朝南。
-			0x0014:
-				var target := _event_by_id(current_event_object_id)
-				if target != null:
-					target.current_frame = entry.operands[0]
-					target.direction = GameSession.DIR_SOUTH
-			# 设置目标事件方向和帧。
-			0x0016:
-				var target := _instant_target_event(entry.operands[0], current_event_object_id)
-				if target != null and entry.operands[0] != 0:
-					target.direction = entry.operands[1]
-					target.current_frame = entry.operands[2]
-			# 设置目标事件自动脚本入口，并清空旧等待计数。
-			0x0024:
-				var target := _instant_target_event(entry.operands[0], current_event_object_id)
-				if target != null and entry.operands[0] != 0:
-					target.auto_script = entry.operands[1]
-					target.auto_script_idle_count = 0
-			# 设置目标事件触发脚本入口。
-			0x0025:
-				var target := _instant_target_event(entry.operands[0], current_event_object_id)
-				if target != null and entry.operands[0] != 0:
-					target.trigger_script = entry.operands[1]
-			# 设置目标事件触发模式。
-			0x0040:
-				var target := _instant_target_event(entry.operands[0], current_event_object_id)
-				if target != null and entry.operands[0] != 0:
-					target.trigger_mode = entry.operands[1]
-			# 设置目标事件状态。
-			0x0049:
-				var target := _instant_target_event(entry.operands[0], current_event_object_id)
-				if target != null and entry.operands[0] != 0:
-					target.state = _signed_word(entry.operands[1])
-			# 播放不会阻塞自动脚本的剧情音效。
-			0x0047:
-				sound_requested.emit(entry.operands[0])
-			# 直接移动目标事件。
-			0x007d:
-				var target := _instant_target_event(entry.operands[0], current_event_object_id)
-				if target != null:
-					target.position += Vector2i(_signed_word(entry.operands[1]), _signed_word(entry.operands[2]))
 			_:
 				_report_unsupported_auto(cursor, entry.operation)
 				return false
 		cursor = next_cursor
 		executed += 1
 	return false
-
-
-func _instant_target_event(operand: int, current_event_object_id: int) -> PalEventObject:
-	return _event_by_id(current_event_object_id if operand == 0 or operand == 0xffff else operand)
-
-
-func _resolve_auto_event(operand: int, invoking_event: PalEventObject) -> PalEventObject:
-	return invoking_event if operand == 0 or operand == 0xffff else _event_by_id(operand)
 
 
 func _npc_walk_to(event: PalEventObject, tile_x: int, tile_y: int, half: int, speed: int) -> bool:
@@ -1397,6 +1666,45 @@ func _npc_walk_one_step(event: PalEventObject, speed: int) -> void:
 	var y_sign := -1 if event.direction in [GameSession.DIR_WEST, GameSession.DIR_NORTH] else 1
 	event.position += Vector2i(x_sign * 2 * speed, y_sign * speed)
 	_advance_npc_frame(event)
+
+
+## 返回操作码是否由三条探索脚本路径共用的非阻塞执行层处理。
+static func is_common_opcode_supported(operation: int) -> bool:
+	return operation in [
+		0x000b, 0x000c, 0x000d, 0x000e, 0x000f,
+		0x0012, 0x0013, 0x0014, 0x0015, 0x0016, 0x0019,
+		0x0024, 0x0025, 0x0035, 0x0040, 0x0041, 0x0047, 0x0049, 0x004b,
+		0x0052, 0x0053, 0x0054, 0x0055, 0x0056, 0x0057, 0x0058, 0x005a,
+		0x0062, 0x0063, 0x0065, 0x006c, 0x006d, 0x006f, 0x0071, 0x0074,
+		0x007d, 0x007e, 0x0080, 0x0082, 0x0083, 0x0084, 0x0086, 0x0087,
+		0x0088, 0x008a, 0x008b, 0x008d, 0x008f, 0x0095, 0x0098, 0x0099, 0x00a0,
+	]
+
+
+## 主触发状态机的声明支持集；用于真实根入口上下文审计。
+static func is_trigger_opcode_supported(operation: int) -> bool:
+	return is_common_opcode_supported(operation) or operation in [
+		0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006, 0x0007, 0x0008, 0x0009, 0x000a,
+		0x0017, 0x001a, 0x001b, 0x001c, 0x001d, 0x001e, 0x001f, 0x0020, 0x0022, 0x0023, 0x0026, 0x0027,
+		0x0029, 0x002b, 0x002c, 0x002d, 0x002f, 0x0034, 0x0036, 0x0037, 0x0038, 0x003b, 0x003c, 0x003d,
+		0x003e, 0x003f, 0x0043, 0x0044, 0x0045, 0x0046, 0x004a, 0x004d, 0x004e, 0x004f,
+		0x0050, 0x0051, 0x0059, 0x005c, 0x005d, 0x005f, 0x0061, 0x006e, 0x0070, 0x0073, 0x0075, 0x0076, 0x0077, 0x0078, 0x0079,
+		0x007a, 0x007b, 0x007f, 0x0081, 0x0085, 0x008c, 0x008e, 0x0093, 0x0094, 0x0096,
+		0x0090, 0x0097, 0x009a, 0x009b, 0x00a1, 0x00a3, 0x00a4, 0x00a5, 0x00a6, 0xffff,
+	]
+
+
+## EventObject 自动脚本逐帧调度器的声明支持集。
+static func is_auto_opcode_supported(operation: int) -> bool:
+	return is_common_opcode_supported(operation) or operation in [
+		0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0006, 0x0009,
+		0x0010, 0x0011, 0x004c, 0x007c, 0x00a7, 0xffff,
+	]
+
+
+## 自动脚本 0004 调用的即时安全子脚本声明支持集。
+static func is_instant_opcode_supported(operation: int) -> bool:
+	return is_common_opcode_supported(operation) or operation in [0x0000, 0x0001, 0x0003, 0x0004]
 
 
 func _advance_npc_frame(event: PalEventObject) -> void:

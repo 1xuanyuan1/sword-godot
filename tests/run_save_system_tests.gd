@@ -3,6 +3,8 @@
 ## 使用纯合成状态验证 100 槽 Godot 存档的往返、损坏和兼容性诊断。
 extends SceneTree
 
+const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
+
 var _failures: Array[String] = []
 
 
@@ -22,15 +24,20 @@ func _init() -> void:
 	session.set_party_world_position(Vector2i(1232, 744))
 	session.cash = 9876
 	session.music_number = 31
+	session.follower_sprite_numbers = PackedInt32Array([301, 302])
+	session.collect_value = 8
+	session.chase_speed_change_cycles = 12
+	session.chase_range_multiplier = 3
+	session.auto_battle_pending = true
 	session.set_item_count(3, 7)
 	session.role_hp[0] = 73
 	database.scenes[1].script_on_enter = 9
 	database.event_objects[1].position = Vector2i(640, 352)
 	database.event_objects[1].state = 0
 	database.event_objects[1].trigger_script = 8
-	database.items[3].script_on_use = 7
-	database.magic_objects[2].script_on_success = 6
-	database.enemy_objects[1].script_on_ready = 5
+	database.set_object_script(3, 0, 7)
+	database.set_object_script(2, 0, 6)
+	database.set_object_script(1, 2, 5)
 	database.player_roles.scene_sprite_numbers[0] = 208
 	_expect(manager.save_slot(100, session), "slot 100 saves a complete initialized session")
 	var metadata := manager.slot_metadata(100)
@@ -42,20 +49,25 @@ func _init() -> void:
 	session.scene_index = 0
 	session.set_party_world_position(Vector2i.ZERO)
 	session.cash = 1
+	session.follower_sprite_numbers = PackedInt32Array()
+	session.collect_value = 0
+	session.chase_speed_change_cycles = 0
+	session.chase_range_multiplier = 1
 	session.inventory.clear()
 	session.role_hp[0] = 1
 	database.scenes[1].script_on_enter = 0
 	database.event_objects[1].position = Vector2i.ZERO
 	database.event_objects[1].state = 2
 	database.event_objects[1].trigger_script = 0
-	database.items[3].script_on_use = 0
-	database.magic_objects[2].script_on_success = 0
-	database.enemy_objects[1].script_on_ready = 0
+	database.set_object_script(3, 0, 0)
+	database.set_object_script(2, 0, 0)
+	database.set_object_script(1, 2, 0)
 	database.player_roles.scene_sprite_numbers[0] = 1
 	_expect(manager.load_slot(100, session), "slot 100 loads after structural and checksum validation: %s" % manager.error_message)
 	_expect(session.scene_index == 1 and session.party_world_position() == Vector2i(1232, 744) and session.cash == 9876 and session.item_count(3) == 7 and session.role_hp[0] == 73, "load restores scene, position, cash, inventory and role values")
+	_expect(session.follower_sprite_numbers == PackedInt32Array([301, 302]) and session.collect_value == 8 and session.chase_speed_change_cycles == 12 and session.chase_range_multiplier == 3 and not session.auto_battle_pending, "load restores persistent TD-001 state and clears the next-battle-only flag")
 	_expect(database.scenes[1].script_on_enter == 9 and database.event_objects[1].position == Vector2i(640, 352) and database.event_objects[1].state == 0 and database.event_objects[1].trigger_script == 8, "load restores scene and EventObject runtime mutations")
-	_expect(database.items[3].script_on_use == 7 and database.magic_objects[2].script_on_success == 6 and database.enemy_objects[1].script_on_ready == 5 and database.player_roles.scene_sprite_numbers[0] == 208, "load restores object cursors and player scene sprite")
+	_expect(database.items[3].script_on_use == 7 and database.magic_objects[2].script_on_success == 6 and database.enemy_objects[1].script_on_ready == 5 and database.poisons[3].player_script == 7 and database.player_roles.scene_sprite_numbers[0] == 208, "load restores all OBJECT union cursor views and player scene sprite")
 	_expect(not session.equipment_effects_ready, "load marks derived equipment effects for deterministic rebuild")
 
 	# 校验和损坏必须在修改当前游戏之前失败。
@@ -92,7 +104,7 @@ func _init() -> void:
 	for slot in range(1, PalSaveManager.SLOT_COUNT + 1):
 		manager.delete_slot(slot)
 	if _failures.is_empty():
-		print("PASS: 22 versioned save-system checks")
+		print("PASS: 23 versioned save-system checks")
 		quit(0)
 	else:
 		for failure in _failures:
@@ -141,7 +153,11 @@ func _database_fixture() -> PalContentDatabase:
 		enemy.script_on_battle_end = object_id
 		enemy.script_on_ready = object_id
 		database.enemy_objects.append(enemy)
-		database.poisons.append(RefCounted.new())
+		var poison := PoisonDefinition.PoisonData.new()
+		poison.object_id = object_id
+		poison.player_script = object_id
+		poison.enemy_script = object_id
+		database.poisons.append(poison)
 	return database
 
 

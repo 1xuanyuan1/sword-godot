@@ -210,6 +210,10 @@ func _serialize_session(session: GameSession) -> Dictionary:
 		"sound_volume": session.sound_volume,
 		"world_layer": session.world_layer,
 		"party_roles": Array(session.party_roles),
+		"follower_sprite_numbers": Array(session.follower_sprite_numbers),
+		"collect_value": session.collect_value,
+		"chase_speed_change_cycles": session.chase_speed_change_cycles,
+		"chase_range_multiplier": session.chase_range_multiplier,
 		"party_script_frames": Array(session.party_script_frames),
 		"inventory": _dictionary_to_pairs(session.inventory),
 		"role_levels": Array(session.role_levels),
@@ -346,6 +350,13 @@ func _validate_session(value: Variant) -> bool:
 	if not _validate_int_array(data.get("party_roles"), 1, 3, 0, PalPlayerRoles.ROLE_COUNT - 1) or not _validate_int_array(data.get("party_script_frames"), 3, PalPlayerRoles.ROLE_COUNT, -1, 65535):
 		error_message = "存档中的队伍角色或动作帧无效"
 		return false
+	if data.has("follower_sprite_numbers") and not _validate_int_array(data.get("follower_sprite_numbers"), 0, 2, 0, 0xffff):
+		error_message = "存档中的跟随者 Sprite 无效"
+		return false
+	for optional_scalar in ["collect_value", "chase_speed_change_cycles", "chase_range_multiplier"]:
+		if data.has(optional_scalar) and not _is_integer(data[optional_scalar]):
+			error_message = "存档会话字段 %s 无效" % optional_scalar
+			return false
 	var role_array_keys := ["role_levels", "role_max_hp", "role_max_mp", "role_hp", "role_mp", "role_experience", "role_attack_strength", "role_magic_strength", "role_defense", "role_dexterity", "role_flee_rate", "role_poison_resistance"]
 	for key in role_array_keys:
 		if not _validate_int_array(data.get(key), PalPlayerRoles.ROLE_COUNT, PalPlayerRoles.ROLE_COUNT, 0, 0x7fffffff):
@@ -419,6 +430,11 @@ func _restore_session(session: GameSession, data: Dictionary) -> void:
 	session.sound_volume = int(data["sound_volume"])
 	session.world_layer = int(data["world_layer"])
 	session.party_roles = _packed_from_data(data["party_roles"])
+	session.follower_sprite_numbers = _packed_from_data(data.get("follower_sprite_numbers", []))
+	session.collect_value = int(data.get("collect_value", 0))
+	session.chase_speed_change_cycles = maxi(0, int(data.get("chase_speed_change_cycles", 0)))
+	session.chase_range_multiplier = clampi(int(data.get("chase_range_multiplier", 1)), 0, 3)
+	session.auto_battle_pending = false
 	session.party_script_frames = _packed_from_data(data["party_script_frames"])
 	session.inventory = _pairs_to_dictionary(data["inventory"])
 	session.role_levels = _packed_from_data(data["role_levels"])
@@ -473,9 +489,11 @@ func _restore_runtime_content(data: Dictionary) -> void:
 		event.auto_script_idle_count = int(row[15])
 	for index in range(_database.items.size()):
 		var row: Array = data["item_scripts"][index]
-		_database.items[index].script_on_use = int(row[0])
-		_database.items[index].script_on_equip = int(row[1])
-		_database.items[index].script_on_throw = int(row[2])
+		# OBJECT 是无类型联合体。通过统一入口恢复三个原始脚本字段，确保物品、
+		# 仙术、敌人与毒四种解析视图在 0090 改写后仍保持一致。
+		_database.set_object_script(index, 0, int(row[0]))
+		_database.set_object_script(index, 1, int(row[1]))
+		_database.set_object_script(index, 2, int(row[2]))
 	for index in range(_database.magic_objects.size()):
 		var row: Array = data["magic_scripts"][index]
 		_database.magic_objects[index].script_on_success = int(row[0])
