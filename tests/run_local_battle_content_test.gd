@@ -85,6 +85,17 @@ func _init() -> void:
 	if steal_object == null or steal_definition == null or steal_object.magic_number != 98 or steal_definition.effect_sprite != 0xffff or steal_object.script_on_success <= 0 or database.scripts[steal_object.script_on_success].operation != 0x0047 or database.scripts[steal_object.script_on_success + 1].operation != 0x006a:
 		_fail("飞龙探云手 377 没有保持 FFFF 无 FIRE 特效与 006A 专用偷窃动作的真实资源链")
 		return
+	var stealable_enemy_count := 0
+	var steal_reward_ids: Dictionary = {}
+	var discovered_objects: Dictionary = PalScriptAudit._discover_object_ids(database)
+	for raw_object_id in discovered_objects.enemies:
+		var steal_enemy := database.enemy_definition_for_object(int(raw_object_id))
+		if steal_enemy != null and steal_enemy.steal_item_count > 0:
+			stealable_enemy_count += 1
+			steal_reward_ids[steal_enemy.steal_item] = true
+	if stealable_enemy_count != 135 or steal_reward_ids.size() != 73:
+		_fail("飞龙探云手图鉴数据应覆盖 135 个可偷敌人与 72 种物品加金钱，实际为 %d/%d" % [stealable_enemy_count, steal_reward_ids.size()])
+		return
 	var fat_miao := database.enemy_definition_for_object(485)
 	var crescent_slash := database.magic_definition_for_object(fat_miao.magic) if fat_miao != null else null
 	if fat_miao == null or fat_miao.health != 800 or fat_miao.magic != 338 or crescent_slash == null or crescent_slash.keep_effect != 0xffff:

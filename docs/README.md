@@ -18,7 +18,7 @@
 12. [开发工作流](DEVELOPMENT_WORKFLOW.md)：运行、导入、测试、剧情检查点、提交和排错。
 13. [SDLPal 上游基准](UPSTREAM.md)：查看固定参考提交和 Godot 模块到 SDLPal 源文件的映射。
 
-RNG 动画格式另见 [RNG 增量动画](RNG_FORMAT.md)，文档和源码注释约定见 [文档语言与注释规范](DOCUMENTATION.md)。
+RNG 动画格式另见 [RNG 增量动画](RNG_FORMAT.md)，飞龙探云手的全部可偷敌人与奖励见 [飞龙探云手偷窃图鉴](FLYING_DRAGON_STEAL_GUIDE.md)，文档和源码注释约定见 [文档语言与注释规范](DOCUMENTATION.md)。
 
 ## 当前开发记录
 
