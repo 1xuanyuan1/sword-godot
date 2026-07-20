@@ -140,6 +140,24 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-061] [feat] 推进玉佛寺主线并取得玉佛珠
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从六神丹剧情结束后的诊厅稳定状态继续，经韩医仙屋外和白河村后山正式入口抵达玉佛寺，调查智修大师后依次完成僧众敌队 28 与小石头敌队 35。固定两场战斗的战场 15、连续对白与人物状态、玉佛珠 274 的取得、三人队保持、寺院僧众清理、清空版场景 56 及后山入口永久改写；第七章后续黑水镇和将军冢继续由 TD-008 跟踪。
+- **验证情况**: 新增独立真实资源主线测试，场景 52/51/53/55/57/56、消息 `4747–4909` 与 `4926`、敌队对象 `[451,482,453]`／`[524]`、真实胜利奖励、玉佛珠及稳定落点／音乐 78 均有断言。新增白河村后山、玉佛寺庭院／大殿／清空版四个正式 TileMap 视口，18 个用例连续三轮达到 320×200 零像素差并实际检查屋檐遮挡、人物与清空地图截图。
+- **涉及文件**:
+  - `tests/run_local_jade_buddha_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

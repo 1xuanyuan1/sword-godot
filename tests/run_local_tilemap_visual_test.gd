@@ -18,6 +18,10 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "baihe_deer_hunt", "scene": 47, "position": Vector2i(704, 1040), "night": false, "party": [0], "event_states": {791: 0, 792: 0, 793: 0, 794: 0, 795: 0, 798: 2, 799: 2}},
 	{"name": "baihe_han_outside", "scene": 51, "position": Vector2i(896, 832), "night": false, "party": [0]},
 	{"name": "baihe_han_clinic_recovered", "scene": 52, "position": Vector2i(1472, 600), "night": false, "party": [0, 1, 2], "event_states": {905: 0, 907: 0, 908: 0, 910: 0}},
+	{"name": "baihe_rear_road", "scene": 53, "position": Vector2i(352, 640), "night": false, "party": [0, 1, 2]},
+	{"name": "jade_buddha_courtyard", "scene": 55, "position": Vector2i(1376, 1000), "night": false, "party": [0, 1, 2]},
+	{"name": "jade_buddha_hall", "scene": 57, "position": Vector2i(800, 1088), "night": false, "party": [0, 1, 2]},
+	{"name": "jade_buddha_cleared", "scene": 56, "position": Vector2i(1184, 560), "night": false, "party": [0, 1, 2]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
