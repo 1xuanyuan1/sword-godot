@@ -73,6 +73,8 @@ var _action_timer: float = 0.0
 var _animation_in_progress: bool = false
 var _last_enemy_flash_phase: int = -1
 var _pending_blow_displacement: int = 0
+var _script_dialog_waiting: bool = false
+var _script_dialog_advance_requested: bool = false
 var _audio_player: PalAudioPlayer
 
 
@@ -211,6 +213,8 @@ func _start_battle_view(content_database: PalContentDatabase, game_session: Game
 	_pending_item_throwable = false
 	_action_timer = 0.0
 	_animation_in_progress = false
+	_script_dialog_waiting = false
+	_script_dialog_advance_requested = false
 	if _controller.is_accepting_commands():
 		_enter_command_mode()
 	else:
@@ -225,6 +229,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	# ESC 在实验室模式会立即切换场景，使本节点当场脱离 SceneTree。
 	# 先保存仍然有效的 Viewport，避免动作完成后 get_viewport() 已返回 null。
 	var input_viewport := get_viewport()
+	# 战斗脚本对白优先于所有战斗指令：第一次确认补完逐字文字，第二次才继续。
+	# 其余按键在对白期间一并吞掉，避免方向、重复指令或退出误触发。
+	if _script_dialog_waiting:
+		if event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER] and _script_dialog_box != null:
+			if _script_dialog_box.is_typing():
+				_script_dialog_box.reveal_all()
+			else:
+				_script_dialog_advance_requested = true
+		if input_viewport != null:
+			input_viewport.set_input_as_handled()
+		return
 	var handled := true
 	match event.keycode:
 		KEY_ESCAPE:
@@ -787,9 +802,10 @@ func _play_script_events(events: Array[PalBattleController.ScriptEvent]) -> void
 					_script_dialog_box.begin(event.secondary, event.tertiary)
 				var message := _database.get_message(event.value)
 				_script_dialog_box.show_message(message)
-				# 战斗脚本仍然阻塞行动；逐字显示完后额外保留约半秒供阅读。
-				await _wait_frames(maxi(18, ceili(float(message.length()) / 28.0 / BATTLE_FRAME_SECONDS) + 12))
+				await _wait_for_script_dialog()
 			PalBattleController.ScriptEventType.CLEAR_DIALOG:
+				_script_dialog_waiting = false
+				_script_dialog_advance_requested = false
 				_script_dialog_box.hide_dialog()
 			PalBattleController.ScriptEventType.SOUND:
 				if _audio_player != null:
@@ -833,8 +849,31 @@ func _play_script_events(events: Array[PalBattleController.ScriptEvent]) -> void
 				_pending_blow_displacement = event.value
 			PalBattleController.ScriptEventType.PRE_MAGIC:
 				await _play_script_pre_magic(event.value)
+	_script_dialog_waiting = false
+	_script_dialog_advance_requested = false
 	if _script_dialog_box.visible:
 		_script_dialog_box.hide_dialog()
+
+
+func _wait_for_script_dialog() -> void:
+	_script_dialog_waiting = true
+	_script_dialog_advance_requested = false
+	var elapsed_frames := 0
+	var typing_finished_frame := -1
+	while is_instance_valid(_script_dialog_box) and _script_dialog_box.visible:
+		await _wait_frames(1)
+		elapsed_frames += 1
+		if _script_dialog_advance_requested:
+			break
+		if _script_dialog_box.is_typing():
+			continue
+		if typing_finished_frame < 0:
+			typing_finished_frame = elapsed_frames
+		# 没有输入时沿用原来的最短 18 帧节奏，并在逐字结束后保留约半秒阅读时间。
+		if elapsed_frames >= maxi(18, typing_finished_frame + 12):
+			break
+	_script_dialog_waiting = false
+	_script_dialog_advance_requested = false
 
 
 func _play_script_hits(result: PalBattleController.ActionResult) -> void:

@@ -594,16 +594,33 @@ func _run() -> void:
 	if dialog_start == null or dialog_message == null:
 		_fail("敌队 22 的真实战斗脚本没有解析出对白位置和 M.MSG 消息")
 		return
-	var portrait_texture: Texture2D = preview._texture_for_indexed(preview._database.load_rgm_portrait(dialog_start.tertiary), preview._palette) if dialog_start.tertiary > 0 else null
-	preview._script_dialog_box.begin(dialog_start.value, dialog_start.secondary, portrait_texture)
-	preview._script_dialog_box.show_message(preview._database.get_message(dialog_message.value))
+	var dialog_events: Array[PalBattleController.ScriptEvent] = [dialog_start, dialog_message]
+	preview._play_script_events(dialog_events)
+	await process_frame
+	if not preview._script_dialog_waiting or not preview._script_dialog_box.is_typing():
+		_fail("敌人回合脚本对白没有进入可跳过逐字显示的等待状态")
+		return
+	var dialog_confirm_event := InputEventKey.new()
+	dialog_confirm_event.keycode = KEY_SPACE
+	dialog_confirm_event.pressed = true
+	preview._unhandled_key_input(dialog_confirm_event)
+	if preview._script_dialog_box.is_typing() or preview._script_dialog_advance_requested:
+		_fail("战斗对白第一次空格没有只显示完整当前句")
+		return
 	await process_frame
 	var script_dialog_image := viewport.get_texture().get_image()
 	var script_dialog_path := output_directory.path_join("battle_enemy_script_dialog.png")
 	if script_dialog_image == null or script_dialog_image.save_png(script_dialog_path) != OK:
 		_fail("无法写入敌人回合脚本对白截图")
 		return
-	preview._script_dialog_box.hide_dialog()
+	preview._unhandled_key_input(dialog_confirm_event)
+	for _step in range(10):
+		await create_timer(0.05).timeout
+		if not preview._script_dialog_waiting:
+			break
+	if preview._script_dialog_waiting or preview._script_dialog_box.visible:
+		_fail("战斗对白完整显示后的第二次空格没有继续脚本")
+		return
 	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、胖苗持久地形、风神召唤、梦蛇变身、普攻/双剑二连击、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, terrain_path, summon_path, trance_path, attack_path, dual_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 

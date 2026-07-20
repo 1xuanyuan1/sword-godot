@@ -76,6 +76,7 @@ func _init() -> void:
 	_test_explorer_field_magic_bridge()
 	_test_explorer_input_keys()
 	_test_dialog_box_typewriter()
+	_test_battle_script_dialog_input()
 	if _failures.is_empty():
 		print("PASS: %d synthetic checks" % _checks)
 		quit(0)
@@ -2133,3 +2134,30 @@ func _test_dialog_box_typewriter() -> void:
 	_expect(dialog._panel.size == Vector2(176, 32) and dialog._message.horizontal_alignment == HORIZONTAL_ALIGNMENT_CENTER and not dialog._hint.visible, "center toast uses compact centered presentation")
 	_expect(dialog._message.get_theme_font_size("normal_font_size") == 8, "center toast uses a smaller font than character dialogue")
 	dialog.free()
+
+
+func _test_battle_script_dialog_input() -> void:
+	var preview := PalBattlePreview.new()
+	var dialog := PalDialogBox.new()
+	dialog._ready()
+	preview._script_dialog_box = dialog
+	preview._script_dialog_waiting = true
+	dialog.begin(1)
+	dialog.show_message("先看完整这句话")
+	var confirm_event := InputEventKey.new()
+	confirm_event.keycode = KEY_SPACE
+	confirm_event.pressed = true
+	preview._unhandled_key_input(confirm_event)
+	_expect(not dialog.is_typing() and dialog._message.visible_characters == dialog._full_text.length(), "battle dialog first confirm reveals the complete current message")
+	_expect(not preview._script_dialog_advance_requested, "battle dialog first confirm does not skip the current message")
+	preview._unhandled_key_input(confirm_event)
+	_expect(preview._script_dialog_advance_requested, "battle dialog second confirm advances after the message is complete")
+	preview._script_dialog_advance_requested = false
+	preview._selected_action = 2
+	var direction_event := InputEventKey.new()
+	direction_event.keycode = KEY_LEFT
+	direction_event.pressed = true
+	preview._unhandled_key_input(direction_event)
+	_expect(preview._selected_action == 2, "battle dialog consumes command keys while waiting")
+	dialog.free()
+	preview.free()
