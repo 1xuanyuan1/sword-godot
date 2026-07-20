@@ -28,6 +28,12 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "general_tomb_upper", "scene": 59, "position": Vector2i(1392, 1600), "night": false, "party": [0, 1, 2]},
 	{"name": "general_tomb_lower_boss", "scene": 64, "position": Vector2i(640, 304), "night": false, "party": [0, 1, 2]},
 	{"name": "blood_pool_red_ghost", "scene": 58, "position": Vector2i(832, 112), "night": false, "party": [0, 1, 2]},
+	{"name": "ghost_mountain_guards", "scene": 54, "position": Vector2i(320, 1464), "night": false, "party": [0, 1, 2]},
+	{"name": "ghost_mountain_maze", "scene": 69, "position": Vector2i(1504, 880), "night": false, "party": [0, 1, 2]},
+	{"name": "ghost_mountain_summit", "scene": 68, "position": Vector2i(1232, 1040), "night": false, "party": [0, 1, 2]},
+	{"name": "ghost_altar_plot", "scene": 66, "position": Vector2i(1344, 1120), "night": false, "party": [0, 1, 2]},
+	{"name": "ghost_altar_rescued", "scene": 76, "position": Vector2i(1216, 976), "night": false, "party": [0, 2]},
+	{"name": "yangzhou_approach", "scene": 82, "position": Vector2i(224, 848), "night": false, "party": [0, 2]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 

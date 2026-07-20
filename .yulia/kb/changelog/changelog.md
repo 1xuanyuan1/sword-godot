@@ -182,6 +182,24 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-063] [feat] 完成鬼阴山与石长老主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从赤鬼王返程并得知赵灵儿被掳后的韩医仙诊厅继续，经白河村、后山、鬼阴山前路、迷宫、绝顶与鬼阴坛石室推进。完成守卫敌队 33／战场 52、石长老剧情敌队 34／战场 16、赵灵儿离队、玉佛珠卸下与移除、林月如归队、李逍遥剧情造型恢复和鬼阴坛后门离开，最终以李逍遥／林月如 `[0,2]` 队伍及土灵珠 267 抵达扬州前山道；第八章更新为完整真实资源回归通过。
+- **验证情况**: 新增独立主线测试，连续覆盖场景 52/51/48/53/54/69/67/68/75/66/76/77/79/82，断言消息 `4428–4442`、`4983–5080`、敌队对象 `[527,454]`／`[527,496,527]`、真实胜利奖励、人物／物品／入口和最终场景状态。新增鬼阴山守卫、迷宫、绝顶、鬼阴坛密谋／得救及扬州前山道六个正式 TileMap 视口，30 个用例连续三轮达到 320×200 零像素差并实际检查人物、植被、洞壁、牢门、祭坛与桥面遮挡。
+- **涉及文件**:
+  - `tests/run_local_ghost_mountain_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单
