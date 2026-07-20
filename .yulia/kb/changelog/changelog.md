@@ -158,6 +158,30 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-062] [feat] 完成黑水镇、将军冢与赤鬼王主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从清空版玉佛寺继续返回白河村后山，进入黑水镇、乱葬岗、将军冢上下层和血池。以赵灵儿真实装备玉佛珠解除尸妖封锁，完成鬼将军敌队 26／战场 18、坠落 RNG、血池三人会合、赤鬼王敌队 27／战场 19、跨场景尸妖清理、土灵珠 267 取得和血池传送入口开放；最后用引路蜂 151 的 `0038` 传送原路返回韩医仙诊厅，并进入赵灵儿被掳的下一章稳定入口。第七章更新为完整真实资源回归通过。
+- **验证情况**: 新增独立主线测试，连续覆盖场景 56/53/60/62/63/59/64/65/58 及返程 63/62/60/53/48/51/52，断言黑水镇对象 1215 合法取得引路蜂、消息 `4927–4982` 和 `4405–4425`、装备玉佛珠前后分支、敌队对象 472/473、真实胜利奖励、土灵珠、引路蜂消耗、尸妖清理、音乐／战场及最终三人队。新增黑水镇、乱葬岗荒野／墓地、将军冢上下层、血池六个正式 TileMap 视口，24 个用例连续三轮达到 320×200 零像素差并逐张检查植被、瀑布、墙体、棺椁与血池地形。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/game/script_vm.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `tests/run_script_opcode_behavior_tests.gd`
+  - `tests/run_local_jade_buddha_mainline_test.gd`
+  - `tests/run_local_blackwater_tomb_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/bugfix/map-explorer.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

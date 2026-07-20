@@ -497,6 +497,11 @@ func equipped_item_count(item_id: int) -> int:
 	return count
 
 
+## 判断当前队伍是否满足 `0086` 的装备数量；DOS 原始脚本以 0 表示至少需要一件。
+func meets_equipped_item_requirement(item_id: int, requested_count: int) -> bool:
+	return equipped_item_count(item_id) >= maxi(1, requested_count)
+
+
 ## 替换指定装备槽并返回旧对象编号；索引无效时不修改状态并返回 0。
 func replace_equipped_item(role_index: int, slot_index: int, item_id: int) -> int:
 	if role_index < 0 or role_index >= role_equipments_by_role.size():

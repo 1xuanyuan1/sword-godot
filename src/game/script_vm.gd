@@ -1299,7 +1299,7 @@ func _interpret_common_instruction(entry: PalScriptEntry, invoking_event_object_
 					result.world_changed = true
 		0x0086:
 			result.handled = true
-			if session == null or session.equipped_item_count(entry.operands[0]) < entry.operands[1]:
+			if session == null or not session.meets_equipped_item_requirement(entry.operands[0], entry.operands[1]):
 				result.flow = CommonFlow.JUMP
 				result.jump_entry = entry.operands[2]
 		0x0087:

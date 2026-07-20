@@ -22,6 +22,12 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "jade_buddha_courtyard", "scene": 55, "position": Vector2i(1376, 1000), "night": false, "party": [0, 1, 2]},
 	{"name": "jade_buddha_hall", "scene": 57, "position": Vector2i(800, 1088), "night": false, "party": [0, 1, 2]},
 	{"name": "jade_buddha_cleared", "scene": 56, "position": Vector2i(1184, 560), "night": false, "party": [0, 1, 2]},
+	{"name": "blackwater_village", "scene": 60, "position": Vector2i(1280, 1120), "night": false, "party": [0, 1, 2]},
+	{"name": "burial_wilderness", "scene": 62, "position": Vector2i(1536, 1456), "night": false, "party": [0, 1, 2]},
+	{"name": "burial_grave_gate", "scene": 63, "position": Vector2i(560, 384), "night": false, "party": [0, 1, 2]},
+	{"name": "general_tomb_upper", "scene": 59, "position": Vector2i(1392, 1600), "night": false, "party": [0, 1, 2]},
+	{"name": "general_tomb_lower_boss", "scene": 64, "position": Vector2i(640, 304), "night": false, "party": [0, 1, 2]},
+	{"name": "blood_pool_red_ghost", "scene": 58, "position": Vector2i(832, 112), "night": false, "party": [0, 1, 2]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 

@@ -1510,7 +1510,7 @@ func _run_battle_effect_script(entry_index: int, actor_is_enemy: bool, _target_i
 			0x0074:
 				cursor = entry.operands[0] if not session.is_party_full_hp() else cursor + 1
 			0x0086:
-				cursor = entry.operands[2] if session.equipped_item_count(entry.operands[0]) < entry.operands[1] else cursor + 1
+				cursor = entry.operands[2] if not session.meets_equipped_item_requirement(entry.operands[0], entry.operands[1]) else cursor + 1
 			0x0088:
 				var spent := mini(5000, session.cash)
 				session.cash -= spent

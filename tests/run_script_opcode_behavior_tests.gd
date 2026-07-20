@@ -247,15 +247,16 @@ func _test_field_state_and_branches() -> void:
 	_expect(sounds == [41] and database.event_objects[1].position == before_position and database.event_objects[1].state == before_state and not vm.script_success, "0084 failure leaves item-event position and state unchanged")
 	_cover(0x0084)
 
-	database.scripts = [_entry(0), _entry(0x0086, 5, 1, 4), _entry(0x0047, 51, 0, 0), _entry(0), _entry(0x0047, 52, 0, 0), _entry(0)]
+	# DOS 玉佛珠入口实际使用 operand[1] == 0，但经典语义仍要求队伍至少装备一件。
+	database.scripts = [_entry(0), _entry(0x0086, 5, 0, 4), _entry(0x0047, 51, 0, 0), _entry(0), _entry(0x0047, 52, 0, 0), _entry(0)]
 	session.replace_equipped_item(0, 0, 0)
 	sounds.clear()
 	vm.run_trigger(1, 1)
-	_expect(sounds == [52], "0086 jumps when the requested item is not equipped")
+	_expect(sounds == [52], "0086 zero-count operand still jumps when the requested item is not equipped")
 	session.replace_equipped_item(0, 0, 5)
 	sounds.clear()
 	vm.run_trigger(1, 1)
-	_expect(sounds == [51], "0086 counts equipment across current party roles")
+	_expect(sounds == [51], "0086 zero-count operand accepts one equipped item across current party roles")
 	_cover(0x0086)
 
 	database.scripts = [_entry(0), _entry(0x0088, 10, 0, 0), _entry(0)]
@@ -485,6 +486,16 @@ func _test_battle_operations() -> void:
 	var session := _field_session(database)
 	var controller := PalBattleController.new()
 	_expect(controller.start_battle(database, session, 0, 0, 123), "battle fixture starts for TD-001 effect opcodes")
+
+	database.scripts = [_entry(0), _entry(0x0086, 5, 0, 4), _entry(0x0047, 51, 0, 0), _entry(0), _entry(0x0047, 52, 0, 0), _entry(0)]
+	var equipment_result := PalBattleController.ActionResult.new()
+	controller._run_battle_effect_script(1, false, false, 0, equipment_result)
+	_expect(equipment_result.script_events.size() == 1 and equipment_result.script_events[0].type == PalBattleController.ScriptEventType.SOUND and equipment_result.script_events[0].value == 52, "battle 0086 zero-count operand rejects a missing equipped item")
+	session.replace_equipped_item(0, 0, 5)
+	equipment_result = PalBattleController.ActionResult.new()
+	controller._run_battle_effect_script(1, false, false, 0, equipment_result)
+	_expect(equipment_result.script_events.size() == 1 and equipment_result.script_events[0].value == 51, "battle 0086 shares the classic zero-count equipment requirement")
+	session.replace_equipped_item(0, 0, 0)
 
 	database.scripts = [_entry(0), _entry(0x0030, 17, 50, 1), _entry(0)]
 	var result := PalBattleController.ActionResult.new()

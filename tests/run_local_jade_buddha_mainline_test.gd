@@ -52,15 +52,19 @@ func _test_jade_buddha_mainline(database: PalContentDatabase) -> String:
 	vm.music_requested.connect(func(number: int, loop: bool, fade: float) -> void: _music_requests.append([number, loop, fade]))
 	vm.battle_requested.connect(func(team: int, field: int, boss: bool) -> void: _battle_requests.append([team, field, boss]))
 
-	# 离开诊厅和韩医仙屋外，从白河村后山的正式入口抵达玉佛寺。
+	# 离开诊厅和韩医仙屋外，返回白河村并从村北后山的正式入口抵达玉佛寺。
 	var failure := _run_transition(vm, database.event_objects[903], 51, Vector2i(896, 832))
 	if not failure.is_empty():
 		vm.free()
 		return "恢复后退出诊厅失败：%s" % failure
-	failure = _run_transition(vm, database.event_objects[885], 52, Vector2i(1280, 880))
+	failure = _run_transition(vm, database.event_objects[884], 48, Vector2i(1600, 720))
 	if not failure.is_empty():
 		vm.free()
-		return "韩医仙屋外进入白河村后山失败：%s" % failure
+		return "韩医仙屋外返回白河村失败：%s" % failure
+	failure = _run_transition(vm, database.event_objects[801], 53, Vector2i(1056, 1792))
+	if not failure.is_empty():
+		vm.free()
+		return "白河村北口进入后山失败：%s" % failure
 	failure = _run_transition(vm, database.event_objects[926], 55, Vector2i(1472, 1824))
 	if not failure.is_empty():
 		vm.free()
