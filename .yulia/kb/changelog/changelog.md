@@ -104,6 +104,24 @@ keywords:
   - `docs/SCENE_RENDERING.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-059] [feat] 推进隐龙窟主线并抵达白河村
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从隐龙窟近迹继续执行两段迷宫转场、半人蛇与狐狸精 Boss、石钥匙开门、获救少女离洞和白河村入口。固定场景 `41 → 43 → 45 → 40 → 46 → 47 → 48`、敌队 45/44、战场 24、石钥匙 289 的使用与消耗、一次性 Boss/石门/少女 EventObject、队伍顺序、落点和场景音乐；第五章由待验证更新为已通过真实资源回归。
+- **验证情况**: 新增独立主线测试，以真实 `PalBattleController` 建立并结算两场 Boss 战及胜利奖励，消息编号、脚本续跑和最终白河村状态全部通过。半人蛇区、内洞、离洞山路和白河村四个正式 TileMap 固定视口在 Godot 4.7 OpenGL 窗口下连续三轮均与 CPU 基准保持 320×200 零像素差，截图已实际检查。
+- **涉及文件**:
+  - `tests/run_local_hidden_dragon_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

@@ -11,6 +11,10 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "wine_outdoor", "scene": 2, "position": Vector2i(1088, 1648), "night": false},
 	{"name": "roof_night", "scene": 3, "position": Vector2i(1440, 1536), "night": true},
 	{"name": "hidden_dragon_nearby", "scene": 41, "position": Vector2i(1760, 1792), "night": false, "party": [2, 0]},
+	{"name": "hidden_dragon_snake", "scene": 40, "position": Vector2i(816, 776), "night": false, "party": [0, 2]},
+	{"name": "hidden_dragon_inner", "scene": 46, "position": Vector2i(1280, 1328), "night": false, "party": [0, 2]},
+	{"name": "baihe_road", "scene": 47, "position": Vector2i(464, 1672), "night": false, "party": [0, 2]},
+	{"name": "baihe_village", "scene": 48, "position": Vector2i(576, 1632), "night": false, "party": [0, 2]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
@@ -67,6 +71,10 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	if not world.sync_world(session, events):
 		return "%s：%s" % [test_case["name"], world.error_message]
 
+	# 连续用例会在同一 SubViewport 内重建 TileMapLayer、人物与事件节点；Metal 后端偶尔要到
+	# 第三或第四帧才提交完整新画面。过早读回会混入上一场景的整屏旧帧或少量旧 Sprite 像素。
+	await process_frame
+	await process_frame
 	await process_frame
 	await process_frame
 	var native_image := viewport.get_texture().get_image()
@@ -83,6 +91,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 
 	var different := 0
 	var maximum_channel_difference := 0
+	var difference_examples := PackedStringArray()
 	for y in range(cpu_image.get_height()):
 		for x in range(cpu_image.get_width()):
 			var cpu := cpu_image.get_pixel(x, y)
@@ -97,6 +106,8 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 			if channel_difference > 0:
 				different += 1
 				maximum_channel_difference = maxi(maximum_channel_difference, channel_difference)
+				if difference_examples.size() < 8:
+					difference_examples.append("(%d,%d) CPU=%s TileMap=%s" % [x, y, cpu.to_html(), native.to_html()])
 
 	var output_directory := ProjectSettings.globalize_path("res://generated/pal/visual_tests")
 	DirAccess.make_dir_recursive_absolute(output_directory)
@@ -104,7 +115,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	native_image.save_png(output_directory.path_join("tilemap_%s_native.png" % output_name))
 	cpu_image.save_png(output_directory.path_join("tilemap_%s_cpu.png" % output_name))
 	if different > 0:
-		return "%s（map %d）有 %d 个差异像素，最大通道差 %d；截图已写入 visual_tests" % [output_name, scene.map_number, different, maximum_channel_difference]
+		return "%s（map %d）有 %d 个差异像素，最大通道差 %d：%s；截图已写入 visual_tests" % [output_name, scene.map_number, different, maximum_channel_difference, "、".join(difference_examples)]
 	return ""
 
 
