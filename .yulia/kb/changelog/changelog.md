@@ -220,6 +220,41 @@ keywords:
 
 ---
 
+### [FT-053] [feat] 完成 TD-001 ScriptVM 操作码补齐与六上下文审计
+
+- **关联需求**: M3 完整场景流程
+- **关联 TODO**: TD-001
+- **功能描述**: 以固定版 SDLPal `script.c` 和当前 DOS 数据为基准，补齐原审计剩余的 43 种操作码，并把主触发、EventObject 自动和即时子脚本的公共非阻塞指令收敛到统一执行层。新增从场景、事件、物品、仙术、装备、毒和敌人根入口遍历真实控制流的六上下文审计；同时接通角色领域状态、商店、一次性自动战斗、特殊战斗效果、TileMap 震屏/波动/调色板/跟随者/动态换图，以及专用结局播放器。正式画面继续以 `TileMapLayer + PalTileMapWorld` 为准，CPU 整屏合成仅保留为像素对照。
+- **验证情况**: Godot 4.7 编辑器解析通过；347 项合成、123 项战斗逻辑、23 项版本化存档、22 项装备、10 项战斗桥接、81 项 TD-001 行为断言全部通过，43/43 操作码实际执行；六类真实根入口审计达到 DOS `164/164`。舍利子、试炼果、雪蛤蟆、金蚕王、捕兽夹、芦苇漂、酒神、乾坤一掷和明王回归通过；223 张地图、293 个场景、221 个场景地图和 2 张动态地图均可加载正式 TileMap，5 个固定视口与 CPU 基准零像素差。真实 GL 窗口截图已检查跟随者、波动、震屏、调色板、动态换图、确认框、商店、指定颜色覆盖、结局及经典战斗演出。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `src/game/pal_script_audit.gd`
+  - `src/game/game_session.gd`
+  - `src/game/pal_equipment_manager.gd`
+  - `src/game/pal_save_manager.gd`
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/content/pal_item_definition.gd`
+  - `src/content/pal_store_definition.gd`
+  - `src/formats/pal_scene_renderer.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/ui/pal_ending_player.gd`
+  - `src/world/map_explorer.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `shaders/pal_screen_wave.gdshader`
+  - `shaders/pal_screen_wave_overlay.gdshader`
+  - `tests/run_script_opcode_behavior_tests.gd`
+  - `tests/run_script_opcode_audit.gd`
+  - `tests/run_local_td001_object_regression_test.gd`
+  - `tests/run_local_td001_visual_test.gd`
+  - `tests/run_local_tileset_content_test.gd`
+  - `tests/run_save_system_tests.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/BATTLE.md`
+
+---
+
 ## 2026-07-16
 
 ### [FT-020] [feat] 推进买虾、病倒求药与山神庙主线
