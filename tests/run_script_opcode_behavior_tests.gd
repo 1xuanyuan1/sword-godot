@@ -522,8 +522,11 @@ func _test_battle_operations() -> void:
 	result = PalBattleController.ActionResult.new()
 	var steal_outcome := controller._run_battle_effect_script(1, false, true, 0, result)
 	_expect(bool(steal_outcome.success) and session.item_count(5) == count_before_steal + 1 and controller.enemies[0].steal_item_count == 0, "006A steals an item and keeps normal script success semantics")
-	var failed_steal := controller._run_battle_effect_script(1, false, true, 0, PalBattleController.ActionResult.new())
+	_expect(result.script_events.size() == 1 and result.script_events[0].type == PalBattleController.ScriptEventType.STEAL and result.script_events[0].value == 5 and result.script_events[0].secondary == 1 and result.script_events[0].tertiary == 0, "006A reports the stolen item and target for its dedicated animation")
+	var failed_result := PalBattleController.ActionResult.new()
+	var failed_steal := controller._run_battle_effect_script(1, false, true, 0, failed_result)
 	_expect(bool(failed_steal.success), "006A no-item failure does not mark the whole use script failed")
+	_expect(failed_result.script_events.size() == 1 and failed_result.script_events[0].type == PalBattleController.ScriptEventType.STEAL and failed_result.script_events[0].secondary == 0 and failed_result.script_events[0].tertiary == 0, "006A still requests the dedicated steal animation when the enemy has nothing left")
 	_cover(0x006a)
 
 	database.scripts = [_entry(0), _entry(0x006b, 0xfff8, 0, 0), _entry(0)]

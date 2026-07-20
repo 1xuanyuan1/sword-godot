@@ -738,12 +738,19 @@ func _play_action_result(result: PalBattleController.ActionResult) -> void:
 	if not result.script_events.is_empty():
 		var immediate_events: Array[PalBattleController.ScriptEvent] = []
 		var defer_trance_sprite := false
+		var defer_magic_steal := result.action_type == PalBattleController.ActionType.MAGIC and result.script_events.any(
+			func(event: PalBattleController.ScriptEvent) -> bool:
+				return event.type == PalBattleController.ScriptEventType.STEAL
+		)
 		if result.action_type == PalBattleController.ActionType.MAGIC:
 			var magic := _database.magic_definition_for_object(result.magic_object_id)
 			defer_trance_sprite = magic != null and magic.magic_type == PalMagicDefinition.TYPE_TRANCE
 		for event in result.script_events:
-			if not defer_trance_sprite or event.type != PalBattleController.ScriptEventType.PLAYER_SPRITE:
-				immediate_events.append(event)
+			if defer_trance_sprite and event.type == PalBattleController.ScriptEventType.PLAYER_SPRITE:
+				continue
+			if defer_magic_steal and event.type in [PalBattleController.ScriptEventType.SOUND, PalBattleController.ScriptEventType.STEAL]:
+				continue
+			immediate_events.append(event)
 		if not immediate_events.is_empty():
 			await _play_script_events(immediate_events)
 	if not result.script_hits.is_empty():
@@ -841,9 +848,7 @@ func _play_script_events(events: Array[PalBattleController.ScriptEvent]) -> void
 						node.visible = event.value <= 0
 				await _wait_frames(4)
 			PalBattleController.ScriptEventType.STEAL:
-				var message := "%s %d %s" % [_database.get_word(34), event.secondary, _database.get_word(10) if event.value == 0 else _database.get_word(event.value)]
-				_battle_ui.show_message(message, 800)
-				await _wait_frames(20)
+				await _show_steal_message(event)
 			PalBattleController.ScriptEventType.BLOW:
 				# 006B 的位移在后续每一帧仙术特效中随机累计；这里只保存本动作范围的参数。
 				_pending_blow_displacement = event.value
@@ -1090,8 +1095,18 @@ func _play_player_magic(result: PalBattleController.ActionResult) -> void:
 	await _wait_frames(2)
 	_set_player_frame(actor_index, 5, casting_foot)
 	await _wait_frames(1)
-	var effect_sprite := _database.load_magic_effect_sprite(definition.effect_sprite)
-	if effect_sprite != null and effect_sprite.is_valid():
+	if _audio_player != null:
+		var role_index := _controller.players[actor_index].role_index
+		_audio_player.play_sound(_database.player_roles.magic_sound_for(role_index))
+	var effect_sprite := _database.load_magic_effect_sprite(definition.effect_sprite) if definition.effect_sprite != 0xffff else null
+	if definition.effect_sprite == 0xffff:
+		# 飞龙探云手等脚本仙术以 FFFF 明确表示没有 FIRE.MKF 特效，动作由 006A 专门绘制。
+		for event in result.script_events:
+			if event.type == PalBattleController.ScriptEventType.SOUND and _audio_player != null:
+				_audio_player.play_sound(event.value)
+			elif event.type == PalBattleController.ScriptEventType.STEAL:
+				await _play_steal_event(event, actor_index)
+	elif effect_sprite != null and effect_sprite.is_valid():
 		await _play_magic_effect_sprite(effect_sprite, definition, result, casting_foot)
 	elif definition.magic_type != PalMagicDefinition.TYPE_TRANCE:
 		_battle_ui.show_message("仙术特效资源缺失，请重新导入 Data", 1000)
@@ -1104,6 +1119,42 @@ func _play_player_magic(result: PalBattleController.ActionResult) -> void:
 		await _show_magic_result(result, object, definition)
 	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
 	await _wait_frames(5)
+
+
+func _play_steal_event(event: PalBattleController.ScriptEvent, actor_index: int) -> void:
+	var target_index := event.tertiary
+	if actor_index < 0 or actor_index >= _player_nodes.size() or target_index < 0 or target_index >= _enemy_nodes.size():
+		await _show_steal_message(event)
+		return
+	var offset := (target_index - actor_index) * 8
+	var steal_foot := _enemy_foot_positions[target_index] + Vector2i(64 - offset, 22 + offset)
+	_set_player_frame(actor_index, 10, steal_foot)
+	await _wait_frames(1)
+	for step in range(5):
+		steal_foot += Vector2i(-(step + 8), -4)
+		_set_player_frame(actor_index, 10, steal_foot)
+		if step == 4:
+			_set_enemy_frame(target_index, _enemy_current_frames[target_index], 6)
+		await _wait_frames(1)
+	_set_enemy_frame(target_index, _enemy_current_frames[target_index], 0)
+	steal_foot.x -= 1
+	_set_player_frame(actor_index, 10, steal_foot)
+	await _wait_frames(3)
+	_set_player_frame(actor_index, _resting_player_frame(actor_index), _player_foot_positions[actor_index])
+	await _wait_frames(1)
+	await _show_steal_message(event)
+
+
+func _show_steal_message(event: PalBattleController.ScriptEvent) -> void:
+	if event.secondary <= 0:
+		return
+	var message := (
+		"%s %d %s" % [_database.get_word(34), event.secondary, _database.get_word(10)]
+		if event.value == 0
+		else "%s %s" % [_database.get_word(34), _database.get_word(event.value)]
+	)
+	_battle_ui.show_message(message, 800)
+	await _wait_frames(20)
 
 
 func _play_player_summon_magic(result: PalBattleController.ActionResult, object: PalMagicObjectDefinition, definition: PalMagicDefinition) -> void:

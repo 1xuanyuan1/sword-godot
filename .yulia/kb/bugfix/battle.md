@@ -90,6 +90,23 @@ keywords:
 
 ---
 
+### [BF-040] 飞龙探云手误报仙术特效资源缺失
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M4 经典玩家仙术演出
+- **问题描述**: 飞龙探云手对象 377 映射的仙术记录 98 将 `effect_sprite` 设为 `FFFF`，这是原版“没有 FIRE.MKF Sprite、改由成功脚本播放专用动作”的明确哨兵。当前表现层却把它当作需要加载的 Sprite 编号，失败后显示“仙术特效资源缺失”；同时 `006A` 只结算偷取物品和显示文字，没有携带目标或播放李逍遥掠过敌人的专用偷窃动作。
+- **涉及文件**:
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_script_opcode_behavior_tests.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `docs/BATTLE.md`
+- **修复内容**: 将 `FFFF` 识别为有意省略 FIRE 特效，不再误报资源缺失；`006A` 无论偷窃成功与否都生成包含目标敌人的专用事件。表现层按 `fight.c::PAL_BattleStealFromEnemy()` 使用李逍遥战斗 Sprite 第 10 帧，从敌人右下方连续向左上掠过、末段令敌人闪白并归位，同时按原顺序播放施法声、脚本声和成功提示。合成回归固定成功／无物品两条事件路径，真实资源固定 `377 → 98 → FFFF → 0047 → 006A`，OpenGL 回归检查专用动作像素、归位和全程无资源错误。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-17
 
 ### [BF-017] 战斗界面切换场景后输入处理访问空 Viewport

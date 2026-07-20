@@ -529,6 +529,51 @@ func _run() -> void:
 		return
 	await create_timer(0.5).timeout
 
+	preview.load_battle(18, 21, PackedInt32Array([0]))
+	preview.set_process(false)
+	preview._session.learned_magics_by_role[0] = PackedInt32Array([377])
+	preview._session.role_max_mp[0] = 999
+	preview._session.role_mp[0] = 999
+	preview._session.role_dexterity[0] = 999
+	if not preview._controller.submit_magic(377, 0):
+		_fail("真实飞龙探云手 377 无法提交到战斗样板")
+		return
+	var steal_result := preview._controller.execute_next_action()
+	var steal_event: PalBattleController.ScriptEvent
+	if steal_result != null:
+		for event in steal_result.script_events:
+			if event.type == PalBattleController.ScriptEventType.STEAL:
+				steal_event = event
+				break
+	if steal_result == null or steal_result.action_type != PalBattleController.ActionType.MAGIC or steal_result.magic_object_id != 377 or steal_event == null or steal_event.tertiary != 0:
+		_fail("真实飞龙探云手没有生成指向目标敌人的专用偷窃动作事件")
+		return
+	preview._battle_ui.clear_message()
+	preview._play_action_result(steal_result)
+	var steal_image: Image
+	var steal_resource_error_seen := false
+	for _step in range(140):
+		await create_timer(0.01).timeout
+		steal_resource_error_seen = steal_resource_error_seen or preview._battle_ui._message.contains("特效资源缺失")
+		if preview._player_current_frames[0] == 10:
+			var steal_foot := preview._foot_for_node(preview._player_nodes[0], preview._player_sprites[0], 10)
+			if steal_foot.x < preview._player_foot_positions[0].x - 30:
+				steal_image = viewport.get_texture().get_image()
+				break
+	var steal_path := output_directory.path_join("battle_steal_flying_dragon.png")
+	if steal_image == null or steal_image.save_png(steal_path) != OK:
+		_fail("飞龙探云手没有在敌人附近绘制李逍遥第 10 帧专用偷窃动作")
+		return
+	for _step in range(140):
+		await create_timer(0.02).timeout
+		steal_resource_error_seen = steal_resource_error_seen or preview._battle_ui._message.contains("特效资源缺失")
+		var resting_position := preview._top_left_for_frame(preview._player_sprites[0], 0, preview._player_foot_positions[0])
+		if preview._player_current_frames[0] == 0 and preview._player_nodes[0].position.distance_to(resting_position) < 0.1:
+			break
+	if steal_resource_error_seen:
+		_fail("飞龙探云手仍把 FFFF 哨兵误报为 FIRE.MKF 特效资源缺失")
+		return
+
 	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
 	var poison_result := PalBattleController.ActionResult.new()
 	poison_result.action_type = PalBattleController.ActionType.POISON
@@ -621,7 +666,7 @@ func _run() -> void:
 	if preview._script_dialog_waiting or preview._script_dialog_box.visible:
 		_fail("战斗对白完整显示后的第二次空格没有继续脚本")
 		return
-	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、胖苗持久地形、风神召唤、梦蛇变身、普攻/双剑二连击、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, terrain_path, summon_path, trance_path, attack_path, dual_path, enemy_magic_path, poison_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、飞龙探云手、胖苗持久地形、风神召唤、梦蛇变身、普攻/双剑二连击、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, steal_path, terrain_path, summon_path, trance_path, attack_path, dual_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 
 

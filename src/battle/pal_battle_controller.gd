@@ -1581,22 +1581,22 @@ func _steal_from_enemy(enemy_index: int, steal_rate: int, result: ActionResult) 
 	if enemy_index < 0 or enemy_index >= enemies.size():
 		return false
 	var enemy := enemies[enemy_index]
-	if enemy.steal_item_count <= 0 or (steal_rate != 0 and _random.next_int(0, 10) > steal_rate):
-		return false
-	if enemy.steal_item == 0:
-		var amount := enemy.steal_item_count / _random.next_int(2, 3)
-		enemy.steal_item_count -= amount
-		session.cash += amount
-		if amount > 0:
-			result.script_events.append(_script_event(ScriptEventType.STEAL, 0, amount))
-		return amount > 0
-	var before := session.item_count(enemy.steal_item)
-	enemy.steal_item_count -= 1
-	session.set_item_count(enemy.steal_item, mini(99, before + 1))
-	var changed := session.item_count(enemy.steal_item) - before
-	if changed > 0:
-		result.script_events.append(_script_event(ScriptEventType.STEAL, enemy.steal_item, changed))
-	return changed > 0
+	var stolen_object_id := 0
+	var amount := 0
+	if enemy.steal_item_count > 0 and (steal_rate == 0 or _random.next_int(0, 10) <= steal_rate):
+		stolen_object_id = enemy.steal_item
+		if enemy.steal_item == 0:
+			amount = enemy.steal_item_count / _random.next_int(2, 3)
+			enemy.steal_item_count -= amount
+			session.cash += amount
+		else:
+			var before := session.item_count(enemy.steal_item)
+			enemy.steal_item_count -= 1
+			session.set_item_count(enemy.steal_item, mini(99, before + 1))
+			amount = session.item_count(enemy.steal_item) - before
+	# 006A 的专用掠过动作无论是否偷到东西都会播放；第三个字段保留目标敌人。
+	result.script_events.append(_script_event(ScriptEventType.STEAL, stolen_object_id, amount, enemy_index))
+	return amount > 0
 
 
 func _battle_player_target(target_index: int) -> int:
