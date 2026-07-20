@@ -76,6 +76,9 @@ var auto_battle_pending: bool = false
 var party_script_frames: PackedInt32Array = PackedInt32Array([-1, -1, -1])
 ## 物品对象编号到数量的映射。
 var inventory: Dictionary = {}
+## 已经成功拾取并永久熄灭辅助星芒的 EventObject 编号集合。
+## 原版事件状态仍决定物件能否继续交互；本字段只影响正式 TileMap 提示。
+var collectible_marker_event_ids: Dictionary = {}
 ## 每名角色当前等级；索引与 PLAYERROLES 一致。
 var role_levels: PackedInt32Array = PackedInt32Array()
 ## 每名角色最大体力。
@@ -774,6 +777,37 @@ func change_item_count(item_id: int, amount: int) -> int:
 	return item_count(item_id) - previous
 
 
+## 首次记录一个已消费的采集标识；重复记录或无效编号返回 false。
+func consume_collectible_marker(event_object_id: int) -> bool:
+	if event_object_id <= 0 or collectible_marker_event_ids.has(event_object_id):
+		return false
+	collectible_marker_event_ids[event_object_id] = true
+	return true
+
+
+## 指定 EventObject 的采集辅助标识是否已经永久熄灭。
+func is_collectible_marker_consumed(event_object_id: int) -> bool:
+	return event_object_id > 0 and collectible_marker_event_ids.has(event_object_id)
+
+
+## 返回递增排序的已消费编号，供稳定存档序列化。
+func collectible_marker_ids() -> Array[int]:
+	var result: Array[int] = []
+	for raw_id in collectible_marker_event_ids:
+		result.append(int(raw_id))
+	result.sort()
+	return result
+
+
+## 从存档数组恢复提示状态；无效值由 PalSaveManager 在调用前拒绝。
+func restore_collectible_marker_ids(values: Array) -> void:
+	collectible_marker_event_ids.clear()
+	for value in values:
+		var event_object_id := int(value)
+		if event_object_id > 0:
+			collectible_marker_event_ids[event_object_id] = true
+
+
 ## 从背包和当前队伍装备中移除指定对象；用于 0020 在探索与战斗效果间共享语义。
 func remove_item_including_equipment(item_id: int, amount: int) -> int:
 	if item_id <= 0 or amount <= 0:
@@ -817,6 +851,7 @@ func reset_new_game() -> void:
 	chase_range_multiplier = 1
 	auto_battle_pending = false
 	inventory.clear()
+	collectible_marker_event_ids.clear()
 	role_levels = PackedInt32Array()
 	role_max_hp = PackedInt32Array()
 	role_max_mp = PackedInt32Array()

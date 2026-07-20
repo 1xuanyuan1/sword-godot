@@ -6,6 +6,7 @@ const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
+const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -28,6 +29,7 @@ func _init() -> void:
 	_test_voc_decoder()
 	_test_music_reference_collection()
 	_test_content_structures()
+	_test_collectible_classifier()
 	_test_classic_font_aliases()
 	_test_explorer_manual_search()
 	_test_explorer_touch_scan()
@@ -384,6 +386,82 @@ func _test_content_structures() -> void:
 	dialog_database.scripts[0].operands[0] = 55
 	dialog_database._build_speaker_portrait_defaults()
 	_expect(dialog_database.portrait_for_speaker("李大娘") == 55 and dialog_database.portrait_for_speaker("旁白") == 0, "speaker portrait metadata fills only known character portraits")
+
+
+func _test_collectible_classifier() -> void:
+	var database := PalContentDatabase.new()
+	for _index in range(32):
+		database.scripts.append(_script_entry(0x0000))
+	# 无 Sprite 的室内暗格：隐藏自身并获得物品。
+	database.scripts[1] = _script_entry(0x0049, 0xffff, 0, 0)
+	database.scripts[2] = _script_entry(0x001f, 99, 0, 0)
+	database.scripts[3] = _script_entry(0x0000)
+	# 标准宝箱：子脚本打开箱盖，正文获得物品，未来入口切到空箱。
+	database.scripts[4] = _script_entry(0x0004, 8, 0, 0)
+	database.scripts[5] = _script_entry(0x001f, 100, 1, 0)
+	database.scripts[6] = _script_entry(0x0002, 12, 0, 0)
+	database.scripts[8] = _script_entry(0x0014, 1, 0, 0)
+	database.scripts[9] = _script_entry(0x0000)
+	database.scripts[12] = _script_entry(0xffff, 5, 0, 0)
+	database.scripts[13] = _script_entry(0x0000)
+	# NPC/商贩和纯剧情物件分别用动画帧、购买成本及角色对话排除。
+	database.scripts[14] = _script_entry(0x001e, 0xffe7, 0, 0)
+	database.scripts[15] = _script_entry(0x001f, 92, 0, 0)
+	database.scripts[16] = _script_entry(0x0000)
+	database.scripts[17] = _script_entry(0x003d, 1, 0, 0)
+	database.scripts[18] = _script_entry(0x001f, 274, 0, 0)
+	database.scripts[19] = _script_entry(0x0049, 0xffff, 0, 0)
+	database.scripts[20] = _script_entry(0x0000)
+	# 正向金钱和带后续剧情的尸骨仍属于近距离实体采集物。
+	database.scripts[21] = _script_entry(0x001e, 50, 0, 0)
+	database.scripts[22] = _script_entry(0x0001)
+	database.scripts[23] = _script_entry(0x003d, 2, 0, 0)
+	database.scripts[24] = _script_entry(0x001f, 152, 2, 0)
+	database.scripts[25] = _script_entry(0x0007, 12, 0, 0)
+	database.scripts[26] = _script_entry(0x0001)
+
+	var classifier := CollectibleClassifier.new()
+	classifier.configure(database)
+	var session := GameSession.new()
+	var hidden_pickup := _synthetic_collectible_event(1, 1, 0, 1)
+	var herb := _synthetic_collectible_event(2, 1, 68, 1)
+	var chest := _synthetic_collectible_event(3, 4, 10, 2)
+	var vendor := _synthetic_collectible_event(4, 14, 127, 2)
+	vendor.sprite_frames = 1
+	var npc_reward := _synthetic_collectible_event(5, 15, 117, 2)
+	npc_reward.sprite_frames = 3
+	var story_object := _synthetic_collectible_event(6, 17, 396, 2)
+	var cash_pickup := _synthetic_collectible_event(7, 21, 0, 1)
+	var corpse := _synthetic_collectible_event(8, 23, 505, 1)
+	_expect(classifier.is_available(hidden_pickup, session) and classifier.is_available(herb, session), "collectible classifier includes sprite-less indoor loot and visible herbs")
+	_expect(classifier.is_available(chest, session), "collectible classifier follows chest sub-scripts and includes farther one-shot props")
+	chest.trigger_script = 12
+	_expect(not classifier.is_available(chest, session), "collectible classifier drops chests after their trigger changes to the empty-box entry")
+	_expect(not classifier.is_available(vendor, session) and not classifier.is_available(npc_reward, session), "collectible classifier excludes vendors and animated NPC rewards")
+	_expect(not classifier.is_available(story_object, session), "collectible classifier excludes farther story-dialog rewards")
+	_expect(classifier.is_available(cash_pickup, session) and classifier.is_available(corpse, session), "collectible classifier includes positive cash and close corpse loot")
+	hidden_pickup.state = 0
+	_expect(not classifier.is_available(hidden_pickup, session), "collectible classifier skips hidden events")
+	_expect(session.consume_collectible_marker(herb.object_id) and not session.consume_collectible_marker(herb.object_id), "collectible marker consumption is idempotent")
+	_expect(not classifier.is_available(herb, session), "consumed collectible markers stay suppressed independently of the PAL event state")
+
+
+func _script_entry(operation: int, first: int = 0, second: int = 0, third: int = 0) -> PalScriptEntry:
+	var entry := PalScriptEntry.new()
+	entry.operation = operation
+	entry.operands = PackedInt32Array([first, second, third])
+	return entry
+
+
+func _synthetic_collectible_event(object_id: int, trigger_script: int, sprite_number: int, trigger_mode: int) -> PalEventObject:
+	var event := PalEventObject.new()
+	event.object_id = object_id
+	event.state = 1
+	event.trigger_script = trigger_script
+	event.trigger_mode = trigger_mode
+	event.sprite_number = sprite_number
+	event.sprite_frames = 0
+	return event
 
 
 func _test_explorer_manual_search() -> void:

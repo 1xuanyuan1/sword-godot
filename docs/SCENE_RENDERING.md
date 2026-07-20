@@ -76,6 +76,14 @@ PalTileMapWorld
 
 静态地图完全由 TileMapLayer 绘制。人物和事件使用带脚底基准的 `Node2D + Sprite2D`；SDLPal 可能重复绘制的特殊覆盖块使用同一 RG8 图集内容创建兼容 Sprite2D，并和人物进入同一 Y 排序容器。这样既保留 Godot 原生地图，也避免强行用单个 TileMap 单元表达原版逐人物覆盖队列。
 
+## 采集物星芒
+
+正式 `PalTileMapWorld` 会为当前可拾取的宝箱、草药、柜子暗格、地面物件和尸骨掉落绘制 9×9 金色四角星芒。分类器检查 EventObject 的可见状态、搜索模式、静态 Sprite 结构及当前触发脚本中的正向物品/金钱指令；带购买成本的商贩、动画 NPC 奖励和纯剧情取得物不会被标记。室内暗格即使没有独立 MGO Sprite，也会按 EventObject 世界坐标生成标识。
+
+星芒和事件对象共用基准 Y，并经过 `PalSceneRenderer.expanded_draw_items()` 的覆盖块扫描，所以屋顶、树冠和柜架仍可遮住它；它不是 HUD 置顶提示。Shader 使用固定白／金／琥珀像素和 1.2 秒呼吸周期，不受日夜调色板影响。实际执行正向 `001E/001F` 后，探索控制器才把该 EventObject 记入 `GameSession.collectible_marker_event_ids` 并刷新世界；普通宝箱还会依赖原版空箱入口或隐藏状态，可重复鼠儿果则只永久熄灭提示，不改变继续采摘的原版行为。
+
+CPU 整屏合成不新增星芒能力。像素基准测试通过 `PalTileMapWorld.set_collectible_markers_enabled(false)` 关闭辅助层，正式游戏始终默认开启。
+
 `ScriptVM 007F` 使用独立的剧情镜头偏移。它只改变 `PalCamera` 和 CPU 对照渲染使用的视口左上角，不修改 `GameSession.viewport_position`、队伍脚底、轨迹或事件坐标；逐帧平移、固定格坐标和复位因此不会误触碰撞。场景切换会清空临时偏移。
 
 本地 `run_local_tilemap_visual_test.gd` 会让 TileMapLayer 和 CPU 使用同一会话状态。目前客栈 map 12 的固定视口已经达到 320×200 零差异像素。

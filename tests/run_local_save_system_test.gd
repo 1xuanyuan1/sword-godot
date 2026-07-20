@@ -29,6 +29,7 @@ func _init() -> void:
 	session.set_party_world_position(Vector2i(1232, 744))
 	session.cash = 500
 	session.set_item_count(272, 1)
+	session.consume_collectible_marker(167)
 	var event := database.event_objects[237]
 	var original_event_state := event.state
 	var original_scene_entry := database.scenes[11].script_on_enter
@@ -42,6 +43,7 @@ func _init() -> void:
 	session.scene_index = 0
 	session.set_party_world_position(Vector2i.ZERO)
 	session.cash = 0
+	session.collectible_marker_event_ids.clear()
 	session.inventory.clear()
 	event.state = original_event_state
 	database.scenes[11].script_on_enter = original_scene_entry
@@ -52,6 +54,7 @@ func _init() -> void:
 	var valid: bool = bool(metadata.get("can_load", false)) and metadata.get("party", []).size() == 2
 	valid = valid and session.scene_index == 11 and session.party_world_position() == Vector2i(1232, 744)
 	valid = valid and session.cash == 500 and session.item_count(272) == 1
+	valid = valid and session.is_collectible_marker_consumed(167)
 	valid = valid and event.state == 0 and database.scenes[11].script_on_enter == 0
 	var file := FileAccess.open(manager.slot_path(100), FileAccess.READ)
 	var file_size := file.get_length() if file != null else 0

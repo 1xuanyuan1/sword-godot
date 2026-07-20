@@ -29,6 +29,7 @@ func _init() -> void:
 	session.chase_speed_change_cycles = 12
 	session.chase_range_multiplier = 3
 	session.auto_battle_pending = true
+	session.consume_collectible_marker(2)
 	session.set_item_count(3, 7)
 	session.role_hp[0] = 73
 	database.scenes[1].script_on_enter = 9
@@ -53,6 +54,7 @@ func _init() -> void:
 	session.collect_value = 0
 	session.chase_speed_change_cycles = 0
 	session.chase_range_multiplier = 1
+	session.collectible_marker_event_ids.clear()
 	session.inventory.clear()
 	session.role_hp[0] = 1
 	database.scenes[1].script_on_enter = 0
@@ -66,6 +68,7 @@ func _init() -> void:
 	_expect(manager.load_slot(100, session), "slot 100 loads after structural and checksum validation: %s" % manager.error_message)
 	_expect(session.scene_index == 1 and session.party_world_position() == Vector2i(1232, 744) and session.cash == 9876 and session.item_count(3) == 7 and session.role_hp[0] == 73, "load restores scene, position, cash, inventory and role values")
 	_expect(session.follower_sprite_numbers == PackedInt32Array([301, 302]) and session.collect_value == 8 and session.chase_speed_change_cycles == 12 and session.chase_range_multiplier == 3 and not session.auto_battle_pending, "load restores persistent TD-001 state and clears the next-battle-only flag")
+	_expect(session.is_collectible_marker_consumed(2), "load restores consumed collectible marker ids")
 	_expect(database.scenes[1].script_on_enter == 9 and database.event_objects[1].position == Vector2i(640, 352) and database.event_objects[1].state == 0 and database.event_objects[1].trigger_script == 8, "load restores scene and EventObject runtime mutations")
 	_expect(database.items[3].script_on_use == 7 and database.magic_objects[2].script_on_success == 6 and database.enemy_objects[1].script_on_ready == 5 and database.poisons[3].player_script == 7 and database.player_roles.scene_sprite_numbers[0] == 208, "load restores all OBJECT union cursor views and player scene sprite")
 	_expect(not session.equipment_effects_ready, "load marks derived equipment effects for deterministic rebuild")
@@ -101,10 +104,32 @@ func _init() -> void:
 	_expect(corrupt_metadata.get("exists") == true and corrupt_metadata.get("can_load") == false and not str(corrupt_metadata.get("error", "")).is_empty(), "corrupt JSON appears as an unusable slot with a diagnostic")
 	_expect(not manager.save_slot(0, session) and not manager.save_slot(101, session), "slot bounds reject zero and values above one hundred")
 
+	# 新字段在格式 1 中保持可选；旧存档缺失时应清空当前会话中的提示状态。
+	_expect(manager.save_slot(5, session), "slot 5 creates an optional marker-state fixture")
+	var legacy_record := _read_json(manager.slot_path(5))
+	var legacy_payload: Dictionary = JSON.parse_string(str(legacy_record["payload_json"]))
+	legacy_payload["session"].erase("collectible_marker_event_ids")
+	legacy_record["payload_json"] = JSON.stringify(legacy_payload, "", false)
+	legacy_record["payload_sha256"] = manager._sha256_text(legacy_record["payload_json"])
+	_write_json(manager.slot_path(5), legacy_record)
+	manager.configure(database, save_directory, "synthetic-content-v1")
+	session.consume_collectible_marker(1)
+	_expect(manager.load_slot(5, session) and session.collectible_marker_event_ids.is_empty(), "format 1 saves without marker state remain compatible and restore an empty set")
+
+	_expect(manager.save_slot(6, session), "slot 6 creates a marker id bounds fixture")
+	var invalid_marker_record := _read_json(manager.slot_path(6))
+	var invalid_marker_payload: Dictionary = JSON.parse_string(str(invalid_marker_record["payload_json"]))
+	invalid_marker_payload["session"]["collectible_marker_event_ids"] = [database.event_objects.size() + 1]
+	invalid_marker_record["payload_json"] = JSON.stringify(invalid_marker_payload, "", false)
+	invalid_marker_record["payload_sha256"] = manager._sha256_text(invalid_marker_record["payload_json"])
+	_write_json(manager.slot_path(6), invalid_marker_record)
+	manager.configure(database, save_directory, "synthetic-content-v1")
+	_expect(not manager.load_slot(6, session) and "采集标识" in manager.error_message, "out-of-range collectible marker ids are rejected before restore")
+
 	for slot in range(1, PalSaveManager.SLOT_COUNT + 1):
 		manager.delete_slot(slot)
 	if _failures.is_empty():
-		print("PASS: 23 versioned save-system checks")
+		print("PASS: 28 versioned save-system checks")
 		quit(0)
 	else:
 		for failure in _failures:

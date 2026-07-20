@@ -10,6 +10,7 @@ const SCRIPT_FRAME_SECONDS := 0.10
 const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
+const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
 const RETURN_TO_LAB_KEYCODE := KEY_F10
 const FIELD_MAGIC_STAGE_USE := 0
@@ -18,6 +19,7 @@ const FIELD_MAGIC_STAGE_SUCCESS := 1
 var _database := PalContentDatabase.new()
 var _session := GameSession.new()
 var _save_manager := PalSaveManager.new()
+var _collectible_classifier := CollectibleClassifier.new()
 var _map_data: PalMapData
 var _tile_sprite: PalSprite
 var _scene_events: Array[PalEventObject] = []
@@ -50,6 +52,7 @@ var _showing_walk_frame: bool = false
 var _pending_scene_index: int = -1
 var _script_frame_accumulator: float = 0.0
 var _active_trigger_event: PalEventObject
+var _active_collectible_event_id: int = 0
 var _active_scene_enter_index: int = -1
 var _pending_used_item_id: int = 0
 var _pending_magic_object_id: int = 0
@@ -75,6 +78,7 @@ func _ready() -> void:
 	if not _database.load_generated():
 		_set_error(_database.error_message + "。请返回资源实验室重新导入。")
 		return
+	_collectible_classifier.configure(_database)
 	_save_system_available = _save_manager.configure(_database)
 	_session.reset_new_game()
 	if not _equipment_manager.configure(_database, _session):
@@ -93,6 +97,7 @@ func _ready() -> void:
 	_script_vm = ScriptVM.new()
 	_script_vm.configure(_database, _session)
 	_script_vm.unsupported_instruction.connect(_on_unsupported_instruction)
+	_script_vm.instruction_started.connect(_on_script_instruction_started)
 	_script_vm.redraw_requested.connect(_on_script_redraw)
 	_script_vm.dialog_started.connect(_on_dialog_started)
 	_script_vm.dialog_message.connect(_on_dialog_message)
@@ -556,6 +561,7 @@ func _run_event_trigger(event: PalEventObject) -> void:
 	if event == null or event.trigger_script <= 0 or _script_vm == null:
 		return
 	_active_trigger_event = event
+	_active_collectible_event_id = event.object_id if _collectible_classifier.is_available(event, _session) else 0
 	_script_vm.run_trigger(event.trigger_script, event.object_id)
 
 
@@ -1150,6 +1156,7 @@ func _reset_transient_state_for_load() -> void:
 	_fade_overlay.modulate.a = 0.0
 	_pending_scene_index = -1
 	_active_trigger_event = null
+	_active_collectible_event_id = 0
 	_active_scene_enter_index = -1
 	_pending_used_item_id = 0
 	_pending_magic_object_id = 0
@@ -1270,6 +1277,7 @@ func _on_script_finished(next_entry: int) -> void:
 	if _active_trigger_event != null:
 		_active_trigger_event.trigger_script = next_entry
 		_active_trigger_event = null
+	_active_collectible_event_id = 0
 	if _touch_scan_active:
 		if _pending_scene_index >= 0:
 			_reset_touch_scan()
@@ -1294,6 +1302,20 @@ func _on_script_finished(next_entry: int) -> void:
 	if _fade_in_after_scene_change and _pending_scene_index < 0 and not _screen_fade_active:
 		_fade_in_after_scene_change = false
 		_start_screen_fade(false, _automatic_fade_in_duration, false)
+
+
+func _on_script_instruction_started(_index: int, operation: int, operands: PackedInt32Array) -> void:
+	if _active_collectible_event_id <= 0 or operands.size() < 2:
+		return
+	var grants_reward := false
+	if operation == 0x001e:
+		grants_reward = operands[0] > 0 and operands[0] < 0x8000
+	elif operation == 0x001f:
+		grants_reward = operands[1] < 0x8000
+	if grants_reward and _session.consume_collectible_marker(_active_collectible_event_id):
+		# instruction_started 从 VM 解释循环内部同步发出；延后正式世界刷新以避免重入。
+		if is_inside_tree():
+			call_deferred("_refresh_world")
 
 
 func _apply_pending_scene() -> void:

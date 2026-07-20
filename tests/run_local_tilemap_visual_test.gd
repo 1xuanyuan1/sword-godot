@@ -30,6 +30,8 @@ func _run() -> void:
 	viewport.transparent_bg = false
 	root.add_child(viewport)
 	var world := PalTileMapWorld.new()
+	# 新增星芒是正式 TileMap 辅助层，不属于 SDLPal CPU 像素基准。
+	world.set_collectible_markers_enabled(false)
 	viewport.add_child(world)
 	for test_case in TEST_CASES:
 		var failure := await _compare_case(database, viewport, world, test_case)

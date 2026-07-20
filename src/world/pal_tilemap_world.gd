@@ -8,7 +8,11 @@ extends Node2D
 
 const PALETTE_SHADER: Shader = preload("res://shaders/indexed_palette.gdshader")
 const SCREEN_WAVE_SHADER: Shader = preload("res://shaders/pal_screen_wave_overlay.gdshader")
+const COLLECTIBLE_MARKER_SHADER: Shader = preload("res://shaders/collectible_marker.gdshader")
+const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const VIEWPORT_SIZE := Vector2i(320, 200)
+const COLLECTIBLE_MARKER_SIZE := 9
+const SPRITELESS_COLLECTIBLE_HEIGHT := 10
 
 ## 最近一次地图资源、节点结构或调色板同步失败原因。
 var error_message: String = ""
@@ -27,6 +31,10 @@ var _effect_root: Node2D
 var _wave_overlay: ColorRect
 var _wave_material: ShaderMaterial
 var _palette_material: ShaderMaterial
+var _collectible_marker_material: ShaderMaterial
+var _collectible_marker_frame: PalIndexedImage
+var _collectible_classifier := CollectibleClassifier.new()
+var _collectible_markers_enabled: bool = true
 var _palette_key: String = ""
 var _texture_cache: Dictionary = {}
 var _event_sprites: Dictionary = {}
@@ -45,6 +53,7 @@ func load_map(database: PalContentDatabase, map_number: int) -> bool:
 	_ensure_runtime_nodes()
 	error_message = ""
 	_database = database
+	_collectible_classifier.configure(database)
 	_map_data = database.load_map(map_number)
 	_tile_sprite = database.load_map_tiles(map_number)
 	if _map_data == null or not _map_data.is_valid() or _tile_sprite == null or not _tile_sprite.is_valid():
@@ -138,6 +147,11 @@ func reset_sprite_cache() -> void:
 	_texture_cache.clear()
 
 
+## 像素基准测试可关闭新增辅助标识；正式游戏保持默认开启。
+func set_collectible_markers_enabled(enabled: bool) -> void:
+	_collectible_markers_enabled = enabled
+
+
 ## 设置正式 TileMap 画布的临时像素偏移，供 0035 屏幕震动复用。
 func set_screen_effect_offset(offset: Vector2) -> void:
 	_ensure_runtime_nodes()
@@ -184,6 +198,11 @@ func _ensure_runtime_nodes() -> void:
 		_palette_material.shader = PALETTE_SHADER
 		_palette_material.set_shader_parameter("palette_mix", 1.0)
 		_palette_material.set_shader_parameter("global_alpha", 1.0)
+	if _collectible_marker_material == null:
+		_collectible_marker_material = ShaderMaterial.new()
+		_collectible_marker_material.shader = COLLECTIBLE_MARKER_SHADER
+	if _collectible_marker_frame == null:
+		_collectible_marker_frame = _create_collectible_marker_frame()
 	if _effect_root == null:
 		_effect_root = Node2D.new()
 		_effect_root.name = "ScreenEffectRoot"
@@ -254,26 +273,33 @@ func _build_scene_items(session: GameSession, events: Array[PalEventObject], ren
 			result.append(PalSceneRenderer.player_item(frame, session.trail_positions[trail_index] - render_viewport, session.world_layer))
 
 	for event in events:
-		if not event.is_visible() or event.sprite_number <= 0:
+		if not event.is_visible():
 			continue
-		var sprite := _event_sprite(event.sprite_number)
-		if not sprite.is_valid():
-			continue
-		var frame_index := event.current_frame
-		if event.sprite_frames == 3:
-			if frame_index == 2:
-				frame_index = 0
-			elif frame_index == 3:
-				frame_index = 2
-		frame_index += event.direction * event.sprite_frames
-		var frame := _decode_frame(sprite, frame_index)
-		if not frame.is_valid():
-			continue
+		var frame := PalIndexedImage.new()
+		if event.sprite_number > 0:
+			var sprite := _event_sprite(event.sprite_number)
+			if sprite.is_valid():
+				var frame_index := event.current_frame
+				if event.sprite_frames == 3:
+					if frame_index == 2:
+						frame_index = 0
+					elif frame_index == 3:
+						frame_index = 2
+				frame_index += event.direction * event.sprite_frames
+				frame = _decode_frame(sprite, frame_index)
 		var screen_position := event.position - render_viewport
-		if screen_position.x < -frame.width or screen_position.x > VIEWPORT_SIZE.x + frame.width or screen_position.y < -frame.height or screen_position.y > VIEWPORT_SIZE.y + frame.height:
-			continue
-		result.append(PalSceneRenderer.event_item(frame, screen_position, event.layer))
+		if frame.is_valid() and not _outside_viewport(screen_position, frame.width, frame.height):
+			result.append(PalSceneRenderer.event_item(frame, screen_position, event.layer))
+		if _collectible_markers_enabled and _collectible_classifier.is_available(event, session):
+			var source_height := frame.height if frame.is_valid() else SPRITELESS_COLLECTIBLE_HEIGHT
+			var marker_position := screen_position + Vector2i(0, -source_height - 2)
+			if not _outside_viewport(marker_position, COLLECTIBLE_MARKER_SIZE, COLLECTIBLE_MARKER_SIZE):
+				result.append(PalSceneRenderer.collectible_marker_item(_collectible_marker_frame, screen_position, event.layer, source_height, event.object_id))
 	return result
+
+
+func _outside_viewport(screen_position: Vector2i, width: int, height: int) -> bool:
+	return screen_position.x < -width or screen_position.x > VIEWPORT_SIZE.x + width or screen_position.y < -height or screen_position.y > VIEWPORT_SIZE.y + height
 
 
 func _party_frame(sprite: PalSprite, role_index: int, party_index: int, session: GameSession) -> PalIndexedImage:
@@ -331,12 +357,14 @@ func _add_draw_item(item: PalSceneRenderer.DrawItem, viewport_position: Vector2i
 		return
 	var anchor := Node2D.new()
 	anchor.position = Vector2(item.x + viewport_position.x, item.baseline_y + viewport_position.y)
+	if item.draw_kind == PalSceneRenderer.DRAW_KIND_COLLECTIBLE_MARKER:
+		anchor.name = "CollectibleMarker_%d" % item.source_object_id
 	var sprite := Sprite2D.new()
 	sprite.centered = false
-	sprite.position = Vector2(0, -item.frame.height - item.logical_layer)
+	sprite.position = Vector2(0, -item.frame.height - item.logical_layer + item.draw_offset_y)
 	sprite.texture = texture
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.material = _palette_material
+	sprite.material = _collectible_marker_material if item.draw_kind == PalSceneRenderer.DRAW_KIND_COLLECTIBLE_MARKER else _palette_material
 	anchor.add_child(sprite)
 	_sort_root.add_child(anchor)
 
@@ -357,3 +385,39 @@ func _clear_sort_items() -> void:
 		return
 	for child in _sort_root.get_children():
 		child.free()
+
+
+func _create_collectible_marker_frame() -> PalIndexedImage:
+	var frame := PalIndexedImage.new()
+	frame.width = COLLECTIBLE_MARKER_SIZE
+	frame.height = COLLECTIBLE_MARKER_SIZE
+	frame.indices.resize(COLLECTIBLE_MARKER_SIZE * COLLECTIBLE_MARKER_SIZE)
+	frame.indices.fill(0)
+	frame.opacity.resize(COLLECTIBLE_MARKER_SIZE * COLLECTIBLE_MARKER_SIZE)
+	frame.opacity.fill(0)
+	var rows := [
+		"....a....",
+		"....a....",
+		"....g....",
+		"...gwg...",
+		"aagwwwgaa",
+		"...gwg...",
+		"....g....",
+		"....a....",
+		"....a....",
+	]
+	for y in range(COLLECTIBLE_MARKER_SIZE):
+		for x in range(COLLECTIBLE_MARKER_SIZE):
+			var pixel: String = str(rows[y]).substr(x, 1)
+			var offset := y * COLLECTIBLE_MARKER_SIZE + x
+			match pixel:
+				"a":
+					frame.indices[offset] = 64
+					frame.opacity[offset] = 170
+				"g":
+					frame.indices[offset] = 176
+					frame.opacity[offset] = 235
+				"w":
+					frame.indices[offset] = 255
+					frame.opacity[offset] = 255
+	return frame

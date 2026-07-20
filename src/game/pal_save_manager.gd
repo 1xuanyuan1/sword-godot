@@ -216,6 +216,7 @@ func _serialize_session(session: GameSession) -> Dictionary:
 		"chase_range_multiplier": session.chase_range_multiplier,
 		"party_script_frames": Array(session.party_script_frames),
 		"inventory": _dictionary_to_pairs(session.inventory),
+		"collectible_marker_event_ids": session.collectible_marker_ids(),
 		"role_levels": Array(session.role_levels),
 		"role_max_hp": Array(session.role_max_hp),
 		"role_max_mp": Array(session.role_max_mp),
@@ -357,6 +358,9 @@ func _validate_session(value: Variant) -> bool:
 		if data.has(optional_scalar) and not _is_integer(data[optional_scalar]):
 			error_message = "存档会话字段 %s 无效" % optional_scalar
 			return false
+	if data.has("collectible_marker_event_ids") and not _validate_int_array(data.get("collectible_marker_event_ids"), 0, _database.event_objects.size(), 1, _database.event_objects.size()):
+		error_message = "存档中的采集标识状态损坏"
+		return false
 	var role_array_keys := ["role_levels", "role_max_hp", "role_max_mp", "role_hp", "role_mp", "role_experience", "role_attack_strength", "role_magic_strength", "role_defense", "role_dexterity", "role_flee_rate", "role_poison_resistance"]
 	for key in role_array_keys:
 		if not _validate_int_array(data.get(key), PalPlayerRoles.ROLE_COUNT, PalPlayerRoles.ROLE_COUNT, 0, 0x7fffffff):
@@ -437,6 +441,7 @@ func _restore_session(session: GameSession, data: Dictionary) -> void:
 	session.auto_battle_pending = false
 	session.party_script_frames = _packed_from_data(data["party_script_frames"])
 	session.inventory = _pairs_to_dictionary(data["inventory"])
+	session.restore_collectible_marker_ids(data.get("collectible_marker_event_ids", []))
 	session.role_levels = _packed_from_data(data["role_levels"])
 	session.role_max_hp = _packed_from_data(data["role_max_hp"])
 	session.role_max_mp = _packed_from_data(data["role_max_mp"])

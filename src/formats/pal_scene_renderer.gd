@@ -6,6 +6,9 @@
 class_name PalSceneRenderer
 extends RefCounted
 
+const DRAW_KIND_SCENE := 0
+const DRAW_KIND_COLLECTIBLE_MARKER := 1
+
 
 ## CPU 队列中的一个基准 Y 绘制项。
 class DrawItem:
@@ -14,12 +17,18 @@ class DrawItem:
 	var baseline_y: int
 	var logical_layer: int
 	var insertion_order: int = 0
+	var draw_offset_y: int = 0
+	var draw_kind: int = DRAW_KIND_SCENE
+	var source_object_id: int = 0
 
-	func _init(source_frame: PalIndexedImage, source_x: int, source_baseline_y: int, source_layer: int) -> void:
+	func _init(source_frame: PalIndexedImage, source_x: int, source_baseline_y: int, source_layer: int, source_draw_offset_y: int = 0, source_draw_kind: int = DRAW_KIND_SCENE, source_id: int = 0) -> void:
 		frame = source_frame
 		x = source_x
 		baseline_y = source_baseline_y
 		logical_layer = source_layer
+		draw_offset_y = source_draw_offset_y
+		draw_kind = source_draw_kind
+		source_object_id = source_id
 
 
 ## 按 SDLPal 队伍锚点把一帧角色图像转换为 CPU 绘制项。
@@ -37,6 +46,20 @@ static func follower_frame_index(direction: int, frame_count: int) -> int:
 ## 按 EVENTOBJECT 逻辑层把一帧事件图像转换为 CPU 绘制项。
 static func event_item(frame: PalIndexedImage, screen_position: Vector2i, event_layer: int) -> DrawItem:
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + event_layer * 8 + 9, event_layer * 8 + 2)
+
+
+## 把独立星芒放到采集物顶部，同时沿用 EventObject 的基准 Y 和逻辑层参与遮挡。
+## `source_height` 为零 Sprite 暗格使用的虚拟高度，不能影响原事件交互或阻挡。
+static func collectible_marker_item(marker_frame: PalIndexedImage, screen_position: Vector2i, event_layer: int, source_height: int, event_object_id: int) -> DrawItem:
+	return DrawItem.new(
+		marker_frame,
+		screen_position.x - int(marker_frame.width / 2.0),
+		screen_position.y + event_layer * 8 + 9,
+		event_layer * 8 + 2,
+		-source_height - 2,
+		DRAW_KIND_COLLECTIBLE_MARKER,
+		event_object_id
+	)
 
 
 ## 按 SDLPal 顺序展开人物及其候选覆盖块，但不排序也不绘制。
@@ -62,13 +85,13 @@ static func render(map_data: PalMapData, tile_sprite: PalSprite, viewport: Rect2
 		return left.baseline_y < right.baseline_y or (left.baseline_y == right.baseline_y and left.insertion_order < right.insertion_order)
 	)
 	for item: DrawItem in draw_items:
-		_blit(item.frame, canvas, item.x, item.baseline_y - item.frame.height - item.logical_layer)
+		_blit(item.frame, canvas, item.x, item.baseline_y - item.frame.height - item.logical_layer + item.draw_offset_y)
 	return canvas
 
 
 static func _append_cover_tiles(draw_items: Array, source_item: DrawItem, map_data: PalMapData, tile_sprite: PalSprite, viewport_position: Vector2i) -> void:
 	var sprite_x := viewport_position.x + source_item.x - int(source_item.logical_layer / 2.0)
-	var sprite_y := viewport_position.y + source_item.baseline_y - source_item.logical_layer
+	var sprite_y := viewport_position.y + source_item.baseline_y - source_item.logical_layer + source_item.draw_offset_y
 	var half := 1 if posmod(sprite_x, 32) != 0 else 0
 	var width := source_item.frame.width
 	var height := source_item.frame.height
