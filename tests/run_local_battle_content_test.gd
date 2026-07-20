@@ -80,6 +80,11 @@ func _init() -> void:
 	if summon_effect_object_id <= 0 or summon_effect_definition == null or not database.load_magic_effect_sprite(summon_effect_definition.effect_sprite).is_valid():
 		_fail("风神 315 没有按召唤记录的 effect_sprite 找到后续 FIRE 特效")
 		return
+	var fat_miao := database.enemy_definition_for_object(485)
+	var crescent_slash := database.magic_definition_for_object(fat_miao.magic) if fat_miao != null else null
+	if fat_miao == null or fat_miao.health != 800 or fat_miao.magic != 338 or crescent_slash == null or crescent_slash.keep_effect != 0xffff:
+		_fail("胖苗 485 的弦月斩没有解析为保留战场末帧的敌术")
+		return
 	var summon_session := GameSession.new()
 	summon_session.party_roles = PackedInt32Array([0])
 	summon_session.initialize_role_state(database.player_roles)

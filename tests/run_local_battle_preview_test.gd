@@ -371,7 +371,53 @@ func _run() -> void:
 			break
 	await create_timer(0.6).timeout
 
+	preview.load_battle(19, 21, PackedInt32Array([0, 1]))
+	preview._battle_ui.clear_message()
+	var fat_miao_index := -1
+	for enemy_index in range(preview._controller.enemies.size()):
+		if preview._controller.enemies[enemy_index].object_id == 485:
+			fat_miao_index = enemy_index
+			break
+	if fat_miao_index < 0:
+		_fail("敌队 19 中找不到胖苗 485")
+		return
+	var terrain_magic_result := PalBattleController.ActionResult.new()
+	terrain_magic_result.actor_is_enemy = true
+	terrain_magic_result.actor_index = fat_miao_index
+	preview._controller._execute_enemy_magic(fat_miao_index, 0, terrain_magic_result)
+	if terrain_magic_result.magic_object_id != 338 or terrain_magic_result.unsupported:
+		_fail("胖苗没有生成可播放的弦月斩 338")
+		return
+	preview._play_enemy_magic(terrain_magic_result)
+	for _step in range(240):
+		await create_timer(0.03).timeout
+		if preview._magic_root.get_child_count() == 0 and preview._persistent_effect_root.get_child_count() > 0:
+			break
+	if preview._persistent_effect_root.get_child_count() != 1:
+		_fail("胖苗弦月斩结束后没有留下一个战场破坏层")
+		return
+	var terrain_image := viewport.get_texture().get_image()
+	var terrain_path := output_directory.path_join("battle_enemy_persistent_terrain.png")
+	if terrain_image == null or terrain_image.save_png(terrain_path) != OK:
+		_fail("无法写入胖苗弦月斩持久地形截图")
+		return
+	preview._persistent_effect_root.hide()
+	await process_frame
+	await process_frame
+	var terrain_without_effect := viewport.get_texture().get_image()
+	preview._persistent_effect_root.show()
+	if _pixel_difference(terrain_image, terrain_without_effect) <= 0:
+		_fail("胖苗弦月斩的持久节点没有改变战场像素")
+		return
+	await create_timer(0.5).timeout
+	if preview._persistent_effect_root.get_child_count() != 1:
+		_fail("胖苗弦月斩的地形破坏没有保持到后续战斗阶段")
+		return
 	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	if preview._persistent_effect_root.get_child_count() != 0:
+		_fail("开始下一场战斗时没有清除上一场的持久地形")
+		return
+
 	preview._session.learned_magics_by_role[0] = PackedInt32Array([315])
 	preview._session.role_max_mp[0] = 999
 	preview._session.role_mp[0] = 999
@@ -513,8 +559,19 @@ func _run() -> void:
 		_fail("无法写入敌人回合脚本对白截图")
 		return
 	preview._script_dialog_box.hide_dialog()
-	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、风神召唤、梦蛇变身、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, summon_path, trance_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、胖苗持久地形、风神召唤、梦蛇变身、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, terrain_path, summon_path, trance_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
+
+
+func _pixel_difference(first: Image, second: Image) -> int:
+	if first == null or second == null or first.get_size() != second.get_size():
+		return -1
+	var difference := 0
+	for y in range(first.get_height()):
+		for x in range(first.get_width()):
+			if first.get_pixel(x, y) != second.get_pixel(x, y):
+				difference += 1
+	return difference
 
 
 func _fail(message: String) -> void:

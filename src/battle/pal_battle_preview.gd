@@ -40,6 +40,7 @@ var _database: PalContentDatabase
 var _session: GameSession
 var _controller: PalBattleController
 var _background: TextureRect
+var _persistent_effect_root: Node2D
 var _fighter_root: Node2D
 var _magic_root: Node2D
 var _battle_ui: PalBattleUI
@@ -269,6 +270,9 @@ func _build_interface() -> void:
 	_background.stretch_mode = TextureRect.STRETCH_SCALE
 	_background.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	add_child(_background)
+	_persistent_effect_root = Node2D.new()
+	_persistent_effect_root.name = "PersistentBattleEffects"
+	add_child(_persistent_effect_root)
 	_fighter_root = Node2D.new()
 	_fighter_root.name = "Fighters"
 	add_child(_fighter_root)
@@ -363,6 +367,8 @@ func _clear_fighters() -> void:
 	for child in _fighter_root.get_children():
 		child.free()
 	for child in _magic_root.get_children():
+		child.free()
+	for child in _persistent_effect_root.get_children():
 		child.free()
 	_enemy_nodes.clear()
 	_player_nodes.clear()
@@ -1278,8 +1284,10 @@ func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition
 	var repeated_frames := maxi(0, frame_count - repeat_start) * definition.effect_times
 	var total_frames := mini(512, frame_count + repeated_frames + definition.shake)
 	var delay_seconds := clampf((definition.speed + 5) * 0.01, 0.01, 0.2)
+	var final_frame_index := maxi(0, frame_count - 1)
 	for animation_index in range(total_frames):
 		var frame_index := animation_index if animation_index < frame_count else repeat_start + posmod(animation_index - repeat_start, maxi(1, frame_count - repeat_start))
+		final_frame_index = frame_index
 		if animation_index == repeat_start:
 			if animate_caster:
 				_set_player_frame(result.actor_index, 6, casting_foot)
@@ -1296,6 +1304,7 @@ func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition
 			node.z_index = foot.y + definition.specific
 		_apply_blow_to_enemies()
 		await get_tree().create_timer(delay_seconds).timeout
+	_keep_magic_effect(sprite, final_frame_index, definition, effect_positions)
 	for node in effect_nodes:
 		node.free()
 
@@ -1480,8 +1489,10 @@ func _play_enemy_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefi
 	var total_frames := mini(512, frame_count + repeated_frames + definition.shake)
 	var delay_seconds := clampf((definition.speed + 5) * 0.01, 0.01, 0.2)
 	var casting_enemy := _controller.enemies[result.actor_index].definition
+	var final_frame_index := maxi(0, frame_count - 1)
 	for animation_index in range(total_frames):
 		var frame_index := animation_index if animation_index < frame_count else repeat_start + posmod(animation_index - repeat_start, maxi(1, frame_count - repeat_start))
+		final_frame_index = frame_index
 		if animation_index == repeat_start:
 			var attack_frame := maxi(0, casting_enemy.idle_frames + casting_enemy.magic_frames - 1)
 			_set_enemy_frame(result.actor_index, attack_frame, 0, casting_foot)
@@ -1502,8 +1513,30 @@ func _play_enemy_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefi
 			node.z_index = foot.y + definition.specific
 		_apply_blow_to_players()
 		await get_tree().create_timer(delay_seconds).timeout
+	_keep_magic_effect(sprite, final_frame_index, definition, effect_positions)
 	for node in effect_nodes:
 		node.free()
+
+
+func _keep_magic_effect(sprite: PalSprite, frame_index: int, definition: PalMagicDefinition, positions: Array[Vector2i]) -> void:
+	if definition.keep_effect != 0xffff or sprite == null or not sprite.is_valid() or positions.is_empty():
+		return
+	var battlefield := _database.battlefield_definition(_battlefield_id)
+	var screen_wave := (battlefield.screen_wave if battlefield != null else 0) + definition.wave
+	if screen_wave >= 9:
+		return
+	var frame := RleDecoder.decode(sprite.get_frame(frame_index))
+	if not frame.is_valid():
+		return
+	for index in range(positions.size()):
+		var node := Sprite2D.new()
+		node.name = "PersistentMagic%02d" % index
+		node.centered = false
+		node.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		node.texture = _texture_for_sprite_frame(sprite, frame_index, 0)
+		var foot := positions[index]
+		node.position = Vector2(foot.x - frame.width / 2.0, foot.y - frame.height)
+		_persistent_effect_root.add_child(node)
 
 
 func _apply_blow_to_enemies() -> void:

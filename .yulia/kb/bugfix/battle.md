@@ -44,6 +44,21 @@ keywords:
 
 ---
 
+### [BF-036] 胖苗弦月斩结束后没有保留战场破坏
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M4 经典战斗仙术演出
+- **问题描述**: 胖苗对象 485 使用弦月斩 338，其 DATA.MKF 仙术记录明确设置 `keep_effect = FFFF`；SDLPal 会把 FIRE 特效最后一帧写入本场战斗背景，但 Godot 版播放结束后统一删除了全部仙术节点，导致地形破坏立即消失。字段虽已解析，却没有接入画面生命周期。
+- **涉及文件**:
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_local_battle_content_test.gd`
+  - `tests/run_local_battle_preview_test.gd`
+  - `docs/BATTLE.md`
+- **修复内容**: 在战场背景与人物之间增加单场持久特效层，玩家和敌人仙术共用 `keep_effect` 末帧保留逻辑，并对齐原版 `screen_wave < 9` 条件；持久层跨后续回合保留、开始下一场战斗时清空。真实敌队 19 的胖苗弦月斩通过 OpenGL 截图、节点生命周期及实际像素变化检查。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-17
 
 ### [BF-017] 战斗界面切换场景后输入处理访问空 Viewport
