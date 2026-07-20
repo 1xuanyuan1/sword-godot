@@ -15,6 +15,18 @@ keywords:
 
 ## 2026-07-20
 
+### [FT-063] [fix] 完成苏州城外解救林月如战后过场
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-002（阶段性）
+- **功能描述**: 修复接触事件扫描只向后续 EventObject 前进的问题。敌队 22 胜利后，脚本 `10357` 新启用的前置 EventObject 413 现在会在同一轮正式地图更新中被重新发现，自动执行 `10390` 的林月如刺伤、赵灵儿救治与习得复活术过场；扫描记录本轮已处理对象，避免重复触发当前事件。
+- **验证情况**: `run_tests.gd` 364 项合成检查、早期真实资源主线回归和新增 `run_local_suzhou_rescue_runtime_test.gd` 均通过；后者使用正式 `MapExplorer + TileMapLayer + PalTileMapWorld`，并在 Godot 4.7 OpenGL 窗口下确认战后队伍恢复为李逍遥／赵灵儿、双人 HP 全满且赵灵儿习得 301 号复活术。
+- **涉及文件**:
+  - `src/world/map_explorer.gd`
+  - `tests/run_local_suzhou_rescue_runtime_test.gd`
+  - `.yulia/kb/bugfix/map-explorer.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ### [FT-054] [feat] 完成 TD-003 召唤、梦蛇与完整系统闭环
 
 - **关联需求**: M3 完整系统

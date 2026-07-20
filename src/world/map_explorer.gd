@@ -62,6 +62,8 @@ var _pending_magic_stage: int = 0
 var _use_legacy_renderer: bool = false
 var _touch_scan_active: bool = false
 var _touch_scan_next_index: int = 0
+var _touch_scan_restart_requested: bool = false
+var _touch_scan_processed_event_ids: Dictionary = {}
 var _save_system_available: bool = false
 var _system_toast_serial: int = 0
 var _location_toast_serial: int = 0
@@ -504,6 +506,8 @@ func _trigger_touch_event() -> bool:
 		return false
 	_touch_scan_active = true
 	_touch_scan_next_index = 0
+	_touch_scan_restart_requested = false
+	_touch_scan_processed_event_ids.clear()
 	return _continue_touch_scan()
 
 
@@ -513,10 +517,18 @@ func _continue_touch_scan() -> bool:
 	if _pending_scene_index >= 0:
 		_reset_touch_scan()
 		return false
+	# 一个触碰脚本可能启用场景数组中更早的 EventObject（解救剧情正是
+	# EventObject 420 启用 413）。每个脚本结束后从头检查，保证新出现的对象
+	# 在同一轮游戏更新中被发现；记录本轮已处理对象，避免可重复触碰事件递归。
+	if _touch_scan_restart_requested:
+		_touch_scan_next_index = 0
+		_touch_scan_restart_requested = false
 	var party := _session.party_world_position()
 	while _touch_scan_next_index < _scene_events.size():
 		var event := _scene_events[_touch_scan_next_index]
 		_touch_scan_next_index += 1
+		if _touch_scan_processed_event_ids.has(event.object_id):
+			continue
 		if not _is_touch_event_in_range(event, party):
 			continue
 		if _prepare_touch_event(event):
@@ -524,6 +536,7 @@ func _continue_touch_scan() -> bool:
 		# 官方即使遇到空触发入口也会继续扫描后续对象；不要让它阻断同格传送点。
 		if event.trigger_script <= 0:
 			continue
+		_touch_scan_processed_event_ids[event.object_id] = true
 		_run_event_trigger(event)
 		return true
 	_reset_touch_scan()
@@ -555,11 +568,15 @@ func _prepare_touch_event(event: PalEventObject) -> bool:
 func _reset_touch_scan() -> void:
 	_touch_scan_active = false
 	_touch_scan_next_index = 0
+	_touch_scan_restart_requested = false
+	_touch_scan_processed_event_ids.clear()
 
 
 func _run_event_trigger(event: PalEventObject) -> void:
 	if event == null or event.trigger_script <= 0 or _script_vm == null:
 		return
+	if _touch_scan_active:
+		_touch_scan_processed_event_ids[event.object_id] = true
 	_active_trigger_event = event
 	_active_collectible_event_id = event.object_id if _collectible_classifier.is_available(event, _session) else 0
 	_script_vm.run_trigger(event.trigger_script, event.object_id)
@@ -1284,8 +1301,10 @@ func _on_script_finished(next_entry: int) -> void:
 		if _pending_scene_index >= 0:
 			_reset_touch_scan()
 		else:
-			# PAL_GameUpdate 会在前一个接触脚本同步结束后继续扫描后续对象。
-			# VM 可能等待对话，因此在脚本真正结束后从保存的数组索引异步续跑。
+			# PAL_GameUpdate 会在前一个接触脚本结束后重新检查当前画面。
+			# 不要只从保存的后续索引继续：剧情脚本可能刚把更早的对象
+			# 设为可见/可触发（如林月如刺伤事件 413）。
+			_touch_scan_restart_requested = true
 			call_deferred("_continue_touch_scan")
 	if _pending_used_item_id > 0:
 		var item := _database.item_definition(_pending_used_item_id)
