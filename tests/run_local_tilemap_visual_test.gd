@@ -51,6 +51,17 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "water_temple_fair", "scene": 111, "position": Vector2i(896, 1488), "night": false, "party": [2, 0]},
 	{"name": "water_temple_dock", "scene": 110, "position": Vector2i(1248, 936), "night": false, "party": [2, 0]},
 	{"name": "changan_arrival", "scene": 99, "position": Vector2i(432, 328), "night": false, "party": [2, 0]},
+	{"name": "changan_mansion_hall", "scene": 117, "position": Vector2i(1104, 648), "night": false, "party": [2, 0]},
+	{"name": "changan_liu_sickroom", "scene": 123, "position": Vector2i(800, 704), "night": false, "party": [2, 0]},
+	{"name": "changan_wine_immortal_altar", "scene": 114, "position": Vector2i(1104, 520), "night": false, "party": [0], "event_states": {2212: 2, 2213: 2, 2214: 2, 2215: 2, 2216: 2, 2217: 2, 2218: 2, 2219: 2, 2220: 2, 2221: 2, 2222: 2}},
+	{"name": "changan_butterfly_reveal", "scene": 107, "position": Vector2i(656, 1456), "night": false, "party": [0], "event_states": {2085: 1, 2086: 1, 2087: 1}},
+	{"name": "poison_forest_maze", "scene": 138, "position": Vector2i(944, 1112), "night": false, "party": [2, 0]},
+	{"name": "poison_lady_lair", "scene": 137, "position": Vector2i(1344, 1248), "night": false, "party": [2, 0]},
+	{"name": "butterfly_aftermath", "scene": 139, "position": Vector2i(1344, 1328), "night": false, "party": [0]},
+	{"name": "butterfly_memory_rescue", "scene": 140, "position": Vector2i(1408, 384), "night": false, "party": [0]},
+	{"name": "butterfly_memory_mansion", "scene": 141, "position": Vector2i(496, 832), "night": false, "party": [0]},
+	{"name": "butterfly_memory_betrothal", "scene": 142, "position": Vector2i(864, 576), "night": false, "party": [0]},
+	{"name": "shushan_arrival", "scene": 154, "position": Vector2i(1024, 1600), "night": false, "party": [0, 2]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
@@ -124,6 +135,9 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	await process_frame
 	await process_frame
 	await process_frame
+	# Metal 可能在 process_frame 已推进后仍未完成离屏视口提交；等待正式渲染帧结束，
+	# 避免 get_image() 偶发读到一张全透明的未提交纹理。
+	await RenderingServer.frame_post_draw
 	var native_image := viewport.get_texture().get_image()
 	if native_image == null:
 		_restore_event_states(database, original_event_states)

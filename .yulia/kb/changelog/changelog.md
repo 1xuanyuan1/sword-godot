@@ -284,6 +284,25 @@ keywords:
   - `docs/DEVELOPMENT_WORKFLOW.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-068] [feat] 完成长安尚书府、彩依与抵达蜀山主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从场景 99 长安稳定入口继续完成尚书府探病与晚宴、乞丐传闻、林天南七诀剑气、彩依喂药、刘晋元求助、云姨三万文、茅山道士失败、河中救出酒剑仙、四件法事用品、蝶精彩依、毒仙林、毒娘子、彩依牺牲和三段往事。覆盖现金减半、三万文援助、一万五千文道士费用、檀香／蜡烛／符纸／酒取得与消耗、单人／双人队切换、三场剧情战和 RNG #3 御剑过场，最终抵达场景 154“蜀山·前山”；按真实脚本保留“雷灵珠已取出但尚未交付”的章节边界。
+- **验证情况**: 新增独立真实资源主线测试，断言敌队 38/39/42、战场 7/28/27、对象 `[525]`／`[468]`／`[435]`、一次性场景入口、消息区段、物品、现金和最终队伍／落点。新增尚书府病房与法坛、彩依现形、毒仙林、毒娘子巢穴、三段回忆和蜀山 11 个正式 TileMap 视口；Metal 离屏截图改为等待帧提交，Godot 4.7 OpenGL 窗口下 58 个用例均达到 320×200 零像素差并逐张检查。
+- **涉及文件**:
+  - `tests/run_local_changan_butterfly_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单
