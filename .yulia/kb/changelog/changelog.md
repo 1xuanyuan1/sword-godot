@@ -122,6 +122,24 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-060] [feat] 完成白河村六味药材主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从白河村稳定入口继续执行韩医仙初诊和药方剧情，沿正式房屋／山路入口取得银杏果、借还钓竿并捕鱼、拾取和放置捕兽夹、由 proximity 自动脚本捕鹿，再交付三味药、取得六神丹并让赵灵儿恢复。固定物品 `281–286` 的取得／使用／消耗、关键 EventObject 持久入口、李逍遥单人采药、林月如归队及最终李逍遥／赵灵儿／林月如 `[0,1,2]` 三人队。
+- **验证情况**: 新增独立真实资源主线测试，消息 `4032–4345` 的相关区段、场景 47/48/50/51/52、捕兽夹 `0084 → 0083` 放置与自动捕获、六神丹 `0081` 面向使用、最终诊厅落点和音乐 55 均有断言。新增鹿区、韩医仙屋外与恢复后诊厅正式 TileMap 视口；视觉测试改为每个用例独立 SubViewport，连续运行时不再被 Metal 跨地图旧帧污染，14 个用例三轮均达到 320×200 零像素差并实际检查截图。
+- **涉及文件**:
+  - `tests/run_local_baihe_medicine_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

@@ -15,6 +15,9 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "hidden_dragon_inner", "scene": 46, "position": Vector2i(1280, 1328), "night": false, "party": [0, 2]},
 	{"name": "baihe_road", "scene": 47, "position": Vector2i(464, 1672), "night": false, "party": [0, 2]},
 	{"name": "baihe_village", "scene": 48, "position": Vector2i(576, 1632), "night": false, "party": [0, 2]},
+	{"name": "baihe_deer_hunt", "scene": 47, "position": Vector2i(704, 1040), "night": false, "party": [0], "event_states": {791: 0, 792: 0, 793: 0, 794: 0, 795: 0, 798: 2, 799: 2}},
+	{"name": "baihe_han_outside", "scene": 51, "position": Vector2i(896, 832), "night": false, "party": [0]},
+	{"name": "baihe_han_clinic_recovered", "scene": 52, "position": Vector2i(1472, 600), "night": false, "party": [0, 1, 2], "event_states": {905: 0, 907: 0, 908: 0, 910: 0}},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
@@ -28,17 +31,20 @@ func _run() -> void:
 	if not database.load_generated():
 		_fail("本地生成内容不可用：%s" % database.error_message)
 		return
-	var viewport := SubViewport.new()
-	viewport.size = Vector2i(320, 200)
-	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	viewport.transparent_bg = false
-	root.add_child(viewport)
-	var world := PalTileMapWorld.new()
-	# 新增星芒是正式 TileMap 辅助层，不属于 SDLPal CPU 像素基准。
-	world.set_collectible_markers_enabled(false)
-	viewport.add_child(world)
 	for test_case in TEST_CASES:
+		# Metal 后端在同一 SubViewport 连续换图时偶尔会读回上一地图的完整旧帧；每个用例
+		# 使用独立视口和正式 PalTileMapWorld，避免用延长固定等待掩盖 GPU 换图时序。
+		var viewport := SubViewport.new()
+		viewport.size = Vector2i(320, 200)
+		viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		viewport.transparent_bg = false
+		root.add_child(viewport)
+		var world := PalTileMapWorld.new()
+		# 新增星芒是正式 TileMap 辅助层，不属于 SDLPal CPU 像素基准。
+		world.set_collectible_markers_enabled(false)
+		viewport.add_child(world)
 		var failure := await _compare_case(database, viewport, world, test_case)
+		viewport.free()
 		if not failure.is_empty():
 			_fail(failure)
 			return
@@ -67,18 +73,27 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	var events := database.events_for_scene(session.scene_index)
 	if not world.load_map(database, scene.map_number):
 		return "%s：%s" % [test_case["name"], world.error_message]
+	var original_event_states: Dictionary = {}
+	for raw_event_id in test_case.get("event_states", {}):
+		var event_id := int(raw_event_id)
+		if event_id <= 0 or event_id > database.event_objects.size():
+			continue
+		var event := database.event_objects[event_id - 1]
+		original_event_states[event_id] = event.state
+		event.state = int(test_case["event_states"][raw_event_id])
 	world.set_walk_animation(0, false)
 	if not world.sync_world(session, events):
+		_restore_event_states(database, original_event_states)
 		return "%s：%s" % [test_case["name"], world.error_message]
 
-	# 连续用例会在同一 SubViewport 内重建 TileMapLayer、人物与事件节点；Metal 后端偶尔要到
-	# 第三或第四帧才提交完整新画面。过早读回会混入上一场景的整屏旧帧或少量旧 Sprite 像素。
+	# 新建 SubViewport 后等待 TileMapLayer、人物和事件节点完成第一次稳定提交。
 	await process_frame
 	await process_frame
 	await process_frame
 	await process_frame
 	var native_image := viewport.get_texture().get_image()
 	if native_image == null:
+		_restore_event_states(database, original_event_states)
 		return "当前为 dummy renderer；请去掉 --headless，使用真实 GL Compatibility 渲染器运行"
 	var scene_items: Array = world._build_scene_items(session, events, session.viewport_position)
 	var map_data := database.load_map(scene.map_number)
@@ -87,6 +102,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	var palette := database.load_palette(session.palette_index, session.night_palette)
 	var cpu_image := cpu_indexed.to_rgba_image(palette)
 	if native_image.get_size() != cpu_image.get_size():
+		_restore_event_states(database, original_event_states)
 		return "%s 截图尺寸不一致：TileMap %s / CPU %s" % [test_case["name"], native_image.get_size(), cpu_image.get_size()]
 
 	var different := 0
@@ -114,9 +130,16 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	var output_name := str(test_case["name"])
 	native_image.save_png(output_directory.path_join("tilemap_%s_native.png" % output_name))
 	cpu_image.save_png(output_directory.path_join("tilemap_%s_cpu.png" % output_name))
+	_restore_event_states(database, original_event_states)
 	if different > 0:
 		return "%s（map %d）有 %d 个差异像素，最大通道差 %d：%s；截图已写入 visual_tests" % [output_name, scene.map_number, different, maximum_channel_difference, "、".join(difference_examples)]
 	return ""
+
+
+func _restore_event_states(database: PalContentDatabase, original_states: Dictionary) -> void:
+	for raw_event_id in original_states:
+		var event_id := int(raw_event_id)
+		database.event_objects[event_id - 1].state = int(original_states[raw_event_id])
 
 
 func _fail(message: String) -> void:
