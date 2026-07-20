@@ -70,6 +70,7 @@ var _input_mode: InputMode = InputMode.WAITING
 var _action_timer: float = 0.0
 var _animation_in_progress: bool = false
 var _last_enemy_flash_phase: int = -1
+var _pending_blow_displacement: int = 0
 var _audio_player: PalAudioPlayer
 
 
@@ -711,6 +712,7 @@ func _execute_next_action() -> void:
 
 
 func _play_action_result(result: PalBattleController.ActionResult) -> void:
+	_pending_blow_displacement = 0
 	if not result.script_events.is_empty():
 		await _play_script_events(result.script_events)
 	if not result.script_hits.is_empty():
@@ -796,6 +798,25 @@ func _play_script_events(events: Array[PalBattleController.ScriptEvent]) -> void
 			PalBattleController.ScriptEventType.ITEM_GAIN:
 				# 随机掉落脚本随后通常带 003E/FFFF；这里只保证背包和提示时序一致。
 				pass
+			PalBattleController.ScriptEventType.SCREEN_SHAKE:
+				await _play_script_screen_shake(event.value, event.secondary)
+			PalBattleController.ScriptEventType.PLAYER_SPRITE:
+				_sync_player_fighters()
+				await _wait_frames(2)
+			PalBattleController.ScriptEventType.HIDING:
+				for node in _player_nodes:
+					if node != null:
+						node.visible = event.value <= 0
+				await _wait_frames(4)
+			PalBattleController.ScriptEventType.STEAL:
+				var message := "%s %d %s" % [_database.get_word(34), event.secondary, _database.get_word(10) if event.value == 0 else _database.get_word(event.value)]
+				_battle_ui.show_message(message, 800)
+				await _wait_frames(20)
+			PalBattleController.ScriptEventType.BLOW:
+				# 006B 的位移在后续每一帧仙术特效中随机累计；这里只保存本动作范围的参数。
+				_pending_blow_displacement = event.value
+			PalBattleController.ScriptEventType.PRE_MAGIC:
+				await _play_script_pre_magic(event.value)
 	if _script_dialog_box.visible:
 		_script_dialog_box.hide_dialog()
 
@@ -854,6 +875,44 @@ func _sync_enemy_fighters() -> void:
 		if node != null and not state.is_alive():
 			node.hide()
 	_last_enemy_flash_phase = -1
+
+
+func _sync_player_fighters() -> void:
+	for node in _player_nodes:
+		if node != null:
+			node.free()
+	_player_nodes.clear()
+	_player_sprites.clear()
+	_player_current_frames.clear()
+	for party_index in range(_controller.players.size()):
+		var role_index := _controller.players[party_index].role_index
+		var sprite_number := _session.battle_sprite_for(role_index, _database.player_roles.battle_sprite_for(role_index))
+		var sprite := _database.load_player_battle_sprite(sprite_number)
+		_player_sprites.append(sprite)
+		_player_current_frames.append(0)
+		var node := _add_fighter(sprite, _player_foot_positions[party_index], "Player%d" % party_index)
+		_player_nodes.append(node)
+		if node != null and _session.role_hp[role_index] <= 0:
+			_set_player_frame(party_index, _resting_player_frame(party_index))
+
+
+func _play_script_screen_shake(frame_count: int, level: int) -> void:
+	var original_position := position
+	for frame in range(maxi(0, frame_count)):
+		position = original_position + Vector2(0, -level if (frame & 1) == 0 else level)
+		await _wait_frames(1)
+	position = original_position
+
+
+func _play_script_pre_magic(party_index: int) -> void:
+	if party_index >= 0 and party_index < _player_nodes.size():
+		_set_player_frame(party_index, 6)
+	for shift in range(5):
+		for index in range(_player_nodes.size()):
+			_set_player_frame(index, _player_current_frames[index], _player_foot_positions[index], shift * 2)
+		await _wait_frames(1)
+	for index in range(_player_nodes.size()):
+		_set_player_frame(index, _resting_player_frame(index))
 
 
 func _play_poison_result(result: PalBattleController.ActionResult) -> void:
@@ -1152,6 +1211,7 @@ func _play_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefinition
 			node.texture = _texture_for_sprite_frame(sprite, frame_index, 0)
 			node.position = Vector2(foot.x - frame.width / 2.0, foot.y - frame.height)
 			node.z_index = foot.y + definition.specific
+		_apply_blow_to_enemies()
 		await get_tree().create_timer(delay_seconds).timeout
 	for node in effect_nodes:
 		node.free()
@@ -1354,9 +1414,38 @@ func _play_enemy_magic_effect_sprite(sprite: PalSprite, definition: PalMagicDefi
 			node.texture = _texture_for_sprite_frame(sprite, frame_index, 0)
 			node.position = Vector2(foot.x - frame.width / 2.0, foot.y - frame.height)
 			node.z_index = foot.y + definition.specific
+		_apply_blow_to_players()
 		await get_tree().create_timer(delay_seconds).timeout
 	for node in effect_nodes:
 		node.free()
+
+
+func _apply_blow_to_enemies() -> void:
+	if _pending_blow_displacement == 0:
+		return
+	var blow := randi_range(mini(0, _pending_blow_displacement), maxi(0, _pending_blow_displacement))
+	if blow == 0:
+		return
+	var movement := Vector2i(blow, int(float(blow) / 2.0))
+	for enemy_index in range(_enemy_nodes.size()):
+		if _enemy_nodes[enemy_index] == null:
+			continue
+		_enemy_foot_positions[enemy_index] += movement
+		_set_enemy_frame(enemy_index, _enemy_current_frames[enemy_index], 0, _enemy_foot_positions[enemy_index])
+
+
+func _apply_blow_to_players() -> void:
+	if _pending_blow_displacement == 0:
+		return
+	var blow := randi_range(mini(0, _pending_blow_displacement), maxi(0, _pending_blow_displacement))
+	if blow == 0:
+		return
+	var movement := Vector2i(blow, int(float(blow) / 2.0))
+	for player_index in range(_player_nodes.size()):
+		if _player_nodes[player_index] == null:
+			continue
+		_player_foot_positions[player_index] += movement
+		_set_player_frame(player_index, _player_current_frames[player_index], _player_foot_positions[player_index])
 
 
 func _enemy_magic_effect_positions(definition: PalMagicDefinition, result: PalBattleController.ActionResult) -> Array[Vector2i]:

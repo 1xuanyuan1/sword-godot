@@ -48,6 +48,12 @@ enum ScriptEventType {
 	TRANSFORM,
 	ENEMY_ESCAPE,
 	ITEM_GAIN,
+	SCREEN_SHAKE,
+	PLAYER_SPRITE,
+	HIDING,
+	STEAL,
+	BLOW,
+	PRE_MAGIC,
 }
 
 ## 单个敌人在本场战斗中的可变状态。
@@ -64,6 +70,8 @@ class EnemyState extends RefCounted:
 	var script_on_ready: int = 0
 	var status_rounds: PackedInt32Array = PackedInt32Array()
 	var poisons: Dictionary = {}
+	var steal_item: int = 0
+	var steal_item_count: int = 0
 
 	## 返回敌人是否仍可行动和被选中。
 	func is_alive() -> bool:
@@ -206,6 +214,9 @@ var _cooperative_contributors: PackedInt32Array = PackedInt32Array()
 var _pending_script_results: Array[ActionResult] = []
 var _resume_commands_after_scripts: bool = false
 var _enemy_object_script_overrides: Dictionary = {}
+var _auto_battle: bool = false
+var _hiding_turns: int = 0
+var _blow_displacement: int = 0
 
 
 #region Public lifecycle and commands
@@ -240,6 +251,9 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	_pending_script_results.clear()
 	_resume_commands_after_scripts = false
 	_enemy_object_script_overrides.clear()
+	_auto_battle = false
+	_hiding_turns = 0
+	_blow_displacement = 0
 	if database == null or session == null or database.player_roles == null:
 		error_message = "战斗缺少内容数据库、会话或 PLAYERROLES"
 		return false
@@ -284,6 +298,9 @@ func start_battle(content_database: PalContentDatabase, game_session: GameSessio
 	if players.is_empty():
 		error_message = "战斗队伍为空"
 		return false
+	# 008A 是一次性入口标志：只有真正建立的下一场战斗消费它，之后不随存档保留。
+	_auto_battle = session.auto_battle_pending
+	session.auto_battle_pending = false
 	_random.set_seed(random_seed if random_seed >= 0 else Time.get_ticks_usec())
 	_queue_enemy_turn_start_scripts()
 	if _pending_script_results.is_empty() and battle_result == BattleResult.ONGOING:
@@ -300,6 +317,11 @@ func set_random_seed(seed_value: int) -> void:
 ## 返回当前是否正在等待玩家为队员提交指令。
 func is_accepting_commands() -> bool:
 	return _accepting_commands and battle_result == BattleResult.ONGOING
+
+
+## 返回本场是否由 008A 启用了全程自动指令。
+func is_auto_battle() -> bool:
+	return _auto_battle and battle_result == BattleResult.ONGOING
 
 
 ## 返回是否还有战斗脚本产生的对白、召唤或其他可视事件等待播放。
@@ -641,6 +663,9 @@ func execute_next_action() -> ActionResult:
 		return null
 	var entry := action_queue[_queue_cursor]
 	_queue_cursor += 1
+	# fight.c 在每个玩家/敌人行动开始前清空 iBlow；006B 只影响当前动作的
+	# 仙术演出，不能泄漏到下一名战斗者。
+	_blow_displacement = 0
 	var result := _execute_enemy_action(entry) if entry.is_enemy else _execute_player_action(entry)
 	_check_battle_result()
 	result.battle_result = battle_result
@@ -756,9 +781,51 @@ func _prepare_command_phase() -> void:
 		player.target_index = -1
 		player.defending = false
 	_skip_players_without_commands()
+	if _auto_battle:
+		_assign_auto_battle_commands()
+		return
 	_accepting_commands = _command_cursor < players.size()
 	if not _accepting_commands:
 		build_action_queue()
+
+
+func _assign_auto_battle_commands() -> void:
+	while _command_cursor < players.size():
+		var party_index := _command_cursor
+		var player := players[party_index]
+		if player.action_type < 0:
+			var magic_object_id := _pick_auto_magic(player.role_index)
+			if magic_object_id > 0:
+				var object := database.magic_object_definition(magic_object_id)
+				var definition := database.magic_definition_for_object(magic_object_id)
+				player.action_type = ActionType.MAGIC
+				player.action_id = magic_object_id
+				player.target_index = -1 if object.applies_to_all() or definition.magic_type in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD] else _find_alive_enemy_from(player.previous_target_index)
+			else:
+				_assign_attack(player, player.previous_target_index)
+		_command_cursor += 1
+		_skip_players_without_commands()
+	build_action_queue()
+
+
+func _pick_auto_magic(role_index: int) -> int:
+	if role_index < 0 or role_index >= session.learned_magics_by_role.size() or session.status_rounds_for(role_index, GameSession.STATUS_SILENCE) > 0:
+		return 0
+	var selected_object_id := 0
+	var max_power := 0
+	for magic_object_id in session.learned_magics_by_role[role_index]:
+		var object := database.magic_object_definition(magic_object_id)
+		var definition := database.magic_definition_for_object(magic_object_id)
+		if object == null or definition == null or not object.is_used_on_enemy() or not object.is_usable_in_battle():
+			continue
+		var base_damage := _signed_word(definition.base_damage)
+		if definition.mp_cost == 1 or definition.mp_cost > session.role_mp[role_index] or base_damage <= 0 or not _magic_effect_is_supported(object, definition):
+			continue
+		var power := base_damage + _random.next_int(0, 9999)
+		if power > max_power:
+			max_power = power
+			selected_object_id = magic_object_id
+	return selected_object_id
 
 
 func _advance_command_cursor() -> void:
@@ -1014,7 +1081,9 @@ func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
 		result.summary = "%s真气不足" % _role_name(player.role_index)
 		return
 	result.mp_cost = definition.mp_cost
-	session.increase_role_hp_mp(player.role_index, 0, -definition.mp_cost)
+	# 原版自动战斗仍检查当前 MP 是否足够，但执行时不扣除 MP。
+	if not _auto_battle:
+		session.increase_role_hp_mp(player.role_index, 0, -definition.mp_cost)
 	var actor_party_index := player.party_index
 	var use_outcome: Dictionary = _run_battle_effect_script(object.script_on_use, false, false, actor_party_index, result)
 	if not bool(use_outcome.get("success", true)):
@@ -1144,7 +1213,19 @@ func _battle_effect_script_is_supported(entry_index: int) -> bool:
 				0x0061, 0x0068:
 					pending.append(cursor + 1)
 					cursor = entry.operands[0]
-				0x001b, 0x001c, 0x001d, 0x0021, 0x0022, 0x0028, 0x0029, 0x002a, 0x002b, 0x002c, 0x002d, 0x002f, 0x0039, 0x005f, 0x0060:
+				0x0033, 0x0034, 0x003a, 0x0074:
+					pending.append(cursor + 1)
+					cursor = entry.operands[0]
+				0x0058, 0x0086:
+					pending.append(cursor + 1)
+					cursor = entry.operands[2]
+				0x001e, 0x0064:
+					pending.append(cursor + 1)
+					cursor = entry.operands[1]
+				0x0020:
+					pending.append(cursor + 1)
+					cursor = entry.operands[2]
+				0x0005, 0x0019, 0x001b, 0x001c, 0x001d, 0x001f, 0x0021, 0x0022, 0x0028, 0x0029, 0x002a, 0x002b, 0x002c, 0x002d, 0x002f, 0x0030, 0x0031, 0x0035, 0x0039, 0x003b, 0x003c, 0x003d, 0x003e, 0x0041, 0x0047, 0x0055, 0x0056, 0x0057, 0x005a, 0x005b, 0x005c, 0x005f, 0x0060, 0x006a, 0x006b, 0x0088, 0x008a, 0x008d, 0x008f, 0x0092, 0xffff:
 					cursor += 1
 				_:
 					return false
@@ -1158,6 +1239,9 @@ func _run_battle_effect_script(entry_index: int, actor_is_enemy: bool, _target_i
 		return {"cursor": entry_index, "success": false}
 	var cursor := entry_index
 	var success := true
+	var dialog_position := 1
+	var dialog_color := 0
+	var dialog_portrait := 0
 	for _step in range(256):
 		if cursor == 0 or cursor < 0 or cursor >= database.scripts.size():
 			return {"cursor": cursor, "success": success}
@@ -1168,11 +1252,42 @@ func _run_battle_effect_script(entry_index: int, actor_is_enemy: bool, _target_i
 				return {"cursor": entry_index, "success": success}
 			0x0001:
 				return {"cursor": cursor + 1, "success": success}
+			0x0005:
+				result.script_events.append(_script_event(ScriptEventType.CLEAR_DIALOG))
+				cursor += 1
 			# 无条件跳转与概率跳转；0006 在随机值大于等于阈值时走 operand[1]。
 			0x0003:
 				cursor = entry.operands[0]
 			0x0006:
 				cursor = entry.operands[1] if _random.next_int(1, 100) >= entry.operands[0] else cursor + 1
+			# 按 PLAYERROLES 字段组增减基础属性；显式角色操作数从 1 开始。
+			0x0019:
+				var role_index := _battle_role_index(target_index, entry.operands[2])
+				success = session.change_role_attribute(entry.operands[0], role_index, _signed_word(entry.operands[1]))
+				cursor += 1
+			0x001e:
+				var delta := _signed_word(entry.operands[0])
+				if delta < 0 and session.cash < -delta:
+					cursor = entry.operands[1]
+				else:
+					session.cash += delta
+					cursor += 1
+			0x001f:
+				var amount := _signed_word(entry.operands[1])
+				amount = 1 if amount == 0 else amount
+				var before := session.item_count(entry.operands[0])
+				session.set_item_count(entry.operands[0], clampi(before + amount, 0, 99))
+				var changed := session.item_count(entry.operands[0]) - before
+				if changed > 0:
+					result.script_events.append(_script_event(ScriptEventType.ITEM_GAIN, entry.operands[0], changed))
+				cursor += 1
+			0x0020:
+				var amount := entry.operands[1] if entry.operands[1] > 0 else 1
+				if session.item_count(entry.operands[0]) + session.equipped_item_count(entry.operands[0]) < amount:
+					cursor = entry.operands[2]
+				else:
+					session.remove_item_including_equipment(entry.operands[0], amount)
+					cursor += 1
 			# 增减玩家 HP、MP 或两者；operand[0] 非零表示全队。
 			0x001b, 0x001c, 0x001d:
 				var hp_delta := _signed_word(entry.operands[1]) if entry.operation in [0x001b, 0x001d] else 0
@@ -1238,6 +1353,59 @@ func _run_battle_effect_script(entry_index: int, actor_is_enemy: bool, _target_i
 				if party_index >= 0:
 					session.remove_role_status(players[party_index].role_index, entry.operands[0])
 				cursor += 1
+			# 临时属性与战斗 Sprite 都写入第七个装备效果槽，战斗结束由统一清理恢复。
+			0x0030:
+				var role_index := _battle_role_index(target_index, entry.operands[2])
+				var base_value := _base_role_attribute(entry.operands[0], role_index)
+				var temporary_value := int(float(base_value * _signed_word(entry.operands[1])) / 100.0)
+				success = session.set_equipment_effect(GameSession.EQUIPMENT_SLOT_COUNT, entry.operands[0], role_index, temporary_value)
+				cursor += 1
+			0x0031:
+				var role_index := _battle_role_index(target_index, 0)
+				success = session.set_equipment_effect(GameSession.EQUIPMENT_SLOT_COUNT, GameSession.EQUIPMENT_EFFECT_BATTLE_SPRITE, role_index, entry.operands[0])
+				if success:
+					result.script_events.append(_script_event(ScriptEventType.PLAYER_SPRITE, role_index, entry.operands[0]))
+				cursor += 1
+			# 收妖与炼物：经典版从 1..收妖值随机后限制到商店 0 的九个物品。
+			0x0033:
+				var enemy_index := _battle_enemy_target(target_index)
+				if enemy_index >= 0 and enemies[enemy_index].definition.collect_value != 0:
+					session.collect_value += enemies[enemy_index].definition.collect_value
+					cursor += 1
+				else:
+					cursor = entry.operands[0]
+			0x0034:
+				var store := database.store_definition(0)
+				if session.collect_value <= 0 or store == null:
+					cursor = entry.operands[0]
+				else:
+					var consumed := mini(9, _random.next_int(1, session.collect_value))
+					var item_id := store.item_ids[consumed - 1] if consumed <= store.item_ids.size() else 0
+					if item_id <= 0:
+						cursor = entry.operands[0]
+					else:
+						session.collect_value -= consumed
+						var before := session.item_count(item_id)
+						session.set_item_count(item_id, mini(99, before + 1))
+						result.script_events.append(_script_event(ScriptEventType.ITEM_GAIN, item_id, session.item_count(item_id) - before))
+						cursor += 1
+			0x0035:
+				result.script_events.append(_script_event(ScriptEventType.SCREEN_SHAKE, entry.operands[0], entry.operands[1] if entry.operands[1] > 0 else 4))
+				cursor += 1
+			0x003b, 0x003c, 0x003d, 0x003e:
+				if entry.operation == 0x003b:
+					dialog_position = 2
+					dialog_color = entry.operands[0]
+					dialog_portrait = 0
+				else:
+					dialog_position = entry.operation - 0x003c
+					dialog_portrait = entry.operands[0] if entry.operation != 0x003e else 0
+					dialog_color = entry.operands[1] if entry.operation != 0x003e else entry.operands[0]
+				result.script_events.append(_script_event(ScriptEventType.DIALOG_START, dialog_position, dialog_color, dialog_portrait))
+				cursor += 1
+			0x0047:
+				result.script_events.append(_script_event(ScriptEventType.SOUND, entry.operands[0]))
+				cursor += 1
 			# 从目标敌人吸取固定 HP 给当前施法玩家。
 			0x0039:
 				var enemy_index := _battle_enemy_target(target_index)
@@ -1245,6 +1413,52 @@ func _run_battle_effect_script(entry_index: int, actor_is_enemy: bool, _target_i
 					result.hits.append(_apply_enemy_damage(enemy_index, entry.operands[0], false))
 					if not actor_is_enemy and result.actor_index >= 0 and result.actor_index < players.size():
 						_apply_player_stat_delta(result.actor_index, entry.operands[0], 0, result)
+				cursor += 1
+			0x003a:
+				if is_boss_battle:
+					cursor = entry.operands[0]
+				else:
+					battle_result = BattleResult.FLED
+					_accepting_commands = false
+					cursor += 1
+			0x0041:
+				success = false
+				cursor += 1
+			0x0056:
+				var role_index := _battle_role_index(target_index, entry.operands[1])
+				session.remove_magic(role_index, entry.operands[0])
+				cursor += 1
+			0x0055:
+				var role_index := _battle_role_index(target_index, entry.operands[1])
+				session.add_magic(role_index, entry.operands[0])
+				cursor += 1
+			0x0057:
+				var role_index := _battle_role_index(target_index, 0)
+				var magic := database.magic_definition_for_object(entry.operands[0])
+				if magic != null and role_index >= 0 and role_index < session.role_mp.size():
+					magic.base_damage = session.role_mp[role_index] * (entry.operands[1] if entry.operands[1] > 0 else 8)
+					session.role_mp[role_index] = 0
+				else:
+					success = false
+				cursor += 1
+			0x0058:
+				cursor = entry.operands[2] if session.item_count(entry.operands[0]) < _signed_word(entry.operands[1]) else cursor + 1
+			0x005a:
+				var role_index := _battle_role_index(target_index, 0)
+				if role_index >= 0 and role_index < session.role_hp.size():
+					session.role_hp[role_index] /= 2
+				else:
+					success = false
+				cursor += 1
+			0x005b:
+				var enemy_index := _battle_enemy_target(target_index)
+				if enemy_index >= 0:
+					var damage := mini(enemies[enemy_index].hp / 2 + 1, entry.operands[0])
+					result.hits.append(_apply_enemy_damage(enemy_index, damage, false))
+				cursor += 1
+			0x005c:
+				_hiding_turns = entry.operands[0]
+				result.script_events.append(_script_event(ScriptEventType.HIDING, _hiding_turns))
 				cursor += 1
 			# 指定毒不存在时跳转；005D 检查玩家，005E 检查敌人。
 			0x005d:
@@ -1268,12 +1482,112 @@ func _run_battle_effect_script(entry_index: int, actor_is_enemy: bool, _target_i
 			0x0061:
 				var party_index := _battle_player_target(target_index)
 				cursor = entry.operands[0] if party_index < 0 or not session.role_has_poison_by_level(players[party_index].role_index, 0, database) else cursor + 1
+			0x0064:
+				var enemy_index := _battle_enemy_target(target_index)
+				cursor = entry.operands[1] if enemy_index < 0 or enemies[enemy_index].hp * 100 > enemies[enemy_index].max_hp * entry.operands[0] else cursor + 1
 			# 当前效果由敌方行动触发时跳转，用于敌我共用的成功脚本。
 			0x0068:
 				cursor = entry.operands[0] if actor_is_enemy else cursor + 1
+			0x006a:
+				var enemy_index := _battle_enemy_target(target_index)
+				# 官方偷窃没有修改 g_fScriptSuccess；没有可偷物或概率失败仍会正常
+				# 结束本段使用脚本，不能反向取消动作或后续指令。
+				_steal_from_enemy(enemy_index, entry.operands[0], result)
+				cursor += 1
+			0x006b:
+				_blow_displacement = _signed_word(entry.operands[0])
+				result.script_events.append(_script_event(ScriptEventType.BLOW, _blow_displacement))
+				cursor += 1
+			0x0074:
+				cursor = entry.operands[0] if not session.is_party_full_hp() else cursor + 1
+			0x0086:
+				cursor = entry.operands[2] if session.equipped_item_count(entry.operands[0]) < entry.operands[1] else cursor + 1
+			0x0088:
+				var spent := mini(5000, session.cash)
+				session.cash -= spent
+				var magic := database.magic_definition_for_object(entry.operands[0])
+				if magic != null:
+					magic.base_damage = spent * 2 / 5
+				else:
+					success = false
+				cursor += 1
+			0x008a:
+				# 若数据在战斗效果中触发，本场从下一轮起也立即进入官方自动选择。
+				_auto_battle = true
+				cursor += 1
+			0x008d:
+				var role_index := _battle_role_index(target_index, 0)
+				success = session.level_up_role(role_index, entry.operands[0], Callable(_random, "next_int"))
+				cursor += 1
+			0x008f:
+				session.cash /= 2
+				cursor += 1
+			0x0092:
+				result.script_events.append(_script_event(ScriptEventType.PRE_MAGIC, entry.operands[0] - 1 if entry.operands[0] > 0 else -1))
+				cursor += 1
+			0xffff:
+				result.script_events.append(_script_event(ScriptEventType.DIALOG_MESSAGE, entry.operands[0], dialog_position, dialog_color))
+				cursor += 1
 			_:
 				return {"cursor": entry_index, "success": false}
 	return {"cursor": cursor, "success": false}
+
+
+func _battle_role_index(target_index: int, explicit_one_based_role: int) -> int:
+	if explicit_one_based_role > 0:
+		return explicit_one_based_role - 1
+	var party_index := _battle_player_target(target_index)
+	return players[party_index].role_index if party_index >= 0 else -1
+
+
+func _base_role_attribute(group_index: int, role_index: int) -> int:
+	if role_index < 0 or role_index >= PalPlayerRoles.ROLE_COUNT:
+		return 0
+	match group_index:
+		6:
+			return session.role_levels[role_index]
+		7:
+			return session.role_max_hp[role_index]
+		8:
+			return session.role_max_mp[role_index]
+		9:
+			return session.role_hp[role_index]
+		10:
+			return session.role_mp[role_index]
+		17:
+			return session.role_attack_strength[role_index]
+		18:
+			return session.role_magic_strength[role_index]
+		19:
+			return session.role_defense[role_index]
+		20:
+			return session.role_dexterity[role_index]
+		21:
+			return session.role_flee_rate[role_index]
+		_:
+			return 0
+
+
+func _steal_from_enemy(enemy_index: int, steal_rate: int, result: ActionResult) -> bool:
+	if enemy_index < 0 or enemy_index >= enemies.size():
+		return false
+	var enemy := enemies[enemy_index]
+	if enemy.steal_item_count <= 0 or (steal_rate != 0 and _random.next_int(0, 10) > steal_rate):
+		return false
+	if enemy.steal_item == 0:
+		var amount := enemy.steal_item_count / _random.next_int(2, 3)
+		enemy.steal_item_count -= amount
+		session.cash += amount
+		if amount > 0:
+			result.script_events.append(_script_event(ScriptEventType.STEAL, 0, amount))
+		return amount > 0
+	var before := session.item_count(enemy.steal_item)
+	enemy.steal_item_count -= 1
+	session.set_item_count(enemy.steal_item, mini(99, before + 1))
+	var changed := session.item_count(enemy.steal_item) - before
+	if changed > 0:
+		result.script_events.append(_script_event(ScriptEventType.STEAL, enemy.steal_item, changed))
+	return changed > 0
 
 
 func _battle_player_target(target_index: int) -> int:
@@ -1604,6 +1918,10 @@ func _execute_enemy_action(entry: QueueEntry) -> ActionResult:
 	result.actor_index = entry.combatant_index
 	result.second_action = entry.is_second
 	var enemy := enemies[entry.combatant_index]
+	if _hiding_turns > 0:
+		result.skipped = true
+		result.summary = "队伍隐身，敌人无法行动"
+		return result
 	if enemy.script_on_ready > 0:
 		var outcome := _run_enemy_battle_script(enemy.script_on_ready, entry.combatant_index, result)
 		enemy.script_on_ready = int(outcome.get("cursor", enemy.script_on_ready))
@@ -1805,6 +2123,10 @@ func _finish_turn() -> ActionResult:
 	result.summary = "回合结束"
 	for player in players:
 		player.defending = false
+	if _hiding_turns > 0:
+		_hiding_turns -= 1
+		if _hiding_turns == 0:
+			result.script_events.append(_script_event(ScriptEventType.HIDING, 0))
 	# fight.c 经典模式固定按“玩家毒/玩家状态/敌人毒/敌人状态”的次序结算。
 	for party_index in range(players.size()):
 		var role_index := players[party_index].role_index
@@ -1854,6 +2176,8 @@ func _create_enemy_state(object_id: int, slot_index: int) -> EnemyState:
 	enemy.max_hp = definition.health
 	enemy.magic = definition.magic
 	enemy.magic_rate = definition.magic_rate
+	enemy.steal_item = definition.steal_item
+	enemy.steal_item_count = definition.steal_item_count
 	enemy.script_on_turn_start = object.script_on_turn_start
 	enemy.script_on_battle_end = object.script_on_battle_end
 	enemy.script_on_ready = object.script_on_ready
@@ -1923,6 +2247,28 @@ func _run_enemy_battle_script(entry_index: int, enemy_index: int, result: Action
 				cursor += 1
 			0x0006:
 				cursor = entry.operands[1] if _random.next_int(1, 100) >= entry.operands[0] else cursor + 1
+			0x0019:
+				var role_index := enemy_index if entry.operands[2] == 0 else entry.operands[2] - 1
+				if not session.change_role_attribute(entry.operands[0], role_index, _signed_word(entry.operands[1])):
+					result.unsupported = true
+					result.summary = "敌人脚本 0019 的角色属性组无效"
+					return {"cursor": entry_index, "success": false}
+				cursor += 1
+			# 明王等分轮敌人脚本会在剧情成长段直接恢复全队 HP/MP。
+			0x001d:
+				var changed := false
+				var targets := range(players.size()) if entry.operands[0] != 0 else [_battle_player_target(enemy_index)]
+				for party_index in targets:
+					if party_index >= 0:
+						changed = _apply_player_stat_delta(party_index, _signed_word(entry.operands[1]), _signed_word(entry.operands[1]), result) or changed
+				# 官方全体 001D 不以“无人变化”标记失败；保持进入本段前的成功状态。
+				cursor += 1
+			0x0022:
+				var targets := range(players.size()) if entry.operands[0] != 0 else [_battle_player_target(enemy_index)]
+				for party_index in targets:
+					if party_index >= 0:
+						_revive_player(party_index, entry.operands[1], result)
+				cursor += 1
 			# 战后随机掉落；数量 0 在 PAL_AddItemToInventory 中按 1 处理并限制为 99。
 			0x001f:
 				var amount := _signed_word(entry.operands[1])
@@ -1948,11 +2294,16 @@ func _run_enemy_battle_script(entry_index: int, enemy_index: int, result: Action
 					cursor += 1
 				else:
 					cursor = entry.operands[2]
-			# 003C/003D/003E 只改变随后 FFFF 文本的位置；画面层复用同一经典对话控件。
-			0x003c, 0x003d, 0x003e:
-				dialog_position = entry.operation - 0x003c
-				dialog_portrait = entry.operands[0] if entry.operation != 0x003e else 0
-				dialog_color = entry.operands[1] if entry.operation != 0x003e else entry.operands[0]
+			# 003B–003E 只改变随后 FFFF 文本的位置；画面层复用同一经典对话控件。
+			0x003b, 0x003c, 0x003d, 0x003e:
+				if entry.operation == 0x003b:
+					dialog_position = 2
+					dialog_portrait = 0
+					dialog_color = entry.operands[0]
+				else:
+					dialog_position = entry.operation - 0x003c
+					dialog_portrait = entry.operands[0] if entry.operation != 0x003e else 0
+					dialog_color = entry.operands[1] if entry.operation != 0x003e else entry.operands[0]
 				result.script_events.append(_script_event(ScriptEventType.DIALOG_START, dialog_position, dialog_color, dialog_portrait))
 				cursor += 1
 			0x0043:
@@ -1962,6 +2313,9 @@ func _run_enemy_battle_script(entry_index: int, enemy_index: int, result: Action
 				cursor += 1
 			0x0047:
 				result.script_events.append(_script_event(ScriptEventType.SOUND, entry.operands[0]))
+				cursor += 1
+			0x0092:
+				result.script_events.append(_script_event(ScriptEventType.PRE_MAGIC, entry.operands[0] - 1 if entry.operands[0] > 0 else -1))
 				cursor += 1
 			# 对应 script.c 005B/0064：按当前基础最大体力进行 Boss 阶段判断。
 			0x005b:
@@ -2180,12 +2534,24 @@ func _transform_enemy(enemy_index: int, object_id: int, result: ActionResult) ->
 
 ## 静态判断一个操作码是否属于当前敌人战斗脚本解释器的支持集合。
 ## 供真实资源审计使用，不执行脚本也不修改战斗状态。
+static func is_battle_effect_opcode_supported(operation: int) -> bool:
+	# 0042/0066 由投掷物专用执行器实际处理，但在六类审计中归入“战斗效果”。
+	return operation in [
+		0x0000, 0x0001, 0x0003, 0x0005, 0x0006, 0x0019, 0x001b, 0x001c, 0x001d, 0x001e, 0x001f,
+		0x0020, 0x0021, 0x0022, 0x0028, 0x0029, 0x002a, 0x002b, 0x002c, 0x002d, 0x002e, 0x002f,
+		0x0030, 0x0031, 0x0033, 0x0034, 0x0035, 0x0039, 0x003a, 0x003b, 0x003c, 0x003d, 0x003e,
+		0x0041, 0x0042, 0x0047, 0x0055, 0x0056, 0x0057, 0x0058, 0x005a, 0x005b, 0x005c,
+		0x005d, 0x005e, 0x005f, 0x0060, 0x0061, 0x0064, 0x0066, 0x0068, 0x006a, 0x006b,
+		0x0074, 0x0086, 0x0088, 0x008a, 0x008d, 0x008f, 0x0092, 0xffff,
+	]
+
+
 static func is_enemy_script_opcode_supported(operation: int) -> bool:
 	return operation in [
 		0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006,
-		0x001f, 0x0028, 0x002e, 0x003c, 0x003d, 0x003e, 0x0043, 0x0047,
+		0x0019, 0x001d, 0x001f, 0x0022, 0x0028, 0x002e, 0x003b, 0x003c, 0x003d, 0x003e, 0x0043, 0x0047,
 		0x005b, 0x005e, 0x0060, 0x0064, 0x0067, 0x0068, 0x0069,
-		0x0077, 0x0079, 0x0085, 0x0089, 0x008e, 0x0090, 0x0091,
+		0x0077, 0x0079, 0x0085, 0x0089, 0x008e, 0x0090, 0x0091, 0x0092,
 		0x009c, 0x009e, 0x009f, 0x00a2, 0xffff,
 	]
 
@@ -2269,6 +2635,11 @@ func _apply_battle_cleanup_if_needed() -> void:
 		return
 	# 原版战斗结束会移除临时状态，但中毒属于跨战斗角色状态，必须继续保留。
 	session.clear_temporary_role_statuses()
+	for player in players:
+		session.clear_equipment_effects(player.role_index, GameSession.EQUIPMENT_SLOT_COUNT)
+	_auto_battle = false
+	_hiding_turns = 0
+	_blow_displacement = 0
 	_battle_cleanup_applied = true
 
 
