@@ -34,6 +34,7 @@ var _game_menu: PalGameMenu
 var _equipment_manager := PalEquipmentManager.new()
 var _rng_player: PalRngPlayer
 var _battle_view: PalBattlePreview
+var _ending_player: PalEndingPlayer
 var _audio_player: Node
 var _fade_overlay: ColorRect
 var _fade_tween: Tween
@@ -65,6 +66,7 @@ var _loaded_scene_index: int = -1
 var _pending_location_toast: String = ""
 var _script_camera_offset: Vector2i = Vector2i.ZERO
 var _resume_rng_after_fade_in: bool = false
+var _screen_shake_serial: int = 0
 
 
 func _ready() -> void:
@@ -108,6 +110,20 @@ func _ready() -> void:
 	_script_vm.screen_fade_requested.connect(_on_screen_fade_requested)
 	_script_vm.rng_animation_requested.connect(_on_rng_animation_requested)
 	_script_vm.battle_requested.connect(_on_battle_requested)
+	_script_vm.confirmation_requested.connect(_on_confirmation_requested)
+	_script_vm.shop_requested.connect(_on_shop_requested)
+	_script_vm.key_wait_requested.connect(_on_key_wait_requested)
+	_script_vm.load_current_save_requested.connect(_on_load_current_save_requested)
+	_script_vm.color_fade_requested.connect(_on_color_fade_requested)
+	_script_vm.game_over_requested.connect(_on_game_over_requested)
+	_script_vm.scene_fade_requested.connect(_on_scene_fade_requested)
+	_script_vm.screen_shake_requested.connect(_on_screen_shake_requested)
+	_script_vm.screen_wave_requested.connect(_on_screen_wave_requested)
+	_script_vm.map_change_requested.connect(_on_map_change_requested)
+	_script_vm.followers_changed.connect(_on_followers_changed)
+	_script_vm.quit_requested.connect(_on_quit_requested)
+	_script_vm.ending_requested.connect(_on_ending_requested)
+	_script_vm.screen_backup_requested.connect(_on_screen_backup_requested)
 	add_child(_script_vm)
 	var requested_load_slot := StartupRequest.consume_load_slot()
 	var checkpoint: Dictionary = DebugCheckpoint.consume()
@@ -202,6 +218,12 @@ func _build_interface() -> void:
 	_fbp_layer.hide()
 	_ui_layer.add_child(_fbp_layer)
 
+	_ending_player = PalEndingPlayer.new()
+	_ending_player.name = "EndingPlayer"
+	_ending_player.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_ending_player.playback_finished.connect(_on_ending_playback_finished)
+	_ui_layer.add_child(_ending_player)
+
 	_dialog_box = PalDialogBox.new()
 	_dialog_box.name = "DialogBox"
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -215,6 +237,9 @@ func _build_interface() -> void:
 	_game_menu.magic_use_requested.connect(_on_magic_use_requested)
 	_game_menu.save_slot_requested.connect(_on_save_slot_requested)
 	_game_menu.load_slot_requested.connect(_on_load_slot_requested)
+	_game_menu.confirmation_completed.connect(_on_confirmation_completed)
+	_game_menu.shop_closed.connect(_on_shop_closed)
+	_game_menu.load_menu_cancelled.connect(_on_load_menu_cancelled)
 	_ui_layer.add_child(_game_menu)
 
 	_rng_player = PalRngPlayer.new()
@@ -260,9 +285,9 @@ func _process(delta: float) -> void:
 		_displace_party_from_blockers()
 		_refresh_world()
 		# 自动脚本可能让 NPC 主动走入接触范围；官方会在同一游戏更新周期检查触发。
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_screen_fade and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle:
+		if _script_vm != null and not _script_vm.is_busy():
 			_trigger_touch_event()
-	if _script_vm != null and (_script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle):
+	if _script_vm != null and _script_vm.is_busy():
 		return
 	if _pending_magic_object_id > 0:
 		return
@@ -309,13 +334,17 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if _battle_view != null and _battle_view.visible:
 		return
+	if _script_vm != null and _script_vm.waiting_for_key:
+		_script_vm.complete_key_wait()
+		get_viewport().set_input_as_handled()
+		return
 	if _game_menu != null and _game_menu.visible:
 		if event is InputEventKey and event.keycode in [KEY_ESCAPE, KEY_M, KEY_TAB]:
 			_game_menu.go_back()
 			get_viewport().set_input_as_handled()
 		return
 	if event is InputEventKey and event.keycode in MENU_KEYCODES:
-		if _script_vm != null and not _script_vm.running and not _script_vm.waiting_for_dialog and not _script_vm.waiting_for_screen_fade and not _script_vm.waiting_for_rng and not _script_vm.waiting_for_battle and not _touch_scan_active and _pending_magic_object_id <= 0:
+		if _script_vm != null and not _script_vm.is_busy() and not _touch_scan_active and _pending_magic_object_id <= 0:
 			if event.keycode == KEY_I:
 				_game_menu.open_inventory()
 			else:
@@ -466,7 +495,7 @@ func _prepare_search_event(event: PalEventObject) -> bool:
 
 
 func _trigger_touch_event() -> bool:
-	if _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
+	if _touch_scan_active or _script_vm == null or _script_vm.is_busy():
 		return false
 	_touch_scan_active = true
 	_touch_scan_next_index = 0
@@ -474,7 +503,7 @@ func _trigger_touch_event() -> bool:
 
 
 func _continue_touch_scan() -> bool:
-	if not _touch_scan_active or _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
+	if not _touch_scan_active or _script_vm == null or _script_vm.is_busy():
 		return false
 	if _pending_scene_index >= 0:
 		_reset_touch_scan()
@@ -535,6 +564,8 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 		_set_error("场景索引越界：%d" % scene_index)
 		return
 	_hide_fbp_view()
+	if _ending_player != null:
+		_ending_player.hide()
 	_script_camera_offset = Vector2i.ZERO
 	_session.scene_index = scene_index
 	_reset_touch_scan()
@@ -563,7 +594,7 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 
 
 func _run_scene_enter_script(scene_index: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle:
+	if _script_vm == null or _script_vm.is_busy():
 		return
 	if scene_index < 0 or scene_index >= _database.scenes.size():
 		return
@@ -678,6 +709,14 @@ func _build_scene_draw_items(render_viewport: Vector2i) -> Array:
 		if party_index > 0 and _is_blocked(member_world_position):
 			member_world_position = _session.trail_positions[1]
 		result.append(PalSceneRenderer.player_item(player_frame, member_world_position - render_viewport, _session.world_layer))
+	for follower_index in range(mini(2, _session.follower_sprite_numbers.size())):
+		var trail_index := 3 + follower_index
+		if trail_index >= _session.trail_positions.size() or trail_index >= _session.trail_directions.size():
+			continue
+		var sprite := _database.load_mgo_sprite(_session.follower_sprite_numbers[follower_index])
+		var frame := _decode_sprite_frame(sprite, PalSceneRenderer.follower_frame_index(_session.trail_directions[trail_index], sprite.frame_count()))
+		if frame.is_valid():
+			result.append(PalSceneRenderer.player_item(frame, _session.trail_positions[trail_index] - render_viewport, _session.world_layer))
 	for event in _scene_events:
 		if not event.is_visible() or not _event_sprites.has(event.sprite_number):
 			continue
@@ -807,6 +846,158 @@ func _on_screen_fade_requested(fade_out: bool, duration_seconds: float) -> void:
 	_start_screen_fade(fade_out, duration_seconds, true)
 
 
+func _on_confirmation_requested() -> void:
+	_dialog_box.hide_dialog()
+	_game_menu.open_confirmation()
+
+
+func _on_confirmation_completed(accepted: bool) -> void:
+	if _script_vm != null:
+		_script_vm.complete_confirmation(accepted)
+
+
+func _on_shop_requested(store_id: int, buying: bool) -> void:
+	_dialog_box.hide_dialog()
+	_game_menu.open_shop(store_id, buying)
+
+
+func _on_shop_closed() -> void:
+	if _script_vm != null:
+		_script_vm.complete_shop()
+
+
+func _on_key_wait_requested() -> void:
+	_status.text = "按任意键继续"
+
+
+func _on_load_current_save_requested() -> void:
+	call_deferred("_resolve_current_save_request")
+
+
+func _resolve_current_save_request() -> void:
+	if _script_vm == null or not _script_vm.waiting_for_load:
+		return
+	var summaries := _save_manager.slot_summaries() if _save_system_available else []
+	var slot := _save_manager.current_slot
+	var metadata: Dictionary = summaries[slot - 1] if slot > 0 and slot <= summaries.size() else {}
+	if bool(metadata.get("can_load", false)) and _on_load_slot_requested(slot):
+		return
+	_refresh_save_slot_summaries()
+	_game_menu.open_load_slots(true)
+
+
+func _on_load_menu_cancelled() -> void:
+	if _script_vm != null and _script_vm.waiting_for_load:
+		_script_vm.complete_load_request()
+
+
+func _on_color_fade_requested(color_index: int, fade_from_color: bool, duration_seconds: float) -> void:
+	var palette := _database.load_palette(_session.palette_index, _session.night_palette)
+	var offset := clampi(color_index, 0, 255) * 3
+	var color := Color.BLACK
+	if palette.size() >= offset + 3:
+		color = Color(float(palette[offset]) / 255.0, float(palette[offset + 1]) / 255.0, float(palette[offset + 2]) / 255.0)
+	_start_color_overlay_fade(color, fade_from_color, duration_seconds)
+
+
+func _on_game_over_requested(duration_seconds: float) -> void:
+	_start_color_overlay_fade(Color(0.72, 0.0, 0.0), false, duration_seconds)
+
+
+func _on_scene_fade_requested(duration_seconds: float) -> void:
+	_start_color_overlay_fade(Color.BLACK, true, duration_seconds)
+
+
+func _start_color_overlay_fade(color: Color, fade_from_color: bool, duration_seconds: float) -> void:
+	if _fade_overlay == null:
+		if _script_vm != null:
+			_script_vm.complete_screen_fade()
+		return
+	if _fade_tween != null and _fade_tween.is_valid():
+		_fade_tween.kill()
+	_fade_overlay.color = color
+	_fade_overlay.visible = true
+	_fade_overlay.modulate.a = 1.0 if fade_from_color else 0.0
+	_screen_fade_active = true
+	_fade_tween = create_tween()
+	_fade_tween.tween_property(_fade_overlay, "modulate:a", 0.0 if fade_from_color else 1.0, maxf(0.01, duration_seconds))
+	_fade_tween.finished.connect(func() -> void:
+		_fade_tween = null
+		_screen_fade_active = false
+		if fade_from_color:
+			_fade_overlay.hide()
+		if _script_vm != null:
+			_script_vm.complete_screen_fade()
+	)
+
+
+func _on_screen_shake_requested(frame_count: int, level: int) -> void:
+	_screen_shake_serial += 1
+	_play_screen_shake(frame_count, level, _screen_shake_serial)
+
+
+func _play_screen_shake(frame_count: int, level: int, serial: int) -> void:
+	for frame in range(maxi(0, frame_count)):
+		if serial != _screen_shake_serial:
+			break
+		var offset := Vector2(0, -level if (frame & 1) == 0 else level)
+		if _tile_world != null:
+			_tile_world.set_screen_effect_offset(offset)
+		if _use_legacy_renderer and _map_view != null:
+			_map_view.position = offset
+		await get_tree().create_timer(0.04).timeout
+	if serial == _screen_shake_serial:
+		if _tile_world != null:
+			_tile_world.set_screen_effect_offset(Vector2.ZERO)
+		if _map_view != null:
+			_map_view.position = Vector2.ZERO
+
+
+func _on_screen_wave_requested(amplitude: int, progression: int) -> void:
+	if _tile_world != null:
+		_tile_world.set_screen_wave(amplitude, progression)
+
+
+func _on_map_change_requested(scene_index: int) -> void:
+	if scene_index == _session.scene_index:
+		call_deferred("_load_scene", scene_index, false)
+
+
+func _on_followers_changed() -> void:
+	if _tile_world != null:
+		_tile_world.reset_sprite_cache()
+	_refresh_world()
+
+
+func _on_quit_requested() -> void:
+	call_deferred("_quit_from_script")
+
+
+func _quit_from_script() -> void:
+	if is_inside_tree():
+		get_tree().quit()
+
+
+func _on_ending_requested(kind: int, first: int, second: int, third: int) -> void:
+	if _ending_player == null:
+		_script_vm.complete_screen_fade()
+		return
+	_ending_player.configure(_database, _session)
+	_ending_player.play(kind, first, second, third)
+
+
+func _on_ending_playback_finished() -> void:
+	if _script_vm != null and _script_vm.waiting_for_screen_fade:
+		_script_vm.complete_screen_fade()
+
+
+func _on_screen_backup_requested() -> void:
+	if _ending_player == null or not is_inside_tree():
+		return
+	_ending_player.configure(_database, _session)
+	_ending_player.backup_image(get_viewport().get_texture().get_image())
+
+
 func _start_screen_fade(fade_out: bool, duration_seconds: float, complete_vm: bool) -> void:
 	if _fade_overlay == null:
 		if complete_vm and _script_vm != null:
@@ -912,10 +1103,16 @@ func _on_load_slot_requested(slot: int) -> bool:
 	if not _save_system_available:
 		_game_menu.close_menu()
 		_show_system_toast("读档不可用：%s" % _save_manager.error_message)
+		if _script_vm != null and _script_vm.waiting_for_load:
+			_refresh_save_slot_summaries()
+			_game_menu.open_load_slots(true)
 		return false
 	if not _save_manager.load_slot(slot, _session):
 		_game_menu.close_menu()
 		_show_system_toast("读取失败：%s" % _save_manager.error_message)
+		if _script_vm != null and _script_vm.waiting_for_load:
+			_refresh_save_slot_summaries()
+			_game_menu.open_load_slots(true)
 		return false
 	# 旧版码头检查点只补了船只，继续游玩后会把客栈开场的李大娘姿势和关闭楼梯写入存档。
 	# 这里只修复与该旧检查点完全匹配的不可能状态，正常主线存档不会命中。
@@ -941,6 +1138,8 @@ func _reset_transient_state_for_load() -> void:
 	_dialog_box.hide_dialog()
 	_rng_player.stop_playback(false)
 	_battle_view.hide()
+	if _ending_player != null:
+		_ending_player.hide()
 	_script_vm.stop()
 	if _fade_tween != null and _fade_tween.is_valid():
 		_fade_tween.kill()
@@ -1138,7 +1337,7 @@ func _on_camera_offset_requested(offset: Vector2i) -> void:
 
 
 func _on_magic_use_requested(magic_object_id: int, caster_role_index: int, target_role_index: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _pending_magic_object_id > 0 or _pending_used_item_id > 0:
+	if _script_vm == null or _script_vm.is_busy() or _pending_magic_object_id > 0 or _pending_used_item_id > 0:
 		return
 	var object := _database.magic_object_definition(magic_object_id)
 	var definition := _database.magic_definition_for_object(magic_object_id)
@@ -1215,7 +1414,7 @@ func _complete_pending_magic(success: bool) -> void:
 
 
 func _on_item_use_requested(item_id: int) -> void:
-	if _script_vm == null or _script_vm.running or _script_vm.waiting_for_dialog or _script_vm.waiting_for_screen_fade or _script_vm.waiting_for_rng or _script_vm.waiting_for_battle or _session.item_count(item_id) <= 0 or _pending_magic_object_id > 0:
+	if _script_vm == null or _script_vm.is_busy() or _session.item_count(item_id) <= 0 or _pending_magic_object_id > 0:
 		return
 	var item := _database.item_definition(item_id)
 	if item == null or not item.is_usable():
@@ -1230,6 +1429,15 @@ func _on_item_equip_requested(item_id: int, role_index: int) -> void:
 	var success := _equipment_manager.equip_item(item_id, role_index)
 	var item_name := _database.get_word(item_id)
 	var feedback := "装备：%s" % item_name if success else _equipment_manager.error_message
+	if not _equipment_manager.script_messages.is_empty():
+		var script_lines := PackedStringArray()
+		for message_index in _equipment_manager.script_messages:
+			var message := _database.get_message(message_index).strip_edges()
+			if not message.is_empty():
+				script_lines.append(message)
+		if not script_lines.is_empty():
+			feedback = "\n".join(script_lines)
+			_show_system_toast(feedback)
 	_status.text = feedback
 	_game_menu.notify_equipment_result(success, _equipment_manager.last_unequipped_item, feedback)
 

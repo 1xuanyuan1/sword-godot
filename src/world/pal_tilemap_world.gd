@@ -7,6 +7,7 @@ class_name PalTileMapWorld
 extends Node2D
 
 const PALETTE_SHADER: Shader = preload("res://shaders/indexed_palette.gdshader")
+const SCREEN_WAVE_SHADER: Shader = preload("res://shaders/pal_screen_wave_overlay.gdshader")
 const VIEWPORT_SIZE := Vector2i(320, 200)
 
 ## 最近一次地图资源、节点结构或调色板同步失败原因。
@@ -22,6 +23,9 @@ var _static_bottom: TileMapLayer
 var _static_top: TileMapLayer
 var _sort_root: Node2D
 var _camera: Camera2D
+var _effect_root: Node2D
+var _wave_overlay: ColorRect
+var _wave_material: ShaderMaterial
 var _palette_material: ShaderMaterial
 var _palette_key: String = ""
 var _texture_cache: Dictionary = {}
@@ -29,6 +33,10 @@ var _event_sprites: Dictionary = {}
 var _walk_phase: int = 0
 var _showing_walk_frame: bool = false
 var _reported_block_mismatches: Dictionary = {}
+var _wave_amplitude: int = 0
+var _wave_progression: int = 0
+var _wave_phase: float = 0.0
+var _wave_frame_accumulator: float = 0.0
 
 
 ## 载入指定 `map_number` 的原始 MAP/GOP 和生成的 TileMapLayer PackedScene。
@@ -69,8 +77,8 @@ func load_map(database: PalContentDatabase, map_number: int) -> bool:
 			cover.hide()
 	_static_bottom.material = _palette_material
 	_static_top.material = _palette_material
-	add_child(_map_instance)
-	move_child(_map_instance, 0)
+	_effect_root.add_child(_map_instance)
+	_effect_root.move_child(_map_instance, 0)
 	loaded_map_number = map_number
 	_event_sprites.clear()
 	_reported_block_mismatches.clear()
@@ -95,6 +103,7 @@ func sync_world(session: GameSession, events: Array[PalEventObject], camera_offs
 		return false
 	var render_viewport := session.viewport_position + camera_offset
 	_camera.position = Vector2(render_viewport) + Vector2(VIEWPORT_SIZE) / 2.0
+	_wave_overlay.position = Vector2(render_viewport)
 	_clear_sort_items()
 	var scene_items := _build_scene_items(session, events, render_viewport)
 	var expanded := PalSceneRenderer.expanded_draw_items(_map_data, _tile_sprite, render_viewport, scene_items)
@@ -129,18 +138,76 @@ func reset_sprite_cache() -> void:
 	_texture_cache.clear()
 
 
+## 设置正式 TileMap 画布的临时像素偏移，供 0035 屏幕震动复用。
+func set_screen_effect_offset(offset: Vector2) -> void:
+	_ensure_runtime_nodes()
+	_effect_root.position = offset
+
+
+## 设置 0071 的逐行波动强度和有符号推进量；零强度立即停用效果。
+func set_screen_wave(amplitude: int, progression: int) -> void:
+	_ensure_runtime_nodes()
+	_wave_amplitude = amplitude
+	_wave_progression = progression
+	_wave_frame_accumulator = 0.0
+	_wave_material.set_shader_parameter("wave_strength", float(amplitude))
+	_wave_overlay.visible = amplitude > 0 and amplitude < 256
+	if amplitude == 0:
+		_wave_phase = 0.0
+		_wave_material.set_shader_parameter("phase", 0.0)
+
+
+func _process(delta: float) -> void:
+	if _wave_amplitude == 0 or _wave_material == null:
+		return
+	_wave_frame_accumulator += delta
+	while _wave_frame_accumulator >= 0.1:
+		_wave_frame_accumulator -= 0.1
+		# PAL_ApplyWave 在每个 10 FPS 场景帧先推进强度，再检查 0/256 边界。
+		_wave_amplitude += _wave_progression
+		if _wave_amplitude <= 0 or _wave_amplitude >= 256:
+			_wave_amplitude = 0
+			_wave_progression = 0
+			_wave_phase = 0.0
+			_wave_overlay.hide()
+			_wave_material.set_shader_parameter("wave_strength", 0.0)
+			_wave_material.set_shader_parameter("phase", 0.0)
+			return
+		_wave_phase = fmod(_wave_phase + 1.0, 32.0)
+		_wave_material.set_shader_parameter("wave_strength", float(_wave_amplitude))
+	_wave_material.set_shader_parameter("phase", _wave_phase)
+
+
 func _ensure_runtime_nodes() -> void:
 	if _palette_material == null:
 		_palette_material = ShaderMaterial.new()
 		_palette_material.shader = PALETTE_SHADER
 		_palette_material.set_shader_parameter("palette_mix", 1.0)
 		_palette_material.set_shader_parameter("global_alpha", 1.0)
+	if _effect_root == null:
+		_effect_root = Node2D.new()
+		_effect_root.name = "ScreenEffectRoot"
+		add_child(_effect_root)
+	if _wave_overlay == null:
+		_wave_overlay = ColorRect.new()
+		_wave_overlay.name = "ScreenWaveOverlay"
+		_wave_overlay.size = Vector2(VIEWPORT_SIZE)
+		_wave_overlay.color = Color.WHITE
+		_wave_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_wave_overlay.z_index = 1000
+		_wave_material = ShaderMaterial.new()
+		_wave_material.shader = SCREEN_WAVE_SHADER
+		_wave_material.set_shader_parameter("wave_strength", 0.0)
+		_wave_material.set_shader_parameter("phase", 0.0)
+		_wave_overlay.material = _wave_material
+		_wave_overlay.hide()
+		add_child(_wave_overlay)
 	if _sort_root == null:
 		_sort_root = Node2D.new()
 		_sort_root.name = "YSortRoot"
 		_sort_root.y_sort_enabled = true
 		_sort_root.z_index = 2
-		add_child(_sort_root)
+		_effect_root.add_child(_sort_root)
 	if _camera == null:
 		_camera = Camera2D.new()
 		_camera.name = "PalCamera"
@@ -176,6 +243,15 @@ func _build_scene_items(session: GameSession, events: Array[PalEventObject], ren
 		if party_index > 0 and _is_blocked_with_events(world_position, events):
 			world_position = session.trail_positions[1]
 		result.append(PalSceneRenderer.player_item(frame, world_position - render_viewport, session.world_layer))
+
+	for follower_index in range(mini(2, session.follower_sprite_numbers.size())):
+		var trail_index := 3 + follower_index
+		if trail_index >= session.trail_positions.size() or trail_index >= session.trail_directions.size():
+			continue
+		var sprite := _event_sprite(session.follower_sprite_numbers[follower_index])
+		var frame := _decode_frame(sprite, PalSceneRenderer.follower_frame_index(session.trail_directions[trail_index], sprite.frame_count()))
+		if frame.is_valid():
+			result.append(PalSceneRenderer.player_item(frame, session.trail_positions[trail_index] - render_viewport, session.world_layer))
 
 	for event in events:
 		if not event.is_visible() or event.sprite_number <= 0:

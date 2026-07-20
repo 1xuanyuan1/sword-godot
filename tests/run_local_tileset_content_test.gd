@@ -47,7 +47,16 @@ func _init() -> void:
 		if not map_number in map_numbers:
 			_fail("场景 %d 引用了未生成的地图 %d" % [scene_index, map_number])
 			return
-	print("PASS: %d 张导入地图、%d 个可玩场景、%d 个唯一场景地图均可加载 TileSet/TileMapLayer" % [map_numbers.size(), database.scenes.size() - 1, referenced.size()])
+	var dynamic_maps: Dictionary = {}
+	for entry_index in range(database.scripts.size()):
+		var entry := database.scripts[entry_index]
+		if entry.operation != 0x0099 or entry.operands[1] <= 0:
+			continue
+		dynamic_maps[entry.operands[1]] = true
+		if not entry.operands[1] in map_numbers:
+			_fail("脚本 0099@%04X 引用了未生成的动态地图 %d" % [entry_index, entry.operands[1]])
+			return
+	print("PASS: %d 张导入地图、%d 个可玩场景、%d 个唯一场景地图及 %d 张 0099 动态地图均可加载 TileSet/TileMapLayer" % [map_numbers.size(), database.scenes.size() - 1, referenced.size(), dynamic_maps.size()])
 	quit(0)
 
 

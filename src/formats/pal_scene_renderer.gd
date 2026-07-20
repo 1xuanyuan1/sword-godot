@@ -27,6 +27,13 @@ static func player_item(frame: PalIndexedImage, screen_position: Vector2i, world
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + world_layer + 10, world_layer + 6)
 
 
+## 0098 跟随者使用 MGO 的三帧四方向布局；损坏或特殊 Sprite 会限制到现有帧内。
+static func follower_frame_index(direction: int, frame_count: int) -> int:
+	if frame_count <= 0:
+		return 0
+	return clampi(posmod(direction, 4) * 3, 0, frame_count - 1)
+
+
 ## 按 EVENTOBJECT 逻辑层把一帧事件图像转换为 CPU 绘制项。
 static func event_item(frame: PalIndexedImage, screen_position: Vector2i, event_layer: int) -> DrawItem:
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + event_layer * 8 + 9, event_layer * 8 + 2)
