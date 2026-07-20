@@ -603,7 +603,7 @@ static func _convert_voc_audio(voc_path: String, absolute_output: String, report
 
 
 static func _convert_rix_audio(mus_path: String, absolute_output: String, report: PalImportReport) -> void:
-	if OS.get_name() not in ["macOS", "Linux"]:
+	if OS.get_name() not in ["macOS", "Linux", "Windows"]:
 		report.warnings.append("当前平台暂不自动构建 RIX 离线转换器")
 		return
 	var archive := MkfArchive.load_file(mus_path)
@@ -611,14 +611,26 @@ static func _convert_rix_audio(mus_path: String, absolute_output: String, report
 		report.warnings.append("MUS.MKF 无法读取，跳过 RIX 离线转换")
 		return
 	var project_root := ProjectSettings.globalize_path("res://").trim_suffix("/")
-	var upstream := project_root.get_base_dir().path_join("sdlpal-official")
-	var executable := project_root.path_join("tools/rix_renderer/build/rix_renderer")
+	var upstream := _find_sdlpal_upstream(project_root)
+	if upstream.is_empty():
+		report.warnings.append("未找到 SDLPal 源码，跳过 RIX 离线转换；可设置 SDLPAL_DIR")
+		return
+	var executable_name := "rix_renderer.exe" if OS.get_name() == "Windows" else "rix_renderer"
+	var executable := project_root.path_join("tools/rix_renderer/build").path_join(executable_name)
 	if not FileAccess.file_exists(executable):
 		var build_output: Array = []
 		var build_script := project_root.path_join("tools/rix_renderer/build.py")
-		var build_exit := OS.execute("python3", [build_script, "--upstream", upstream, "--output", executable], build_output, true)
+		var build_arguments := [build_script, "--upstream", upstream, "--output", executable]
+		var build_exit := -1
+		for python_command in _python_commands():
+			var arguments: Array = python_command["prefix"].duplicate()
+			arguments.append_array(build_arguments)
+			build_output.clear()
+			build_exit = OS.execute(python_command["command"], arguments, build_output, true)
+			if build_exit == 0:
+				break
 		if build_exit != 0:
-			report.warnings.append("RIX 离线转换器构建失败：%s" % "\n".join(build_output))
+			report.warnings.append("RIX 离线转换器构建失败；需要 Python 3 和 C++17 编译器：%s" % "\n".join(build_output))
 			return
 	var output_dir := absolute_output.path_join("audio/rix")
 	DirAccess.make_dir_recursive_absolute(output_dir)
@@ -651,6 +663,29 @@ static func _convert_rix_audio(mus_path: String, absolute_output: String, report
 		"output": output_dir,
 		"sample_rate": 44100,
 	}
+
+
+static func _find_sdlpal_upstream(project_root: String) -> String:
+	var candidates: Array[String] = []
+	var configured := OS.get_environment("SDLPAL_DIR").strip_edges()
+	if not configured.is_empty():
+		candidates.append(configured.simplify_path())
+	candidates.append(project_root.get_base_dir().path_join("sdlpal-official"))
+	candidates.append(project_root.get_base_dir().path_join("sdlpal"))
+	for candidate in candidates:
+		if FileAccess.file_exists(candidate.path_join("adplug/rix.cpp")):
+			return candidate
+	return ""
+
+
+static func _python_commands() -> Array[Dictionary]:
+	var commands: Array[Dictionary] = [
+		{"command": "python3", "prefix": []},
+		{"command": "python", "prefix": []},
+	]
+	if OS.get_name() == "Windows":
+		commands.append({"command": "py", "prefix": ["-3"]})
+	return commands
 
 
 static func _music_track_numbers(script_bytes: PackedByteArray) -> Array[int]:

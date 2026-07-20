@@ -39,8 +39,47 @@
 ## 开发环境
 
 - Godot 4.7（标准版，类型化 GDScript）
+- Python 3（本地资源导入和文本转换）
 - 默认逻辑画布 320×200，窗口 960×600，最近邻采样
 - 首阶段目标：当前资源实际识别出的 DOS 繁体中文版（CP950/Big5）、macOS/Windows、经典回合制、新版 Godot 存档
+
+### 一键生成本地资源
+
+准备一份自行合法取得的原版游戏 `Data` 目录，然后在仓库根目录执行：
+
+macOS：
+
+```bash
+./tools/generate_resources.sh
+```
+
+Windows（CMD 或 PowerShell）：
+
+```bat
+tools\generate_resources.cmd
+```
+
+无参数时命令读取本项目内被 Git 忽略的 `Data/`，也可以显式传入 `Data` 本身或包含 `Data` 的游戏目录：
+
+```bash
+# macOS
+./tools/generate_resources.sh "/path/to/game/Data"
+```
+
+```bat
+rem Windows
+tools\generate_resources.cmd "D:\games\PAL\Data"
+```
+
+macOS 会自动识别 `/Applications/Godot.app`；其他安装位置及 Windows 可将 Godot 加入 `PATH`，或使用 `--godot` 指定可执行文件：
+
+```bat
+tools\generate_resources.cmd "D:\games\PAL\Data" --godot "C:\Tools\Godot\Godot_v4.7-stable_win64.exe"
+```
+
+首次运行时，脚本会从 `https://github.com/sdlpal/sdlpal.git` 自动克隆官方 SDLPal 源码到相邻的 `sdlpal-official/`，供 RIX 音乐转换器使用；也可通过 `--sdlpal` 指定已有源码或其他克隆目标。官方 SDLPal **不包含原版游戏 Data**，因此仍须使用自己合法取得的资源。RIX 转换另需 C++17 编译器：macOS 可使用 Xcode Command Line Tools，Windows 可使用 Visual Studio Build Tools 或 LLVM。
+
+`Data/` 和 `generated/` 都只保留在本机并受 Git 忽略；导入器只读取原版目录，不会修改其中的文件。运行 `./tools/generate_resources.sh --help` 或 `tools\generate_resources.cmd --help` 可查看完整参数。
 
 运行项目：
 
@@ -58,7 +97,7 @@
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . --script res://tests/run_save_system_tests.gd
 ```
 
-命令行校验/导入本地资源：
+底层命令行校验/导入入口（通常直接使用上面的一键命令即可）：
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \

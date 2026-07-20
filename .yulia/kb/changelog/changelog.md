@@ -200,6 +200,25 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-064] [feat] 增加 macOS 与 Windows 一键资源生成入口
+
+- **关联需求**: 本地资源导入工作流
+- **关联 TODO**: 无
+- **功能描述**: 新增共享的跨平台 Python 入口及 macOS shell、Windows CMD 包装命令，从项目内或显式指定的合法原版 `Data` 生成 `generated/pal/`；自动发现 Godot，并在相邻 `sdlpal-official/` 缺失时从官方 GitHub 浅克隆 SDLPal 源码。明确区分官方 SDLPal 代码与不随仓库提供的原版 Data。RIX 辅助构建新增 Windows 路径、Clang/GCC/MSVC 编译器发现和 `_stricmp` 兼容，完整参数、版权边界与两端用法已写入 README。
+- **验证情况**: Python 语法、shell 语法、参数帮助、自动/显式路径和错误路径检查通过；从官方 GitHub 全新浅克隆 SDLPal 后成功构建 RIX 转换器，并从真实 `MUS.MKF` 输出 44.1 kHz 单声道 WAV。macOS 一键命令完成 35 个真实文件导入，79 首所需 RIX 无失败；正式 TileMap 内容门禁确认 223 张地图、293 个可玩场景、221 个唯一场景地图及 2 张动态地图均可加载，364 项合成检查通过。
+- **涉及文件**:
+  - `tools/generate_resources.py`
+  - `tools/generate_resources.sh`
+  - `tools/generate_resources.cmd`
+  - `src/import/pal_data_importer.gd`
+  - `tools/rix_renderer/build.py`
+  - `tools/rix_renderer/compat.h`
+  - `tools/rix_renderer/README.md`
+  - `README.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

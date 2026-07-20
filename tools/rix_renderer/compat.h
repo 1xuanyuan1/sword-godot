@@ -12,8 +12,12 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
+#if defined(_WIN32)
+#define SDL_strcasecmp _stricmp
+#else
 #include <strings.h>
-
 #define SDL_strcasecmp strcasecmp
-#define USE_RIX_EXTRA_INIT 0
+#endif
 
+#define USE_RIX_EXTRA_INIT 0
