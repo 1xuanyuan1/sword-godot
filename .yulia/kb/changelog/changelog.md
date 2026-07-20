@@ -53,6 +53,24 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-056] [feat] 离开林家堡并进入隐龙窟近迹
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从林月如临时加入后的后院状态继续触发墙破西厢房剧情战，使用真实敌队 25 验证敌人脚本 `0069` 产生 `TERMINATED` 后仍按非战败结果恢复 `0007`；随后连续执行西厢房追逐、镜头移动与复位、角色造型恢复、隐龙窟山道会合和出口转场，最终以林月如／李逍遥 `[2, 0]` 队伍进入“隐龙窟·近迹”。
+- **验证情况**: 真实 DOS 资源主线回归从新游戏连续通过到场景 41，脚本 `13247–13683`、`13817–13823`、消息 `3750–3809`/`3847–3892`、敌队 25／战场 21、音乐 82、战场 3、战斗 BGM 37 和关键人物清理均有断言。新增地图 39 的正式 TileMap 双人视口，Godot 4.7 真实 OpenGL 窗口下与 CPU 基准保持 320×200 零像素差，截图已实际检查桥面、角色与桥柱遮挡。
+- **涉及文件**:
+  - `tests/run_local_early_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

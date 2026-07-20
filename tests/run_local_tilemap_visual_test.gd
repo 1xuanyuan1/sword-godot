@@ -10,6 +10,7 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "stairs", "scene": 0, "position": Vector2i(96, 48), "night": false},
 	{"name": "wine_outdoor", "scene": 2, "position": Vector2i(1088, 1648), "night": false},
 	{"name": "roof_night", "scene": 3, "position": Vector2i(1440, 1536), "night": true},
+	{"name": "hidden_dragon_nearby", "scene": 41, "position": Vector2i(1760, 1792), "night": false, "party": [2, 0]},
 ]
 
 
@@ -41,6 +42,8 @@ func _run() -> void:
 func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: PalTileMapWorld, test_case: Dictionary) -> String:
 	var session := GameSession.new()
 	session.reset_new_game()
+	if test_case.has("party"):
+		session.party_roles = PackedInt32Array(test_case["party"])
 	session.scene_index = int(test_case["scene"])
 	session.night_palette = bool(test_case["night"])
 	session.set_party_world_position(test_case["position"])

@@ -34,7 +34,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 买虾、仙灵岛洗澡、水月宫过夜与首次返航、御剑教学、水月宫惨案、林月如城外、苏州客栈、比武招亲及林家堡夜间月如入队主线完成")
+	print("PASS: 买虾、仙灵岛洗澡、水月宫过夜与首次返航、御剑教学、水月宫惨案、林月如城外、苏州客栈、比武招亲、林家堡夜间及进入隐龙窟近迹主线完成")
 	quit(0)
 
 
@@ -1428,6 +1428,134 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 		failure = "林家堡后院误会后林月如没有入队或剧情造型错误：队伍 %s，造型 %d" % [session.party_roles, database.player_roles.scene_sprite_numbers[2]]
 	elif rear_courtyard_event.state != 0 or database.event_objects[573].state != 2 or database.event_objects[575].state != 2 or database.event_objects[577].state != 2 or database.event_objects[578].state != 2 or database.event_objects[581].state != 2:
 		failure = "林月如入队后当前接触点或后续追逐人物状态不正确：%d/%d/%d/%d/%d/%d" % [rear_courtyard_event.state, database.event_objects[573].state, database.event_objects[575].state, database.event_objects[577].state, database.event_objects[578].state, database.event_objects[581].state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 追到被破坏的西厢房后触发敌队 25；该敌队由 0069 主动离场，VM 应按非战败结果继续剧情。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	battle_requests.clear()
+	music_requests.clear()
+	var broken_room_event := database.event_objects[602]
+	session.scene_index = 35
+	vm.run_trigger(broken_room_event.trigger_script, broken_room_event.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "林家堡西厢房追逐战前遇到未支持指令：%s" % [unsupported]
+	elif not vm.waiting_for_battle or battle_requests != [[25, 21, true]] or not messages.is_empty():
+		failure = "林家堡西厢房没有请求敌队 25／战场 21：战斗 %s，消息 %s" % [battle_requests, messages]
+	elif session.party_roles != PackedInt32Array([0, 2]):
+		failure = "西厢房追逐战前没有保留李逍遥／林月如队伍：%s" % [session.party_roles]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	var departure_battle := PalBattleController.new()
+	if not departure_battle.start_battle(database, session, 25, 21, 93):
+		vm.free()
+		return "敌队 25 无法建立真实离场战斗：%s" % departure_battle.error_message
+	var departure_result := departure_battle.execute_next_action()
+	if departure_result == null or departure_battle.battle_result != PalBattleController.BattleResult.TERMINATED or not departure_result.script_events.any(func(event: PalBattleController.ScriptEvent) -> bool: return event.type == PalBattleController.ScriptEventType.ENEMY_ESCAPE):
+		vm.free()
+		return "敌队 25 没有通过 0069 产生敌人离场结果"
+	vm.complete_battle(PalBattleController.BattleResult.TERMINATED)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "敌队 25 离场后的剧情续跑遇到未支持指令：%s" % [unsupported]
+	elif next_entries != [13247] or requested_scenes != [36] or session.scene_index != 36:
+		failure = "敌队 25 离场后没有切到墙破西厢房：入口 %s，场景 %s/%d" % [next_entries, requested_scenes, session.scene_index]
+	elif music_requests != [[0, false, 3.0]] or database.scenes[36].script_on_enter != 13264:
+		failure = "敌队 25 离场后音乐淡出或西厢房入口不正确：音乐 %s，入口 %d" % [music_requests, database.scenes[36].script_on_enter]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	# 墙破西厢房的长剧情让灵儿继续远去，暂时移除月如并把队伍送到隐龙窟山道。
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	camera_offsets.clear()
+	vm.run_trigger(database.scenes[36].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "墙破西厢房追逐剧情遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3750, 3809) or next_entries != [13410]:
+		failure = "墙破西厢房追逐消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif requested_scenes != [38] or session.scene_index != 38 or PalSceneCatalog.name_for_scene_index(session.scene_index) != "隐龙窟·山道":
+		failure = "追逐后没有抵达隐龙窟山道：场景 %s/%d（%s）" % [requested_scenes, session.scene_index, PalSceneCatalog.name_for_scene_index(session.scene_index)]
+	elif session.party_roles != PackedInt32Array([0]) or database.player_roles.scene_sprite_numbers[0] != 2:
+		failure = "抵达隐龙窟山道前的临时队伍或李逍遥造型不正确：队伍 %s，造型 %d" % [session.party_roles, database.player_roles.scene_sprite_numbers[0]]
+	elif camera_offsets.is_empty() or camera_offsets[-1] != Vector2i.ZERO:
+		failure = "墙破西厢房长剧情结束时没有复位镜头：%s" % [camera_offsets]
+	elif database.event_objects.slice(616, 620).any(func(event: PalEventObject) -> bool: return event.state != 0):
+		failure = "离开墙破西厢房后剧情人物 617–620 没有清理"
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[36].script_on_enter = next_entries[0]
+
+	# 山道入口配置野外音乐与战场；找到月如后恢复双人队伍，并从出口进入隐龙窟近迹。
+	messages.clear()
+	next_entries.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[38].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "隐龙窟山道进入脚本遇到未支持指令：%s" % [unsupported]
+	elif not messages.is_empty() or next_entries != [13819]:
+		failure = "隐龙窟山道进入脚本或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif music_requests != [[82, true, 0.0]] or session.music_number != 82 or session.battlefield_number != 3 or session.battle_music_number != 37:
+		failure = "隐龙窟山道音乐或战场状态不正确：音乐 %s/%d，战场 %d，战斗 BGM %d" % [music_requests, session.music_number, session.battlefield_number, session.battle_music_number]
+	elif session.party_world_position() != Vector2i(1616, 984):
+		failure = "隐龙窟山道入口落点不正确：%s" % [session.party_world_position()]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+	database.scenes[38].script_on_enter = next_entries[0]
+
+	messages.clear()
+	next_entries.clear()
+	var mountain_yueru := database.event_objects[633]
+	vm.run_trigger(mountain_yueru.trigger_script, mountain_yueru.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "隐龙窟山道与林月如会合遇到未支持指令：%s" % [unsupported]
+	elif messages != _message_range(3847, 3892) or next_entries != [13608]:
+		failure = "隐龙窟山道会合消息或稳定入口不正确：消息 %s，入口 %s" % [messages, next_entries]
+	elif session.party_roles != PackedInt32Array([2, 0]) or database.player_roles.scene_sprite_numbers[2] != 7 or mountain_yueru.state != 0:
+		failure = "隐龙窟山道会合后没有形成月如／逍遥队伍：队伍 %s，造型 %d，事件状态 %d" % [session.party_roles, database.player_roles.scene_sprite_numbers[2], mountain_yueru.state]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	messages.clear()
+	next_entries.clear()
+	requested_scenes.clear()
+	fade_requests.clear()
+	var mountain_exit := database.event_objects[632]
+	vm.run_trigger(mountain_exit.trigger_script, mountain_exit.object_id)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "离开隐龙窟山道遇到未支持指令：%s" % [unsupported]
+	elif not messages.is_empty() or next_entries != [13538] or requested_scenes != [41] or session.scene_index != 41:
+		failure = "隐龙窟山道出口没有进入近迹：消息 %s，入口 %s，场景 %s/%d" % [messages, next_entries, requested_scenes, session.scene_index]
+	elif fade_requests != [[true, 0.6]] or session.party_world_position() != Vector2i(1760, 1792):
+		failure = "进入隐龙窟近迹前的渐隐或落点不正确：渐隐 %s，位置 %s" % [fade_requests, session.party_world_position()]
+	if not failure.is_empty():
+		vm.free()
+		return failure
+
+	next_entries.clear()
+	music_requests.clear()
+	vm.run_trigger(database.scenes[41].script_on_enter)
+	_drive_script(vm)
+	if not unsupported.is_empty():
+		failure = "隐龙窟近迹进入脚本遇到未支持指令：%s" % [unsupported]
+	elif next_entries != [13819] or music_requests != [[82, true, 0.0]] or PalSceneCatalog.name_for_scene_index(session.scene_index) != "隐龙窟·近迹":
+		failure = "隐龙窟近迹稳定状态不正确：入口 %s，音乐 %s，地点 %s" % [next_entries, music_requests, PalSceneCatalog.name_for_scene_index(session.scene_index)]
+	elif session.party_roles != PackedInt32Array([2, 0]) or session.battlefield_number != 3 or session.battle_music_number != 37:
+		failure = "隐龙窟近迹队伍或战斗环境不正确：队伍 %s，战场 %d，战斗 BGM %d" % [session.party_roles, session.battlefield_number, session.battle_music_number]
 	vm.free()
 	return failure
 
