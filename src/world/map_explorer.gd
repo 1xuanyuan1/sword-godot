@@ -580,6 +580,8 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 	_map_data = _database.load_map(scene.map_number)
 	_tile_sprite = _database.load_map_tiles(scene.map_number)
 	_script_vm.set_scene_map(_map_data)
+	# 已离开的 NPC 若在切场景前没走完自动脚本，重入时应保持离场，不能重播旧动作和对白。
+	_database.complete_pending_event_departures(scene_index)
 	_scene_events = _database.events_for_scene(scene_index)
 	_event_sprites.clear()
 	if not _map_data.is_valid() or not _tile_sprite.is_valid():

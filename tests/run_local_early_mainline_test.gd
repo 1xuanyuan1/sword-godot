@@ -880,6 +880,16 @@ func _test_island_massacre_funeral_and_return(database: PalContentDatabase, sess
 		vm.free()
 		return failure
 
+	# 这段原始脚本切回客房时，楼下李大娘的最后一段离场路线仍可能停在 7476。
+	# 模拟玩家睡醒后再次进入楼下：载入器必须在首帧前完成离场，避免旧动作和 7294/7346 对话重播。
+	database.complete_pending_event_departures(2)
+	var repeated_night_events := database.events_for_scene(2).filter(func(event: PalEventObject) -> bool:
+		return event.is_visible() and event.trigger_script in [7294, 7346]
+	)
+	if aunt.state != 0 or night_aunt.state != 0 or not repeated_night_events.is_empty():
+		vm.free()
+		return "次日重入客栈楼下仍会显示或触发夜间李大娘事件：旧李大娘 %d/%d，夜间李大娘 %d/%d，残留 %s" % [aunt.state, aunt.auto_script, night_aunt.state, night_aunt.auto_script, repeated_night_events]
+
 	# 次日在二楼与李大娘长谈，取得包袱并安装赵灵儿同行及码头离村入口。
 	messages.clear()
 	next_entries.clear()

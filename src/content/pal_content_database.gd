@@ -74,6 +74,7 @@ var _speaker_portrait_defaults: Dictionary = {}
 var _tilemap_scenes: Dictionary = {}
 var _tilemap_manifest: Dictionary = {}
 var _verified_tilemaps: Dictionary = {}
+var _initial_event_auto_scripts: PackedInt32Array = PackedInt32Array()
 
 
 ## 从生成目录加载核心结构和文字数据库，并清空旧缓存。
@@ -111,6 +112,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 	_tilemap_scenes.clear()
 	_tilemap_manifest.clear()
 	_verified_tilemaps.clear()
+	_initial_event_auto_scripts = PackedInt32Array()
 	var core := root_path.path_join("core")
 	var event_bytes := _read_file(core.path_join("event_objects.bin"))
 	var scene_bytes := _read_file(core.path_join("scenes.bin"))
@@ -133,6 +135,7 @@ func load_generated(path: String = "res://generated/pal/content") -> bool:
 		var event := PalEventObject.from_bytes(event_bytes, offset)
 		event.object_id = event_objects.size() + 1
 		event_objects.append(event)
+		_initial_event_auto_scripts.append(event.auto_script)
 	for offset in range(0, scene_bytes.size(), PalSceneDefinition.BYTE_SIZE):
 		scenes.append(PalSceneDefinition.from_bytes(scene_bytes, offset))
 	for offset in range(0, script_bytes.size(), PalScriptEntry.BYTE_SIZE):
@@ -315,6 +318,46 @@ func events_for_scene(scene_index: int) -> Array[PalEventObject]:
 	for index in range(start, mini(finish, event_objects.size())):
 		result.append(event_objects[index])
 	return result
+
+
+## 在重新载入场景前完成已经启动、且线性终点为“隐藏自身”的 NPC 离场脚本。
+## 剧情切场景时可能来不及走完最后几步；若原样保留，旧 NPC 会在日后重入时重播离场并触发旧对白。
+func complete_pending_event_departures(scene_index: int) -> int:
+	var completed := 0
+	for event in events_for_scene(scene_index):
+		if event.state <= 0 or event.auto_script <= 0:
+			continue
+		var event_index := event.object_id - 1
+		if event_index >= 0 and event_index < _initial_event_auto_scripts.size() and event.auto_script == _initial_event_auto_scripts[event_index]:
+			# 原始场景自带的自动离场必须首次正常演出；这里只收束剧情运行时后来安装或已推进的路线。
+			continue
+		var completed_entry := _linear_self_hide_completion_entry(event.auto_script)
+		if completed_entry <= 0:
+			continue
+		event.state = 0
+		event.auto_script = completed_entry
+		event.auto_script_idle_count = 0
+		completed += 1
+	return completed
+
+
+func _linear_self_hide_completion_entry(entry_index: int) -> int:
+	var cursor := entry_index
+	var scanned := 0
+	while cursor > 0 and cursor < scripts.size() and scanned < 64:
+		var entry := scripts[cursor]
+		match entry.operation:
+			# 自动离场只允许等待、转向、走到目标和推进动作帧；遇到分支或副作用就不推断。
+			0x0009, 0x000f, 0x0010, 0x0011, 0x007c, 0x0087:
+				cursor += 1
+			0x0049:
+				if entry.operands[0] in [0, 0xffff] and entry.operands[1] == 0:
+					return cursor + 1
+				return 0
+			_:
+				return 0
+		scanned += 1
+	return 0
 
 
 ## 返回 WORD 词条，越界时返回空字符串。

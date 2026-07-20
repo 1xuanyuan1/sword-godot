@@ -37,6 +37,7 @@ func _init() -> void:
 	_test_player_roles_structure()
 	_test_battle_content_structures()
 	_test_battle_reward_number_alignment()
+	_test_content_pending_event_departures()
 	_test_scene_draw_item_anchors()
 	_test_scene_y_sorting()
 	_test_pal_direction_mapping()
@@ -1392,6 +1393,34 @@ func _test_script_vm_trigger_event_steps() -> void:
 	vm.run_trigger(1, 1)
 	_expect(event.position == Vector2i(0, 4) and event.direction == GameSession.DIR_SOUTH and event.current_frame == 2, "trigger opcodes 000B–000E move and animate the invoking boat/NPC between redraws")
 	vm.free()
+
+
+func _test_content_pending_event_departures() -> void:
+	var database := PalContentDatabase.new()
+	for operation in [0, 0x0010, 0x000f, 0x0049, 0x0000, 0x0010, 0x0000]:
+		var entry := PalScriptEntry.new()
+		entry.operation = operation
+		entry.operands = PackedInt32Array([0, 0, 0])
+		database.scripts.append(entry)
+	database.scripts[3].operands = PackedInt32Array([0xffff, 0, 0])
+	var scene := PalSceneDefinition.new()
+	scene.event_object_index = 0
+	database.scenes.append(scene)
+	var departing := PalEventObject.new()
+	departing.object_id = 1
+	departing.state = 2
+	departing.auto_script = 1
+	departing.auto_script_idle_count = 4
+	database.event_objects.append(departing)
+	var ordinary_auto := PalEventObject.new()
+	ordinary_auto.object_id = 2
+	ordinary_auto.state = 2
+	ordinary_auto.auto_script = 5
+	database.event_objects.append(ordinary_auto)
+	database._initial_event_auto_scripts = PackedInt32Array([0, 5])
+	var completed := database.complete_pending_event_departures(0)
+	_expect(completed == 1 and departing.state == 0 and departing.auto_script == 4 and departing.auto_script_idle_count == 0, "scene reload completes a pending linear NPC departure before the old event can reappear")
+	_expect(ordinary_auto.state == 2 and ordinary_auto.auto_script == 5, "scene reload preserves ordinary auto scripts that do not end by hiding their invoking event")
 
 
 func _test_script_vm_frame_delay_and_auto_walk() -> void:

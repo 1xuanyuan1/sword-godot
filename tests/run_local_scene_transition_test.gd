@@ -17,6 +17,8 @@ func _run_tests() -> void:
 	if failure.is_empty():
 		failure = await _test_inn_exit_runtime()
 	if failure.is_empty():
+		failure = await _test_inn_departure_reentry_runtime()
+	if failure.is_empty():
 		failure = await _test_bath_cutscene_runtime()
 	if failure.is_empty():
 		failure = _test_stairs(database)
@@ -28,7 +30,7 @@ func _run_tests() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 客栈出口、仙灵岛洗澡与倒地动作、楼梯动画、厨房入口及场景传送回归通过")
+	print("PASS: 客栈出口与夜间 NPC 离场、仙灵岛洗澡与倒地动作、楼梯动画、厨房入口及场景传送回归通过")
 	quit(0)
 
 
@@ -83,6 +85,48 @@ func _test_inn_exit_runtime() -> String:
 		var movement := GameSession.movement_for_direction(GameSession.DIR_NORTH)
 		if not explorer._try_move(movement) or explorer._session.party_world_position() == before:
 			failure = "客栈出口落地后无法实际移动一步"
+	explorer.queue_free()
+	await process_frame
+	return failure
+
+
+func _test_inn_departure_reentry_runtime() -> String:
+	# 复现旧存档：夜间剧情已经结束，但楼下李大娘仍停在最终会隐藏自身的 7476 离场脚本。
+	PalDebugCheckpoint._pending = {
+		"id": "inn_departure_reentry_test",
+		"scene": 0,
+		"script": 0,
+		"position": Vector2i(1376, 1408),
+	}
+	var explorer: Control = load("res://scenes/map_explorer.tscn").instantiate()
+	root.add_child(explorer)
+	await process_frame
+	var stale_aunt: PalEventObject = explorer._database.event_objects[56]
+	stale_aunt.position = Vector2i(1468, 1454)
+	stale_aunt.trigger_script = 7294
+	stale_aunt.auto_script = 7476
+	stale_aunt.state = 2
+	explorer._session.set_party_world_position(Vector2i(1376, 1408))
+	explorer._load_scene(2, false)
+	await process_frame
+	await process_frame
+	var failure := ""
+	if stale_aunt.state != 0 or stale_aunt.auto_script != 7478:
+		failure = "客栈楼下重入没有完成旧李大娘离场：状态 %d，自动脚本 %d" % [stale_aunt.state, stale_aunt.auto_script]
+	elif explorer._is_touch_event_in_range(stale_aunt, explorer._session.party_world_position()):
+		failure = "已离场的李大娘仍能在楼下触发旧脚本 7294"
+	elif explorer._tile_world == null or explorer._use_legacy_renderer:
+		failure = "客栈楼下重入没有使用正式 TileMapLayer 路径"
+	elif DisplayServer.get_name() != "headless":
+		var image := explorer.get_viewport().get_texture().get_image()
+		if image == null:
+			failure = "真实渲染器无法读取客栈楼下重入画面"
+		else:
+			image.resize(320, 200, Image.INTERPOLATE_NEAREST)
+			var output_directory := ProjectSettings.globalize_path("res://generated/pal/visual_tests")
+			DirAccess.make_dir_recursive_absolute(output_directory)
+			if image.save_png(output_directory.path_join("inn_departure_reentry.png")) != OK:
+				failure = "无法保存客栈楼下重入的 TileMap 截图"
 	explorer.queue_free()
 	await process_frame
 	return failure
