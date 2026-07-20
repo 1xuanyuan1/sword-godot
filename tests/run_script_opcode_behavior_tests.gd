@@ -444,6 +444,10 @@ func _test_blocking_and_system_operations() -> void:
 
 
 func _test_shop_transactions() -> void:
+	var price_bounds := PalGameMenu.shop_price_bounds()
+	_expect(PalGameMenu.SHOP_ITEM_NAME_POSITION.x < 150, "classic shop item names stay left of the previous centered column")
+	_expect(price_bounds.end.x <= PalGameMenu.SHOP_CONTENT_RIGHT, "classic shop six-digit prices stay inside the right content edge")
+
 	var database := _field_database()
 	var session := _field_session(database)
 	var menu := PalGameMenu.new()

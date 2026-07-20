@@ -85,6 +85,16 @@ const MAGIC_CASTER_BOX_POSITION := Vector2i(35, 62)
 const MAGIC_CASTER_NAME_POSITION := Vector2i(48, 75)
 const MAGIC_PLAYER_INFO_POSITION := Vector2i(45, 165)
 const MAGIC_PLAYER_INFO_SPACING := 78
+const SHOP_BOX_POSITION := Vector2i(122, 8)
+const SHOP_BOX_ROWS := 8
+const SHOP_BOX_COLUMNS := 8
+const SHOP_ITEM_NAME_POSITION := Vector2i(136, 21)
+const SHOP_PRICE_POSITION := Vector2i(238, 26)
+const SHOP_ROW_HEIGHT := 18
+const SHOP_PRICE_DIGITS := 6
+const SHOP_NUMBER_DIGIT_WIDTH := 6
+const SHOP_CONTENT_RIGHT := 276
+const SHOP_ITEM_HITBOX_POSITION := Vector2i(128, 14)
 const COLOR_NORMAL := 0x4f
 const COLOR_INACTIVE := 0x18
 const COLOR_CONFIRMED := 0x2c
@@ -418,7 +428,7 @@ func _gui_input(event: InputEvent) -> void:
 				_confirm_selection()
 			else:
 				for index in range(_shop_ids.size()):
-					if Rect2i(Vector2i(132, 14 + index * 18), Vector2i(176, 18)).has_point(point):
+					if _shop_item_hitbox(index).has_point(point):
 						_shop_selection = index
 						_confirm_selection()
 						break
@@ -848,12 +858,12 @@ func _draw_confirmation() -> void:
 
 func _draw_shop_page() -> void:
 	var buying := current_page == Page.SHOP_BUY
-	_draw_classic_box(Vector2i(122, 8), 7, 9, 1, 0)
+	_draw_classic_box(SHOP_BOX_POSITION, SHOP_BOX_ROWS, SHOP_BOX_COLUMNS, 1, 0)
 	_draw_single_line_box(Vector2i(20, 141), 5, 6)
 	_draw_pal_text(database.get_word(21), Vector2i(30, 151), _palette_color(COLOR_NORMAL), true)
 	_draw_number(session.cash, 6, Vector2i(69, 156), UI_FRAME_NUMBER_YELLOW)
 	if _shop_ids.is_empty():
-		_draw_pal_text("没有可出售物品" if not buying else "商店没有商品", Vector2i(144, 24), _palette_color(COLOR_INACTIVE), true)
+		_draw_pal_text("没有可出售物品" if not buying else "商店没有商品", SHOP_ITEM_NAME_POSITION + Vector2i(0, 3), _palette_color(COLOR_INACTIVE), true)
 		return
 	_shop_selection = clampi(_shop_selection, 0, _shop_ids.size() - 1)
 	for index in range(_shop_ids.size()):
@@ -865,8 +875,8 @@ func _draw_shop_page() -> void:
 		var color_index := COLOR_NORMAL if can_trade else COLOR_INACTIVE
 		if index == _shop_selection:
 			color_index = _selected_color_index() if can_trade else COLOR_SELECTED_INACTIVE
-		_draw_pal_text(database.get_word(item_id), Vector2i(150, 21 + index * 18), _palette_color(color_index), true)
-		_draw_number(item.price if buying else item.price / 2, 6, Vector2i(286, 26 + index * 18), UI_FRAME_NUMBER_YELLOW)
+		_draw_pal_text(database.get_word(item_id), SHOP_ITEM_NAME_POSITION + Vector2i(0, index * SHOP_ROW_HEIGHT), _palette_color(color_index), true)
+		_draw_number(item.price if buying else item.price / 2, SHOP_PRICE_DIGITS, SHOP_PRICE_POSITION + Vector2i(0, index * SHOP_ROW_HEIGHT), UI_FRAME_NUMBER_YELLOW)
 	var selected_id := _shop_ids[_shop_selection]
 	var selected_item := database.item_definition(selected_id)
 	if selected_item != null:
@@ -880,6 +890,18 @@ func _draw_shop_page() -> void:
 		for index in range(2):
 			var color_index := _selected_color_index() if index == _shop_confirmation_selection else COLOR_NORMAL
 			_draw_pal_text(database.get_word(19 + index), Vector2i(110, 105 + index * 18), _palette_color(color_index), true)
+
+
+## 返回商店价格列占用的完整六位数字区域，用于布局边界回归。
+static func shop_price_bounds() -> Rect2i:
+	return Rect2i(SHOP_PRICE_POSITION, Vector2i(SHOP_PRICE_DIGITS * SHOP_NUMBER_DIGIT_WIDTH, 8))
+
+
+func _shop_item_hitbox(index: int) -> Rect2i:
+	return Rect2i(
+		SHOP_ITEM_HITBOX_POSITION + Vector2i(0, index * SHOP_ROW_HEIGHT),
+		Vector2i(SHOP_CONTENT_RIGHT - SHOP_ITEM_HITBOX_POSITION.x, SHOP_ROW_HEIGHT)
+	)
 
 
 func _confirm_shop_selection() -> void:
