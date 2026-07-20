@@ -270,6 +270,20 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-067] [feat] 固定苏州银钗隐藏剧情回归
+
+- **关联需求**: M5 苏州城内支线与隐藏互动
+- **关联 TODO**: 无
+- **功能描述**: 确认并固定 DOS 原版苏州次日场景的杂货小贩隐藏剧情：赵灵儿在队且现金不少于 400 文时，EventObject 434 的脚本 `10752–10786` 会直接扣除 400 文、播放李逍遥替灵儿挑选银钗的专属对白并获得物品 199；原版没有独立好感度数值，这段关系变化由一次性剧情与物品奖励表达。现金不足或灵儿不在队时仍回退到 7 号普通杂货商店。
+- **验证情况**: 新增正式 `MapExplorer + TileMapLayer + PalTileMapWorld` 回归，从小贩前一个 half 格通过手动搜索触发，确认消息 `2854–2869`、现金 `500 → 100`、银钗数量 `0 → 1` 和稳定入口 `10753`；Godot 4.7 Headless 与真实 OpenGL 窗口均通过。
+- **涉及文件**:
+  - `tests/run_local_suzhou_silver_hairpin_test.gd`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单
