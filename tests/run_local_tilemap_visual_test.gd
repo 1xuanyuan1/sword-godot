@@ -62,6 +62,31 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "butterfly_memory_mansion", "scene": 141, "position": Vector2i(496, 832), "night": false, "party": [0]},
 	{"name": "butterfly_memory_betrothal", "scene": 142, "position": Vector2i(864, 576), "night": false, "party": [0]},
 	{"name": "shushan_arrival", "scene": 154, "position": Vector2i(1024, 1600), "night": false, "party": [0, 2]},
+	{"name": "shushan_hall_exterior", "scene": 156, "position": Vector2i(576, 1664), "night": false, "party": [0, 2]},
+	{"name": "shushan_hall_interior", "scene": 158, "position": Vector2i(608, 1488), "night": false, "party": [0, 2]},
+	{"name": "shushan_back_mountain", "scene": 157, "position": Vector2i(832, 1440), "night": false, "party": [0, 2], "event_states": {2754: 2, 2755: 2}},
+	{"name": "shushan_cloud_front", "scene": 160, "position": Vector2i(464, 1736), "night": false, "party": [0, 2]},
+	{"name": "shushan_cloud_rear", "scene": 161, "position": Vector2i(432, 168), "night": false, "party": [0, 2]},
+	{"name": "tower_exterior", "scene": 162, "position": Vector2i(672, 704), "night": false, "party": [0, 2]},
+	{"name": "tower_eighth_floor", "scene": 145, "position": Vector2i(1184, 560), "night": false, "party": [0, 2]},
+	{"name": "tower_seventh_floor", "scene": 164, "position": Vector2i(1440, 288), "night": false, "party": [0, 2]},
+	{"name": "tower_sixth_floor", "scene": 165, "position": Vector2i(1024, 720), "night": false, "party": [0, 2]},
+	{"name": "tower_jiang_qing", "scene": 146, "position": Vector2i(1472, 1136), "night": false, "party": [0, 2]},
+	{"name": "tower_fourth_floor", "scene": 166, "position": Vector2i(848, 712), "night": false, "party": [0, 2]},
+	{"name": "tower_ghost_emperor", "scene": 147, "position": Vector2i(864, 1440), "night": false, "party": [0, 2]},
+	{"name": "tower_book_immortal", "scene": 153, "position": Vector2i(1392, 776), "night": false, "party": [0, 2]},
+	{"name": "tower_demon_pool", "scene": 155, "position": Vector2i(320, 1712), "night": false, "party": [0, 2]},
+	{"name": "tower_bottom_outer", "scene": 167, "position": Vector2i(464, 856), "night": false, "party": [0, 2]},
+	{"name": "tower_linger_bound", "scene": 144, "position": Vector2i(1536, 432), "night": false, "party": [0, 2]},
+	{"name": "tower_demon_council", "scene": 152, "position": Vector2i(1680, 408), "night": false, "party": [0, 1, 2]},
+	{"name": "tower_seven_pillars", "scene": 143, "position": Vector2i(1184, 272), "night": false, "party": [1, 0, 2], "role_sprites": {0: 532, 1: 534, 2: 533}},
+	{"name": "tower_collapse", "scene": 148, "position": Vector2i(832, 1040), "night": false, "party": [1, 0, 2], "role_sprites": {0: 232, 1: 534, 2: 533}},
+	{"name": "tower_wine_immortal_rescue", "scene": 149, "position": Vector2i(1120, 528), "night": false, "party": [1, 0, 2]},
+	{"name": "tower_changan_vision", "scene": 150, "position": Vector2i(1632, 1664), "night": false, "party": [1, 0, 2]},
+	{"name": "tower_yueru_haze", "scene": 171, "position": Vector2i(480, 368), "night": false, "party": [1, 0, 2]},
+	{"name": "tower_yueru_last_memory", "scene": 198, "position": Vector2i(1680, 424), "night": false, "party": [0]},
+	{"name": "tower_li_wakes", "scene": 173, "position": Vector2i(528, 488), "night": false, "party": [0]},
+	{"name": "tower_sword_saint_leaves", "scene": 176, "position": Vector2i(1408, 704), "night": false, "party": [0]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
@@ -97,6 +122,11 @@ func _run() -> void:
 
 
 func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: PalTileMapWorld, test_case: Dictionary) -> String:
+	var original_role_sprites := database.player_roles.scene_sprite_numbers.duplicate()
+	for raw_role_index in test_case.get("role_sprites", {}):
+		var role_index := int(raw_role_index)
+		if role_index >= 0 and role_index < database.player_roles.scene_sprite_numbers.size():
+			database.player_roles.scene_sprite_numbers[role_index] = int(test_case["role_sprites"][raw_role_index])
 	var session := GameSession.new()
 	session.reset_new_game()
 	if test_case.has("party"):
@@ -112,10 +142,12 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	if test_case.has("expected_follower_delta"):
 		var follower_delta := session.party_member_world_position(1) - session.party_world_position()
 		if follower_delta != test_case["expected_follower_delta"]:
+			_restore_role_sprites(database, original_role_sprites)
 			return "%s：紧凑队伍间距错误，实际 %s" % [test_case["name"], follower_delta]
 	var scene := database.scenes[session.scene_index]
 	var events := database.events_for_scene(session.scene_index)
 	if not world.load_map(database, scene.map_number):
+		_restore_role_sprites(database, original_role_sprites)
 		return "%s：%s" % [test_case["name"], world.error_message]
 	var original_event_states: Dictionary = {}
 	for raw_event_id in test_case.get("event_states", {}):
@@ -128,6 +160,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	world.set_walk_animation(0, false)
 	if not world.sync_world(session, events):
 		_restore_event_states(database, original_event_states)
+		_restore_role_sprites(database, original_role_sprites)
 		return "%s：%s" % [test_case["name"], world.error_message]
 
 	# 新建 SubViewport 后等待 TileMapLayer、人物和事件节点完成第一次稳定提交。
@@ -141,6 +174,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	var native_image := viewport.get_texture().get_image()
 	if native_image == null:
 		_restore_event_states(database, original_event_states)
+		_restore_role_sprites(database, original_role_sprites)
 		return "当前为 dummy renderer；请去掉 --headless，使用真实 GL Compatibility 渲染器运行"
 	var scene_items: Array = world._build_scene_items(session, events, session.viewport_position)
 	var map_data := database.load_map(scene.map_number)
@@ -150,6 +184,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	var cpu_image := cpu_indexed.to_rgba_image(palette)
 	if native_image.get_size() != cpu_image.get_size():
 		_restore_event_states(database, original_event_states)
+		_restore_role_sprites(database, original_role_sprites)
 		return "%s 截图尺寸不一致：TileMap %s / CPU %s" % [test_case["name"], native_image.get_size(), cpu_image.get_size()]
 
 	var different := 0
@@ -178,6 +213,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	native_image.save_png(output_directory.path_join("tilemap_%s_native.png" % output_name))
 	cpu_image.save_png(output_directory.path_join("tilemap_%s_cpu.png" % output_name))
 	_restore_event_states(database, original_event_states)
+	_restore_role_sprites(database, original_role_sprites)
 	if different > 0:
 		return "%s（map %d）有 %d 个差异像素，最大通道差 %d：%s；截图已写入 visual_tests" % [output_name, scene.map_number, different, maximum_channel_difference, "、".join(difference_examples)]
 	return ""
@@ -187,6 +223,10 @@ func _restore_event_states(database: PalContentDatabase, original_states: Dictio
 	for raw_event_id in original_states:
 		var event_id := int(raw_event_id)
 		database.event_objects[event_id - 1].state = int(original_states[raw_event_id])
+
+
+func _restore_role_sprites(database: PalContentDatabase, original_sprites: PackedInt32Array) -> void:
+	database.player_roles.scene_sprite_numbers = original_sprites.duplicate()
 
 
 func _fail(message: String) -> void:

@@ -303,6 +303,25 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-069] [feat] 完成蜀山、锁妖塔与李逍遥醒来主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从场景 154“蜀山·前山”继续完成剑圣问答、弟子房真相、酒剑仙授艺、蜀山云海、锁妖塔逐层推进、姜清、天鬼皇、沉思鬼与书中仙、救灵儿、镇狱明王、群妖议事和七星盘龙柱。覆盖雷灵珠与补给交付、酒神咒／醉仙望月步／仙风云体术、玉佛珠、七星剑、天书、十场关键战斗、单人／双人／三人队重组、七柱一次性清零与全毁触发；塔毁后继续完成灵岛三段往事、月如七段往事和剑圣黯离，最终稳定停在场景 173“李逍遥醒来”。
+- **验证情况**: 新增独立真实资源主线测试，断言姜清敌队 163／战场 35／对象 `[494]`、天鬼皇敌队 293／战场 35／对象 `[529]`、镇狱明王敌队 188／战场 31／对象 `[519]`，以及七柱敌队 305–311／战场 31／对象 `[539]` 至 `[545]`；确认前六柱不会提前塔毁、全部柱子战后不可重复触发，最终李逍遥 `[0]` 落点 `(528,488)`、入口 `32359`。新增蜀山、锁妖塔各层、塔底、崩塌与回忆 25 个正式 TileMap 视口；Godot 4.7 OpenGL 真实窗口下共 83 个用例达到 320×200 零像素差并逐张检查。
+- **涉及文件**:
+  - `tests/run_local_shushan_tower_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单
