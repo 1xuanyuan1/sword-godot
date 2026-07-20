@@ -41,6 +41,16 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "yangzhou_well_tunnel", "scene": 91, "position": Vector2i(848, 1528), "night": false, "party": [2, 0]},
 	{"name": "yangzhou_court", "scene": 80, "position": Vector2i(1504, 1056), "night": false, "party": [0, 2]},
 	{"name": "toad_valley_approach", "scene": 104, "position": Vector2i(224, 1072), "night": false, "party": [0, 2]},
+	{"name": "toad_valley_wounded_woman", "scene": 100, "position": Vector2i(736, 968), "night": false, "party": [0, 2]},
+	{"name": "toad_cave_boss", "scene": 102, "position": Vector2i(768, 856), "night": false, "party": [0, 2]},
+	{"name": "toad_cave_defeated", "scene": 102, "position": Vector2i(768, 856), "night": false, "party": [0, 2], "event_states": {1984: 0, 1986: 2, 1987: 2, 1988: 2, 1989: 2, 1990: 2, 1991: 2, 1992: 2, 1993: 2}},
+	{"name": "toad_cave_rear", "scene": 103, "position": Vector2i(896, 960), "night": false, "party": [0, 2]},
+	{"name": "white_miao_hotel", "scene": 109, "position": Vector2i(864, 672), "night": false, "party": [0, 2]},
+	{"name": "white_miao_hotel_aftermath", "scene": 108, "position": Vector2i(880, 1080), "night": false, "party": [0, 2]},
+	{"name": "changan_outskirts", "scene": 106, "position": Vector2i(1232, 1416), "night": false, "party": [2, 0]},
+	{"name": "water_temple_fair", "scene": 111, "position": Vector2i(896, 1488), "night": false, "party": [2, 0]},
+	{"name": "water_temple_dock", "scene": 110, "position": Vector2i(1248, 936), "night": false, "party": [2, 0]},
+	{"name": "changan_arrival", "scene": 99, "position": Vector2i(432, 328), "night": false, "party": [2, 0]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 

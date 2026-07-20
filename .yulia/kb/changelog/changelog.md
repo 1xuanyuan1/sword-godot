@@ -239,6 +239,25 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-066] [feat] 完成蛤蟆山与抵达长安主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从场景 104“山路·蛤蟆谷前”继续完成蛤蟆谷前后段、金蟾鬼母与蛤蟆精 Boss、调查尸体取得五毒珠、穿越洞穴、白苗酒店迷药与石长老冲突、剑圣带走赵灵儿、救醒盖罗娇、长安城外和水仙尊王庙乘船。覆盖 Boss 战后尸体事件、白苗剧情战的临时队伍、李逍遥造型与双人队恢复、船家入口持久改写，最终以林月如／李逍遥 `[2,0]` 队伍保留五毒珠 262 和土灵珠 267 抵达场景 99“长安”；第十章更新为完整真实资源回归通过。
+- **验证情况**: 新增独立主线测试，连续覆盖场景 104/101/100/102/103/105/109/108/106/111/110/99，断言消息 `5967–5995`、`6376–6568`、`6911–6937`、`8459–8553` 的剧情区段、敌队对象 `[500,465]`／`[496]`、真实胜利结算、五毒珠、人物／入口和最终场景状态。新增蛤蟆谷受伤女子、Boss 战前后、洞穴后段、白苗酒店内外、长安城外、水仙尊王庙庙会／码头及长安十个正式 TileMap 视口，47 个用例连续三轮达到 320×200 零像素差并实际检查洞壁、人物、血迹、建筑、船只和城门遮挡。
+- **涉及文件**:
+  - `tests/run_local_toad_mountain_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单
