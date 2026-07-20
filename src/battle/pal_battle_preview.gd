@@ -969,40 +969,65 @@ func _play_player_attack(result: PalBattleController.ActionResult) -> void:
 		return
 	var actor_index := result.actor_index
 	var role_index := _controller.players[actor_index].role_index
-	var critical := result.hits.any(func(hit: PalBattleController.Hit) -> bool: return hit.critical)
-	if _audio_player != null:
-		_audio_player.play_sound(_database.player_roles.critical_sound_for(role_index) if critical else _database.player_roles.attack_sound_for(role_index))
 	var original_foot := _player_foot_positions[actor_index]
-	var target_foot := Vector2i(150, 100)
-	if not result.hits.is_empty() and result.hits[0].target_index >= 0 and result.hits[0].target_index < _enemy_foot_positions.size():
-		target_foot = _enemy_foot_positions[result.hits[0].target_index]
+	var strike_groups := _player_attack_strike_groups(result.hits)
+	if strike_groups.is_empty():
+		return
+	# fight.c 只在第一击前播放四帧准备动作；双剑的每一击随后各跑完整攻击与命中音效。
 	_set_player_frame(actor_index, 7, original_foot)
 	await _wait_frames(4)
-	var attack_foot := target_foot + Vector2i(64, 20)
-	await _move_player(actor_index, attack_foot, 8, BATTLE_FRAME_SECONDS * 2.0)
-	attack_foot -= Vector2i(10, 2)
-	await _move_player(actor_index, attack_foot, 8, BATTLE_FRAME_SECONDS)
-	_set_player_frame(actor_index, 9, attack_foot)
-	if _audio_player != null:
-		_audio_player.play_sound(_database.player_roles.weapon_sound_for(role_index))
-	await _wait_frames(1)
-	for hit in result.hits:
-		if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
-			continue
-		_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 6)
-		var foot := _enemy_foot_positions[hit.target_index]
-		_battle_ui.show_number(hit.damage, Vector2i(foot.x - 9, maxi(10, foot.y - 115)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
-	await _wait_frames(3)
-	for hit in result.hits:
-		if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
-			continue
-		if hit.defeated:
-			_enemy_nodes[hit.target_index].hide()
+	for strike_index in range(strike_groups.size()):
+		var strike_hits: Array = strike_groups[strike_index]
+		var critical := strike_hits.any(func(hit: PalBattleController.Hit) -> bool: return hit.critical)
+		if _audio_player != null:
+			_audio_player.play_sound(_database.player_roles.critical_sound_for(role_index) if critical else _database.player_roles.attack_sound_for(role_index))
+		var target_foot := Vector2i(150, 100)
+		if not strike_hits.is_empty():
+			var first_hit: PalBattleController.Hit = strike_hits[0]
+			if first_hit.target_index >= 0 and first_hit.target_index < _enemy_foot_positions.size():
+				target_foot = _enemy_foot_positions[first_hit.target_index]
+		var attack_foot := target_foot + Vector2i(64, 20)
+		if strike_index == 0:
+			await _move_player(actor_index, attack_foot, 8, BATTLE_FRAME_SECONDS * 2.0)
 		else:
-			_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 0)
+			_set_player_frame(actor_index, 8, attack_foot)
+			await _wait_frames(2)
+		attack_foot -= Vector2i(10, 2)
+		await _move_player(actor_index, attack_foot, 8, BATTLE_FRAME_SECONDS)
+		_set_player_frame(actor_index, 9, attack_foot)
+		if _audio_player != null:
+			_audio_player.play_sound(_database.player_roles.weapon_sound_for(role_index))
+		await _wait_frames(1)
+		for raw_hit in strike_hits:
+			var hit: PalBattleController.Hit = raw_hit
+			if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
+				continue
+			_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 6)
+			var foot := _enemy_foot_positions[hit.target_index]
+			_battle_ui.show_number(hit.damage, Vector2i(foot.x - 9, maxi(10, foot.y - 115)), PalBattleUI.UI_FRAME_NUMBER_BLUE)
+		# 原版首个特效帧显示数字，余下两帧与三帧受击位移让上一击先上浮，再开始下一击。
+		await _wait_frames(5)
+		for raw_hit in strike_hits:
+			var hit: PalBattleController.Hit = raw_hit
+			if hit.target_index < 0 or hit.target_index >= _enemy_nodes.size():
+				continue
+			if hit.defeated:
+				_enemy_nodes[hit.target_index].hide()
+			else:
+				_set_enemy_frame(hit.target_index, _enemy_current_frames[hit.target_index], 0)
 	await _move_player(actor_index, original_foot, 8, BATTLE_FRAME_SECONDS * 3.0)
 	_set_player_frame(actor_index, _resting_player_frame(actor_index), original_foot)
 	await _wait_frames(2)
+
+
+func _player_attack_strike_groups(hits: Array[PalBattleController.Hit]) -> Array:
+	var groups: Array = []
+	for hit in hits:
+		var sequence := maxi(0, hit.attack_sequence)
+		while groups.size() <= sequence:
+			groups.append([])
+		groups[sequence].append(hit)
+	return groups
 
 
 func _play_player_magic(result: PalBattleController.ActionResult) -> void:

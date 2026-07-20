@@ -112,6 +112,8 @@ class QueueEntry extends RefCounted:
 class Hit extends RefCounted:
 	var target_is_enemy: bool = false
 	var target_index: int = -1
+	# 同一次物理行动中的第几击；双剑状态用 0/1 区分两轮动画与伤害数字。
+	var attack_sequence: int = 0
 	var damage: int = 0
 	var healing: int = 0
 	var mp_restored: int = 0
@@ -1059,10 +1061,12 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 			result.summary = "没有可攻击目标"
 			return result
 		var attack_times := 2 if session.status_rounds_for(player.role_index, GameSession.STATUS_DUAL_ATTACK) > 0 else 1
-		for _attack_index in range(attack_times):
+		for attack_index in range(attack_times):
 			if not enemies[target_index].is_alive():
 				break
-			result.hits.append(_player_single_hit(player, target_index))
+			var hit := _player_single_hit(player, target_index)
+			hit.attack_sequence = attack_index
+			result.hits.append(hit)
 		var total_damage := 0
 		var critical := false
 		for hit in result.hits:
@@ -1855,7 +1859,7 @@ func _execute_player_attack_mate(actor_index: int, result: ActionResult) -> void
 
 func _execute_player_attack_all(player: PlayerState, result: ActionResult) -> void:
 	var attack_times := 2 if session.status_rounds_for(player.role_index, GameSession.STATUS_DUAL_ATTACK) > 0 else 1
-	for _attack_index in range(attack_times):
+	for attack_index in range(attack_times):
 		var critical := session.status_rounds_for(player.role_index, GameSession.STATUS_BRAVERY) > 0 or _random.next_int(0, 5) == 0
 		var division := 1
 		# SDLPal 固定按中、次前、最前、最后、次后的次序结算全体普攻。
@@ -1868,7 +1872,9 @@ func _execute_player_attack_all(player: PlayerState, result: ActionResult) -> vo
 			if critical:
 				damage *= 3
 			damage = maxi(1, damage / division)
-			result.hits.append(_apply_enemy_damage(enemy_index, damage, critical))
+			var hit := _apply_enemy_damage(enemy_index, damage, critical)
+			hit.attack_sequence = attack_index
+			result.hits.append(hit)
 			division *= 2
 	result.summary = "%s攻击全体敌人" % _role_name(player.role_index)
 

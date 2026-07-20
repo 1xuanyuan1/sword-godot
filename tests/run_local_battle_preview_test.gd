@@ -317,6 +317,51 @@ func _run() -> void:
 	if preview._player_nodes[0].position.distance_to(expected_position) > 0.1:
 		_fail("玩家普攻动画结束后没有回到原始战位")
 		return
+	preview.load_battle(18, 21, PackedInt32Array([1]))
+	preview.set_process(false)
+	if preview._session.status_rounds_for(1, GameSession.STATUS_DUAL_ATTACK) <= 0:
+		_fail("赵灵儿的仙女剑装备脚本没有提供持久双击状态")
+		return
+	preview._session.set_role_status(1, GameSession.STATUS_BRAVERY, 2)
+	preview._session.role_dexterity[1] = 999
+	if not preview._controller.submit_attack(0):
+		_fail("赵灵儿双剑普攻没有进入行动队列")
+		return
+	var dual_result := preview._controller.execute_next_action()
+	if dual_result == null or dual_result.actor_index != 0 or dual_result.hits.size() != 2 or dual_result.hits[0].attack_sequence != 0 or dual_result.hits[1].attack_sequence != 1:
+		_fail("赵灵儿双剑没有生成两轮独立攻击结果")
+		return
+	preview._battle_ui._floating_numbers.clear()
+	var sound_cursor_before := preview._audio_player._sound_cursor
+	preview._play_player_attack(dual_result)
+	var dual_image: Image
+	var dual_number_frame_gap := 0
+	for _step in range(140):
+		await create_timer(0.01).timeout
+		if preview._battle_ui._floating_numbers.size() >= 2:
+			var first_started := int(preview._battle_ui._floating_numbers[0].get("started", 0))
+			var second_started := int(preview._battle_ui._floating_numbers[1].get("started", 0))
+			dual_number_frame_gap = int((second_started - first_started) / 40.0)
+			dual_image = viewport.get_texture().get_image()
+			break
+	var dual_sound_count := posmod(preview._audio_player._sound_cursor - sound_cursor_before, PalAudioPlayer.SOUND_VOICE_COUNT)
+	if dual_image == null or dual_number_frame_gap < 8:
+		_fail("赵灵儿双剑两段伤害仍在同一时刻重叠：间隔 %d 帧" % dual_number_frame_gap)
+		return
+	if dual_sound_count != 4:
+		_fail("赵灵儿双剑没有逐击播放角色声和武器声：实际调用 %d 次" % dual_sound_count)
+		return
+	var dual_path := output_directory.path_join("battle_player_dual_attack.png")
+	if dual_image.save_png(dual_path) != OK:
+		_fail("无法写入赵灵儿双剑二连击截图")
+		return
+	await create_timer(0.6).timeout
+	expected_position = preview._top_left_for_frame(preview._player_sprites[0], 0, preview._player_foot_positions[0])
+	if preview._player_nodes[0].position.distance_to(expected_position) > 0.1:
+		_fail("赵灵儿双剑二连击结束后没有回到原始战位")
+		return
+	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview.set_process(false)
 	var cover_result := PalBattleController.ActionResult.new()
 	cover_result.actor_is_enemy = true
 	cover_result.actor_index = 0
@@ -559,7 +604,7 @@ func _run() -> void:
 		_fail("无法写入敌人回合脚本对白截图")
 		return
 	preview._script_dialog_box.hide_dialog()
-	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、胖苗持久地形、风神召唤、梦蛇变身、普攻、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, terrain_path, summon_path, trance_path, attack_path, enemy_magic_path, poison_path, reward_path, level_path])
+	print("PASS: 经典指令、敌人脚本对白、合击、保护格挡、敌人体力、其他／物品菜单、物品／逃跑动画、玩家/敌人仙术、胖苗持久地形、风神召唤、梦蛇变身、普攻/双剑二连击、毒性结算及战后奖励/升级均可绘制：%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s、%s" % [output_path, script_dialog_path, cooperative_path, cover_path, enemy_target_path, misc_path, item_action_path, item_list_path, item_use_path, throw_path, flee_path, magic_path, healing_path, offensive_path, terrain_path, summon_path, trance_path, attack_path, dual_path, enemy_magic_path, poison_path, reward_path, level_path])
 	quit(0)
 
 

@@ -488,6 +488,7 @@ func _test_player_action_statuses() -> void:
 	dual_controller.submit_attack(0)
 	var dual_result := dual_controller.execute_next_action()
 	_expect(dual_result != null and dual_result.hits.size() == 2, "dual-attack status executes two physical hits")
+	_expect(dual_result != null and dual_result.hits.map(func(hit: PalBattleController.Hit) -> int: return hit.attack_sequence) == [0, 1], "dual-attack hits retain separate strike indices for animation and damage-number timing")
 	_expect(dual_result != null and dual_result.hits.all(func(hit: PalBattleController.Hit) -> bool: return hit.critical), "bravery makes every physical hit critical")
 
 	var puppet_session := _session_for(database, PackedInt32Array([0, 1]))
