@@ -87,6 +87,23 @@ keywords:
   - `docs/CLASSIC_UI.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-058] [change] 收紧探索队伍跟随间距
+
+- **关联需求**: M2 地图人物与队伍移动体验优化
+- **关联 TODO**: 无
+- **功能描述**: 保留 SDLPal 菱形编队方向偏移，将第二、第三名队员的位置基点和朝向轨迹各前移一格；两人持续直行时脚底间距由约 `48×24` 收紧为 `32×16`，仍保留两个 half 格避免人物重叠。TileMap 正式路径与 CPU 对照路径的阻挡回退统一使用同一个紧凑轨迹中心。
+- **验证情况**: 349 项主合成检查与中文文档检查通过；新增真实双人队伍固定视口，Godot 4.7 OpenGL 下 TileMap 正式画面与 CPU 基准保持 320×200 零像素差，实际截图确认李逍遥与赵灵儿间距更紧凑且没有遮挡。
+- **涉及文件**:
+  - `src/game/game_session.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-17
 
 ### [FT-042] [feat] 还原经典状态页与场外仙术菜单

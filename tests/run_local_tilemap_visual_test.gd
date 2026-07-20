@@ -11,6 +11,7 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "wine_outdoor", "scene": 2, "position": Vector2i(1088, 1648), "night": false},
 	{"name": "roof_night", "scene": 3, "position": Vector2i(1440, 1536), "night": true},
 	{"name": "hidden_dragon_nearby", "scene": 41, "position": Vector2i(1760, 1792), "night": false, "party": [2, 0]},
+	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
 
@@ -47,6 +48,15 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 	session.scene_index = int(test_case["scene"])
 	session.night_palette = bool(test_case["night"])
 	session.set_party_world_position(test_case["position"])
+	if test_case.has("steps"):
+		var direction: int = test_case["direction"]
+		var movement := GameSession.movement_for_direction(direction)
+		for _step in range(int(test_case["steps"])):
+			session.record_party_step(direction, movement)
+	if test_case.has("expected_follower_delta"):
+		var follower_delta := session.party_member_world_position(1) - session.party_world_position()
+		if follower_delta != test_case["expected_follower_delta"]:
+			return "%s：紧凑队伍间距错误，实际 %s" % [test_case["name"], follower_delta]
 	var scene := database.scenes[session.scene_index]
 	var events := database.events_for_scene(session.scene_index)
 	if not world.load_map(database, scene.map_number):

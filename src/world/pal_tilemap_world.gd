@@ -241,7 +241,7 @@ func _build_scene_items(session: GameSession, events: Array[PalEventObject], ren
 			continue
 		var world_position := session.party_member_world_position(party_index)
 		if party_index > 0 and _is_blocked_with_events(world_position, events):
-			world_position = session.trail_positions[1]
+			world_position = session.party_member_fallback_world_position()
 		result.append(PalSceneRenderer.player_item(frame, world_position - render_viewport, session.world_layer))
 
 	for follower_index in range(mini(2, session.follower_sprite_numbers.size())):

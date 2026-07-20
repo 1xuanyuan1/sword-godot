@@ -175,14 +175,15 @@ func displace_party_from_blocker(movement: Vector2i) -> void:
 	viewport_position += movement
 
 
-## 根据 SDLPal 编队偏移返回指定队员的世界位置。
+## 使用收紧一格的 SDLPal 菱形编队返回指定队员的世界位置。
+## 保留原版方向偏移，但以最近的历史脚点为基准，避免两人队伍相隔三个 half 格。
 func party_member_world_position(member_index: int) -> Vector2i:
-	if member_index <= 0 or trail_positions.size() < 2:
+	if member_index <= 0 or trail_positions.is_empty():
 		return party_world_position()
 	if party_formation_collapsed:
 		return party_world_position() + Vector2i(0, -1)
-	var base := trail_positions[1]
-	var direction := trail_directions[1]
+	var base := trail_positions[0]
+	var direction := trail_directions[0]
 	if member_index == 2:
 		base.x += -16 if direction in [DIR_WEST, DIR_EAST] else 16
 		base.y += 8
@@ -192,13 +193,18 @@ func party_member_world_position(member_index: int) -> Vector2i:
 	return base
 
 
+## 返回队员编队偏移遇到阻挡时使用的紧凑轨迹中心。
+func party_member_fallback_world_position() -> Vector2i:
+	return trail_positions[0] if not trail_positions.is_empty() else party_world_position()
+
+
 ## 返回跟随队员使用的历史方向。
 func party_member_direction(member_index: int) -> int:
-	if member_index <= 0 or trail_directions.size() < 3:
+	if member_index <= 0 or trail_directions.size() < 2:
 		return party_direction
 	if party_formation_collapsed:
 		return party_direction
-	return trail_directions[2]
+	return trail_directions[1]
 
 
 ## 将所有队员和轨迹临时收拢到队长位置，对应 SDLPal 操作码 `00A1`。

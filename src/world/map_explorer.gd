@@ -707,7 +707,7 @@ func _build_scene_draw_items(render_viewport: Vector2i) -> Array:
 			continue
 		var member_world_position := _session.party_member_world_position(party_index)
 		if party_index > 0 and _is_blocked(member_world_position):
-			member_world_position = _session.trail_positions[1]
+			member_world_position = _session.party_member_fallback_world_position()
 		result.append(PalSceneRenderer.player_item(player_frame, member_world_position - render_viewport, _session.world_layer))
 	for follower_index in range(mini(2, _session.follower_sprite_numbers.size())):
 		var trail_index := 3 + follower_index
