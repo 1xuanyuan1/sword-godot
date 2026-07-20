@@ -19,6 +19,12 @@ enum Mode {
 	RESULT,
 }
 
+enum NumberAlign {
+	LEFT,
+	MIDDLE,
+	RIGHT,
+}
+
 const UI_FRAME_PLAYER_INFO := 18
 const UI_FRAME_NUMBER_YELLOW := 19
 const UI_FRAME_NUMBER_BLUE := 29
@@ -522,7 +528,9 @@ func _draw_reward_summary() -> void:
 	_draw_number(_reward.experience, 5, Vector2i(box_x + box_length * 16 - 34, 74), UI_FRAME_NUMBER_YELLOW)
 	_draw_single_line_box(Vector2i(65, 105), 10, 0)
 	_draw_pal_text(database.get_word(9), Vector2i(77, 115), _palette_color(COLOR_MENU_NORMAL), true)
-	_draw_number(_reward.cash, 5, Vector2i(132, 119), UI_FRAME_NUMBER_YELLOW)
+	# SDLPal battle.c 在 PAL_XY(162, 119) 使用 kNumAlignMid，让金额均匀落在
+	# “打败敌人得”和“文钱”之间；误用右对齐会与前一句的末字重叠。
+	_draw_number(_reward.cash, 5, Vector2i(162, 119), UI_FRAME_NUMBER_YELLOW, NumberAlign.MIDDLE)
 	_draw_pal_text(database.get_word(10), Vector2i(197, 115), _palette_color(COLOR_MENU_NORMAL), true)
 
 
@@ -712,14 +720,26 @@ func _draw_pal_glyphs(text: String, position: Vector2i, color: Color) -> void:
 			x += 8
 
 
-func _draw_number(value: int, length: int, position: Vector2i, frame_start: int) -> void:
+func _draw_number(value: int, length: int, position: Vector2i, frame_start: int, alignment: NumberAlign = NumberAlign.RIGHT) -> void:
 	var digits := str(maxi(0, value))
 	if digits.length() > length:
 		digits = digits.right(length)
-	var x := position.x + 6 * (length - 1)
+	var x := number_rightmost_x(value, length, position.x, alignment)
 	for index in range(digits.length() - 1, -1, -1):
 		_draw_ui_frame(frame_start + int(digits[index]), Vector2i(x, position.y))
 		x -= 6
+
+
+## 复现 SDLPal `PAL_DrawNumber` 的左／中／右对齐，返回最右侧数字的绘制 X 坐标。
+static func number_rightmost_x(value: int, length: int, anchor_x: int, alignment: NumberAlign) -> int:
+	var actual_length := mini(str(maxi(0, value)).length(), length)
+	match alignment:
+		NumberAlign.LEFT:
+			return anchor_x - 6 + 6 * actual_length
+		NumberAlign.MIDDLE:
+			return anchor_x - 6 + 3 * (length + actual_length)
+		_:
+			return anchor_x - 6 + 6 * length
 
 
 func _pal_text_width(text: String) -> int:

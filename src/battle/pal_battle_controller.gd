@@ -2633,8 +2633,11 @@ func _check_battle_result() -> void:
 func _apply_battle_cleanup_if_needed() -> void:
 	if _battle_cleanup_applied or battle_result == BattleResult.ONGOING:
 		return
-	# 原版战斗结束会移除临时状态，但中毒属于跨战斗角色状态，必须继续保留。
+	# SDLPal 在任意战斗结果后清除临时状态，并为全部角色移除三级及以下毒；
+	# 四级特殊附着和 99 级装备效果继续保留，不能把所有毒都无条件跨战斗保存。
 	session.clear_temporary_role_statuses()
+	for role_index in range(session.role_poisons_by_role.size()):
+		session.cure_role_poisons_by_level(role_index, 3, database)
 	for player in players:
 		session.clear_equipment_effects(player.role_index, GameSession.EQUIPMENT_SLOT_COUNT)
 	_auto_battle = false

@@ -402,6 +402,8 @@ func _run() -> void:
 		return
 	preview._battle_ui.show_reward(reward)
 	await process_frame
+	# SubViewport 的纹理比 Control.queue_redraw() 晚一帧可读，避免保存到奖励页之前的旧画面。
+	await process_frame
 	var reward_image := viewport.get_texture().get_image()
 	var reward_path := output_directory.path_join("battle_reward.png")
 	if reward_image == null or reward_image.save_png(reward_path) != OK:
@@ -410,6 +412,7 @@ func _run() -> void:
 	if preview._battle_ui.advance_reward_page():
 		_fail("首战奖励总览后没有进入李逍遥升级页")
 		return
+	await process_frame
 	await process_frame
 	var level_image := viewport.get_texture().get_image()
 	var level_path := output_directory.path_join("battle_level_up.png")

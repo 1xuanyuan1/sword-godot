@@ -68,6 +68,13 @@ func _init() -> void:
 	if not reward_controller.start_battle(database, reward_session, 18, 21, 20260717):
 		_fail("首战奖励回归无法初始化")
 		return
+	var ordinary_poison := database.poison_definition(551)
+	var strong_attachment := database.poison_definition(561)
+	if ordinary_poison == null or strong_attachment == null:
+		_fail("真实普通毒或四级特殊附着定义缺失")
+		return
+	reward_session.add_role_poison(0, 551, ordinary_poison.player_script)
+	reward_session.add_role_poison(0, 561, strong_attachment.player_script)
 	var expected_experience := 0
 	var expected_cash := 0
 	for enemy_index in range(reward_controller.enemies.size()):
@@ -80,6 +87,9 @@ func _init() -> void:
 	var reward := reward_controller.claim_victory_rewards()
 	if reward == null or reward.experience != expected_experience or reward.cash != expected_cash or reward_session.cash != expected_cash:
 		_fail("首战经验/金钱没有按真实敌人属性结算")
+		return
+	if reward_session.role_has_poison(0, 551) or not reward_session.role_has_poison(0, 561):
+		_fail("战斗结束没有清除真实 551 号普通毒并保留 561 号四级附着")
 		return
 	if reward_session.role_levels[0] <= old_level or reward.level_ups.is_empty():
 		_fail("李逍遥没有按真实 DATA.MKF #14 阈值在首战后升级")
@@ -143,6 +153,13 @@ func _init() -> void:
 	var flee_result := flee_controller.execute_next_action()
 	if flee_result == null or not flee_result.flee_succeeded or flee_controller.battle_result != PalBattleController.BattleResult.FLED:
 		_fail("真实首战敌队没有按经典逃跑公式返回 FLED")
+		return
+	# 蜜蜂（对象 403）的普攻附带物品 117，使用脚本 0029 实际施加 551 号赤毒。
+	var bee := database.enemy_definition_for_object(403)
+	var bee_poison_item := database.item_definition(bee.attack_equivalent_item) if bee != null else null
+	var bee_poison_entry := database.scripts[bee_poison_item.script_on_use] if bee_poison_item != null and bee_poison_item.script_on_use > 0 and bee_poison_item.script_on_use < database.scripts.size() else null
+	if bee == null or bee.attack_equivalent_item != 117 or bee_poison_entry == null or bee_poison_entry.operation != 0x0029 or bee_poison_entry.operands[1] != 551:
+		_fail("蜜蜂普攻不再通过物品 117 的 0029 脚本施加 551 号赤毒")
 		return
 	var poison := database.poison_definition(551)
 	var poison_session := GameSession.new()

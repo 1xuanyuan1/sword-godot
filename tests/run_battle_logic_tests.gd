@@ -287,6 +287,8 @@ func _test_victory_rewards_and_level_up() -> void:
 	enemy.experience = 2
 	enemy.cash = 7
 	var database := _synthetic_database([enemy])
+	_add_poison(database, 551, 3, 0, 0)
+	_add_poison(database, 552, 4, 0, 0)
 	database.player_roles.attack_strengths[0] = 200
 	database.player_roles.dexterities[0] = 999
 	database.level_progression = _synthetic_progression(10)
@@ -300,6 +302,10 @@ func _test_victory_rewards_and_level_up() -> void:
 	session.role_experience[0] = 9
 	session.role_hp[0] = 20
 	session.set_role_status(0, GameSession.STATUS_PROTECT, 3)
+	session.add_role_poison(0, 551, 0)
+	session.add_role_poison(0, 552, 0)
+	# SDLPal 对全部六名角色清理低级毒，不只处理本场队伍。
+	session.add_role_poison(5, 551, 0)
 	var controller := PalBattleController.new()
 	controller.start_battle(database, session, 0, 0, 37)
 	# 战斗结束时倒下的队员不获得经验，但经典战后半恢复仍会让其恢复。
@@ -308,6 +314,7 @@ func _test_victory_rewards_and_level_up() -> void:
 	var action := controller.execute_next_action()
 	_expect(action != null and controller.battle_result == PalBattleController.BattleResult.VICTORY and controller.experience_gained == 2 and controller.cash_gained == 7, "defeated enemies contribute their DATA experience and cash exactly once")
 	_expect(session.status_rounds_for(0, GameSession.STATUS_PROTECT) == 0, "battle end clears temporary player statuses")
+	_expect(not session.role_has_poison(0, 551) and session.role_has_poison(0, 552) and not session.role_has_poison(5, 551), "battle end cures level-three-and-below poisons for every role while preserving stronger poison")
 	var reward := controller.claim_victory_rewards()
 	_expect(reward != null and reward.experience == 2 and reward.cash == 7 and session.cash == 7, "victory reward adds total cash to the persistent session")
 	_expect(session.role_levels[0] == 2 and session.role_experience[0] == 1 and reward.level_ups.size() == 1, "primary experience consumes the current-level threshold and reports level up")
@@ -745,14 +752,19 @@ func _test_throw_item_magic_damage() -> void:
 
 func _test_flee_success_and_boss_failure() -> void:
 	var database := _synthetic_database([_enemy_definition(999, 1, 1, 0, 0, false)])
+	_add_poison(database, 551, 3, 0, 0)
+	_add_poison(database, 552, 4, 0, 0)
 	database.player_roles.dexterities[0] = 999
 	var session := _session_for(database, PackedInt32Array([0]))
 	session.role_flee_rate[0] = 999
+	session.add_role_poison(0, 551, 0)
+	session.add_role_poison(0, 552, 0)
 	var controller := PalBattleController.new()
 	controller.start_battle(database, session, 0, 0, 61, false)
 	_expect(controller.submit_flee(), "classic flee command is accepted for the remaining party")
 	var escaped := controller.execute_next_action()
 	_expect(escaped != null and escaped.flee_succeeded and controller.battle_result == PalBattleController.BattleResult.FLED, "flee rate beats living enemy strength outside boss battles")
+	_expect(not session.role_has_poison(0, 551) and session.role_has_poison(0, 552), "successful flee applies the same low-level poison cleanup as other battle endings")
 	var boss_controller := PalBattleController.new()
 	boss_controller.start_battle(database, session, 0, 0, 61, true)
 	boss_controller.submit_flee()
@@ -827,12 +839,16 @@ func _test_defeat() -> void:
 	var database := _synthetic_database([
 		_enemy_definition(999, 10, 1000, 0, 500, false),
 	])
+	_add_poison(database, 551, 3, 0, 0)
+	_add_poison(database, 552, 4, 0, 0)
 	database.player_roles.hp[0] = 1
 	database.player_roles.max_hp[0] = 1
 	database.player_roles.dexterities[0] = 0
 	var found_damage_seed := false
 	for seed_value in range(1, 128):
 		var session := _session_for(database, PackedInt32Array([0]))
+		session.add_role_poison(0, 551, 0)
+		session.add_role_poison(0, 552, 0)
 		var controller := PalBattleController.new()
 		controller.start_battle(database, session, 0, 0, seed_value)
 		controller.submit_attack(0)
@@ -840,6 +856,7 @@ func _test_defeat() -> void:
 		if result != null and result.actor_is_enemy and not result.hits.is_empty() and result.hits[0].damage > 0:
 			found_damage_seed = true
 			_expect(controller.battle_result == PalBattleController.BattleResult.DEFEAT, "losing the last living player ends the battle in defeat")
+			_expect(not session.role_has_poison(0, 551) and session.role_has_poison(0, 552), "defeat clears ordinary poison but preserves poison above level three")
 			break
 	_expect(found_damage_seed, "fixed seed search reaches a non-evaded enemy physical attack")
 

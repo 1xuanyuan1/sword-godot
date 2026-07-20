@@ -34,6 +34,7 @@ func _init() -> void:
 	_test_item_definition()
 	_test_player_roles_structure()
 	_test_battle_content_structures()
+	_test_battle_reward_number_alignment()
 	_test_scene_draw_item_anchors()
 	_test_scene_y_sorting()
 	_test_pal_direction_mapping()
@@ -99,6 +100,12 @@ func _test_classic_font_aliases() -> void:
 	_expect(resolved.get("戏") == original["戲"] and resolved.get("档") == original["檔"], "classic font maps simplified game/save labels to original Big5 bitmap glyphs")
 	_expect(resolved.get("栈") == original["棧"] and resolved.get("间") == original["間"], "classic font maps simplified location labels without falling back to a system font")
 	_expect(not original.has("戏") and not original.has("档"), "classic font compatibility does not mutate imported glyph metadata")
+
+
+func _test_battle_reward_number_alignment() -> void:
+	var rightmost_x := PalBattleUI.number_rightmost_x(96, 5, 162, PalBattleUI.NumberAlign.MIDDLE)
+	var leftmost_x := rightmost_x - 6 * (str(96).length() - 1)
+	_expect(leftmost_x == 171 and rightmost_x == 177, "battle reward cash uses the original centered number range between the label and currency")
 
 
 func _test_binary_helpers() -> void:
