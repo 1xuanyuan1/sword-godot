@@ -173,6 +173,7 @@ static func _script_uses_field_world(database: PalContentDatabase, root: int) ->
 	return false
 
 
+## 把审计报告中的未支持入口格式化为稳定、可诊断的标签列表。
 static func unsupported_labels(report: Dictionary) -> PackedStringArray:
 	var labels := PackedStringArray()
 	for issue in report.get("unsupported", []):

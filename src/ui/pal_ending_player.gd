@@ -6,6 +6,7 @@
 class_name PalEndingPlayer
 extends Control
 
+## 结局动画完整播放或安全结束后发出。
 signal playback_finished
 
 const SCREEN_WAVE_SHADER: Shader = preload("res://shaders/pal_screen_wave_overlay.gdshader")
@@ -67,6 +68,7 @@ func _ready() -> void:
 	hide()
 
 
+## 注入只读内容与当前会话，并装载结局使用的调色板。
 func configure(database: PalContentDatabase, session: GameSession) -> void:
 	_database = database
 	_session = session

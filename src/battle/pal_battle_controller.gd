@@ -2546,6 +2546,7 @@ static func is_battle_effect_opcode_supported(operation: int) -> bool:
 	]
 
 
+## 返回指定操作码是否可由敌人回合/就绪/战后脚本上下文执行。
 static func is_enemy_script_opcode_supported(operation: int) -> bool:
 	return operation in [
 		0x0000, 0x0001, 0x0002, 0x0003, 0x0004, 0x0005, 0x0006,

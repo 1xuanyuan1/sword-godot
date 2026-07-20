@@ -12,6 +12,7 @@ var store_id: int = 0
 var item_ids: PackedInt32Array = PackedInt32Array()
 
 
+## 从 DATA.MKF 商店分块解析一条记录；字节范围不足时返回 `null`。
 static func from_bytes(data: PackedByteArray, offset: int, id: int) -> PalStoreDefinition:
 	if not PalBinary.can_read(data, offset, BYTE_SIZE):
 		return null
