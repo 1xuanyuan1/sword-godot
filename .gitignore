@@ -9,6 +9,7 @@
 # Exports and local logs
 builds/
 logs/
+node_modules/
 
 # Original PAL game data and all derivatives are proprietary and local-only.
 Data/
@@ -20,4 +21,3 @@ generated/
 # Native helper build products
 tools/rix_renderer/build/
 tools/rix_renderer/out/
-
