@@ -6,17 +6,22 @@ import { access, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { basename, dirname, join, resolve } from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { homedir } from 'node:os'
+import OSS from 'ali-oss'
 
 const PAGE_ID = '3ERAcwloghvtci00'
-const BFS_CONFIG_PATH = process.env.BFS_CONFIG_PATH ||
+const PUBLIC_BASE_URL = `https://activity.hdslb.com/blackboard/activity${PAGE_ID}/`
+const PALADIN_CONFIG_PATH = process.env.EVA_ASSET_CONFIG_PATH || process.env.BFS_CONFIG_PATH ||
   '/Users/xuanyuan/Documents/workspace/music-app-backend/server/.paladin-cache.json'
 const projectDir = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const outputDir = join(projectDir, 'builds/eva')
 const htmlPath = join(outputDir, 'index.html')
 const assetDir = join(projectDir, 'builds/eva-assets')
 const manifestPath = join(assetDir, 'manifest.json')
-const cachePath = join(projectDir, 'builds/eva-bfs-manifest.json')
 const evaBin = join(projectDir, 'node_modules/.bin/eva')
+const assetUploadMode = process.env.EVA_ASSET_UPLOAD || 'oss'
+const ossAlias = process.env.EVA_OSS_ALIAS || 'uat-resource'
+const cachePath = join(projectDir, `builds/eva-${assetUploadMode}-manifest.json`)
 const args = process.argv.slice(2)
 const prepareOnly = takeFlag('--prepare-only')
 const assetBaseUrl = takeOption('--asset-base-url')
@@ -56,30 +61,74 @@ async function resolveAssetUrls(source) {
   }
 
   const cached = await readJson(cachePath)
-  const cachedParts = cached?.sourceHash === source.sourceHash ? cached.parts || [] : []
+  const cachedParts = cached?.sourceHash === source.sourceHash && cached?.uploadMode === assetUploadMode
+    ? cached.parts || []
+    : []
   const parts = []
   for (let index = 0; index < source.parts.length; index += 1) {
     const part = source.parts[index]
     const previous = cachedParts.find((item) => item.file === part.file && item.sha256 === part.sha256)
     let url = previous?.url || ''
     if (!url || !await remoteFileExists(url)) {
-      url = await uploadToBfs(join(assetDir, part.file), source.sourceHash, part.file)
+      url = await uploadAsset(join(assetDir, part.file), source.sourceHash, part.file)
     } else {
-      console.log(`复用 BFS 分包 ${index + 1}/${source.parts.length}`)
+      console.log(`复用 ${assetUploadMode.toUpperCase()} 分包 ${index + 1}/${source.parts.length}`)
     }
     parts.push({ ...part, url })
-    await writeFile(cachePath, `${JSON.stringify({ ...source, parts }, null, 2)}\n`)
+    await writeFile(cachePath, `${JSON.stringify({ ...source, uploadMode: assetUploadMode, parts }, null, 2)}\n`)
   }
   return { ...source, parts }
 }
 
+async function uploadAsset(filePath, sourceHash, fileName) {
+  if (assetUploadMode === 'oss') {
+    return uploadToOss(filePath, sourceHash, fileName)
+  }
+  if (assetUploadMode === 'bfs') {
+    return uploadToBfs(filePath, sourceHash, fileName)
+  }
+  if (assetUploadMode === 'eva') {
+    return uploadToEvaInternal(filePath, sourceHash, fileName)
+  }
+  throw new Error(`不支持的 EVA_ASSET_UPLOAD：${assetUploadMode}`)
+}
+
+async function uploadToOss(filePath, sourceHash, fileName) {
+  const cachedConfig = await readJson(PALADIN_CONFIG_PATH)
+  const oss = cachedConfig?.['oss-alias']
+  const bucketName = oss?.alias?.[ossAlias]
+  const config = oss?.buckets?.[bucketName]
+  if (
+    !config?.accessKeyId ||
+    !config?.accessKeySecret ||
+    !config?.bucket ||
+    !config?.region ||
+    !config?.publicHost
+  ) {
+    throw new Error(`OSS 配置不完整：${PALADIN_CONFIG_PATH}（alias: ${ossAlias}）`)
+  }
+  const targetPath = assetTargetPath(sourceHash, fileName)
+  const data = await readFile(filePath)
+  const client = new OSS(config)
+  await client.put(targetPath, data, {
+    headers: {
+      'Content-Type': 'application/octet-stream',
+      'Cache-Control': 'public, max-age=31536000, immutable',
+    },
+  })
+  const url = new URL(targetPath, config.publicHost.replace(/\/?$/, '/')).href
+  if (!await remoteFileExists(url)) throw new Error(`OSS 文件不可访问：${url}`)
+  console.log(`OSS 上传完成：${fileName}（${formatBytes(data.byteLength)}）`)
+  return url
+}
+
 async function uploadToBfs(filePath, sourceHash, fileName) {
-  const cachedConfig = await readJson(BFS_CONFIG_PATH)
+  const cachedConfig = await readJson(PALADIN_CONFIG_PATH)
   const bfs = cachedConfig?.bfs
   if (!bfs?.BUCKET_NAME || !bfs?.KEY || !bfs?.SECRET) {
-    throw new Error(`BFS 配置不完整：${BFS_CONFIG_PATH}`)
+    throw new Error(`BFS 配置不完整：${PALADIN_CONFIG_PATH}`)
   }
-  const targetPath = `sword-eva/${PAGE_ID}/${sourceHash.slice(0, 16)}/${fileName}`
+  const targetPath = assetTargetPath(sourceHash, fileName)
   const expires = Math.floor(Date.now() / 1000)
   const signatureText = `PUT\n${bfs.BUCKET_NAME}\n${targetPath}\n${expires}\n`
   const signature = createHmac('sha1', bfs.SECRET).update(signatureText).digest('base64')
@@ -109,11 +158,41 @@ async function uploadToBfs(filePath, sourceHash, fileName) {
   return url
 }
 
+async function uploadToEvaInternal(filePath, sourceHash, fileName) {
+  const evaConfig = await readJson(join(homedir(), '.eva_config'))
+  if (!evaConfig?.userName || !evaConfig?.userKey) {
+    throw new Error('EVA 登录配置不完整：~/.eva_config')
+  }
+  const { GitLabAccount } = await import('@jinkela/authenticator')
+  const account = await new GitLabAccount().login()
+  const form = new FormData()
+  form.append('file', new Blob([await readFile(filePath)]), basename(filePath))
+  form.append('customFileName', assetTargetPath(sourceHash, fileName))
+  const response = await fetch('http://activity-template.bilibili.co/x/upload/internal?type=eva', {
+    method: 'POST',
+    headers: {
+      accept: 'json',
+      cookie: `_AJSESSIONID=${account.sessionId}`,
+      'x-auth-user': evaConfig.userName,
+      'x-auth-thirdtoken': evaConfig.userKey,
+    },
+    body: form,
+    signal: AbortSignal.timeout(180_000),
+  })
+  const payload = await response.json().catch(() => null)
+  const cdnPath = payload?.data?.[0]?.cdnPath
+  if (!response.ok || payload?.code !== 0 || !cdnPath) {
+    throw new Error(`EVA 资源上传失败：HTTP ${response.status}，code=${payload?.code ?? '空'}`)
+  }
+  const url = normalizeUrl(cdnPath)
+  if (!await remoteFileExists(url)) throw new Error(`EVA 资源不可访问：${url}`)
+  console.log(`EVA 资源上传完成：${fileName}（${formatBytes((await stat(filePath)).size)}）`)
+  return url
+}
+
 async function patchGodotHtml(filePath, pack) {
   let html = await readFile(filePath, 'utf8')
-  if (htmlBaseUrl) {
-    html = html.replace(/<base href="[^"]*">/, `<base href="${new URL(htmlBaseUrl).href}">`)
-  }
+  html = html.replace(/<base href="[^"]*">/, `<base href="${new URL(htmlBaseUrl || PUBLIC_BASE_URL).href}">`)
   const configMatch = html.match(/const GODOT_CONFIG = (\{[^\n]+\});/)
   if (!configMatch) throw new Error('无法在 index.html 中定位 GODOT_CONFIG')
   const config = JSON.parse(configMatch[1])
@@ -282,6 +361,10 @@ function normalizeUrl(url) {
   if (url.startsWith('//')) return `https:${url}`
   if (url.startsWith('http://')) return `https://${url.slice('http://'.length)}`
   return url
+}
+
+function assetTargetPath(sourceHash, fileName) {
+  return `sword-eva/${PAGE_ID}/${sourceHash.slice(0, 16)}/${fileName}`
 }
 
 function formatBfsDate(date) {

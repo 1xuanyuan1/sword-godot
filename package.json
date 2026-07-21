@@ -10,6 +10,8 @@
   },
   "devDependencies": {
     "@bilibili-activity/eva-cli": "4.11.20",
+    "@jinkela/authenticator": "^1.4.5",
+    "ali-oss": "^6.23.0",
     "opencc-js": "^1.4.1"
   }
 }
