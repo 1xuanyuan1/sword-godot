@@ -98,6 +98,14 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "lingshan_to_dali", "scene": 178, "position": Vector2i(1664, 1440), "night": false, "party": [0, 4]},
 	{"name": "dali_outskirts_arrival", "scene": 201, "position": Vector2i(208, 504), "night": false, "party": [0, 4]},
 	{"name": "dali_han_settlement", "scene": 205, "position": Vector2i(352, 1744), "night": false, "party": [0, 4]},
+	{"name": "dali_council", "scene": 204, "position": Vector2i(928, 1200), "night": false, "party": [4, 0]},
+	{"name": "fire_kirin_cave", "scene": 211, "position": Vector2i(272, 1608), "night": false, "party": [4, 0]},
+	{"name": "fire_kirin_lair", "scene": 199, "position": Vector2i(1584, 1384), "night": false, "party": [4, 0]},
+	{"name": "dali_nuwa_temple_exterior", "scene": 210, "position": Vector2i(560, 1272), "night": false, "party": [4, 0]},
+	{"name": "dali_nuwa_temple", "scene": 202, "position": Vector2i(288, 1392), "night": false, "party": [4, 0]},
+	{"name": "dali_nuwa_temple_plot", "scene": 202, "position": Vector2i(1184, 752), "night": false, "party": [0], "role_sprites": {0: 232}, "event_states": {3635: 1, 3637: 1}},
+	{"name": "dali_dream_bed", "scene": 200, "position": Vector2i(896, 832), "night": false, "party": [0], "event_states": {3593: 1}},
+	{"name": "flashback_road_entry", "scene": 226, "position": Vector2i(896, 832), "night": false, "party": [0]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 

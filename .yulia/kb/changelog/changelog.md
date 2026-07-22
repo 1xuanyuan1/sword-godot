@@ -74,6 +74,25 @@ keywords:
   - `docs/SCENE_RENDERING.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-073] [feat] 完成大理火麒麟主线并进入回魂仙梦
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从场景 205“大理·废汉人聚居地”继续完成大理族议、火麒麟洞与女娲神殿。固定场景 `205 → 204 → 205 → 211 → 199 → 211 → 205 → 210 → 202 → 200 → 226`、族议消息 `10945–11073`、火麒麟敌队 224／战场 19／对象 463、火灵珠 266 与火眼麒麟角 276、女娲神殿消息 `11370–11418`、梦之床消息 `11485–11513`，最终以李逍遥 `[0]` 单人队进入场景 226“路途·回魂仙梦”。真实脚本确认金凤凰蛋壳 275 此时仍未取得，其 `001F` 位于回魂仙梦返回后的续跑入口 `34601`，不提前伪造道具。
+- **验证情况**: 新增独立真实资源主线测试，连续断言族议入口改写、单人／双人队切换、火麒麟真实胜利奖励、火灵珠／麒麟角、女娲神殿与回魂仙梦章节边界。新增大理族议、火麒麟洞／巢穴、女娲神殿内外／剧情、梦之床和回魂仙梦入口 8 个正式视口；Godot 4.7 OpenGL/Metal 真实窗口下 102/102 个 TileMapLayer 视口与 CPU 基准保持 320×200 零像素差，新增截图已逐张检查人物、岩浆、神殿建筑、女娲像、地图边界和遮挡。
+- **涉及文件**:
+  - `tests/run_local_dali_fire_kirin_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场
