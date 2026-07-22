@@ -8,6 +8,7 @@ extends Control
 
 const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
+const PALETTE_SHADER: Shader = preload("res://shaders/indexed_palette.gdshader")
 
 enum Phase {
 	TRADEMARK,
@@ -18,6 +19,7 @@ enum Phase {
 }
 
 const TRADEMARK_RNG := 6
+const TRADEMARK_PALETTE := 3
 const TRADEMARK_FPS := 25.0
 const TRADEMARK_HOLD_SECONDS := 1.0
 const TRADEMARK_FADE_SECONDS := 0.5
@@ -36,8 +38,7 @@ const REQUIRED_STARTUP_FILES := [
 	"res://generated/pal/content/battle/backgrounds/060.idx",
 	"res://generated/pal/content/sprites/mgo/071.spr",
 	"res://generated/pal/content/sprites/mgo/073.spr",
-	"res://generated/pal/rng/006/000.png",
-	"res://generated/pal/rng/006/053.png",
+	"res://generated/pal/content/archives/rng.mkf",
 	"res://generated/pal/audio/rix/004.wav",
 	"res://generated/pal/audio/rix/005.wav",
 ]
@@ -53,7 +54,14 @@ var _audio_player: Node
 var _save_system_available: bool = false
 var _startup_ready: bool = false
 
-var _trademark_frames: Array[Texture2D] = []
+var _trademark_stream := RngPlaybackStream.new()
+var _trademark_frame_count: int = 0
+var _trademark_frame_index: int = 0
+var _trademark_texture: ImageTexture
+var _trademark_layer: Control
+var _trademark_view: TextureRect
+var _trademark_fade: ColorRect
+var _trademark_material: ShaderMaterial
 var _trademark_elapsed: float = 0.0
 var _splash_elapsed: float = 0.0
 var _splash_tick: int = 0
@@ -78,6 +86,7 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(true)
 	_build_save_menu()
+	_build_trademark_layer()
 	if not _has_startup_content() or not _database.load_generated():
 		call_deferred("_open_resource_lab")
 		return
@@ -105,6 +114,32 @@ func _build_save_menu() -> void:
 	_save_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_save_menu.load_slot_requested.connect(_on_load_slot_requested)
 	add_child(_save_menu)
+
+
+func _build_trademark_layer() -> void:
+	_trademark_layer = Control.new()
+	_trademark_layer.name = "TrademarkLayer"
+	_trademark_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_trademark_layer.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_trademark_view = TextureRect.new()
+	_trademark_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_trademark_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_trademark_view.stretch_mode = TextureRect.STRETCH_SCALE
+	_trademark_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+	_trademark_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_trademark_material = ShaderMaterial.new()
+	_trademark_material.shader = PALETTE_SHADER
+	_trademark_material.set_shader_parameter("palette_mix", 1.0)
+	_trademark_material.set_shader_parameter("global_alpha", 1.0)
+	_trademark_view.material = _trademark_material
+	_trademark_layer.add_child(_trademark_view)
+	_trademark_fade = ColorRect.new()
+	_trademark_fade.color = Color(0, 0, 0, 0)
+	_trademark_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_trademark_fade.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_trademark_layer.add_child(_trademark_fade)
+	_trademark_layer.hide()
+	add_child(_trademark_layer)
 
 
 func _has_startup_content() -> bool:
@@ -139,33 +174,40 @@ func _load_classic_resources() -> void:
 	var atlas_image := Image.load_from_file(ProjectSettings.globalize_path(_database.root_path.path_join("text/font_atlas.png")))
 	if not atlas_image.is_empty():
 		_font_texture = ImageTexture.create_from_image(atlas_image)
-	_load_trademark_frames()
+	_load_trademark_stream()
 
 
-func _load_trademark_frames() -> void:
-	_trademark_frames.clear()
-	var root := ProjectSettings.globalize_path("res://generated/pal/rng/%03d" % TRADEMARK_RNG)
-	var directory := DirAccess.open(root)
-	if directory == null:
+func _load_trademark_stream() -> void:
+	_trademark_frame_count = 0
+	if not _trademark_stream.configure(_database.root_path.path_join("archives/rng.mkf")):
 		return
-	var names: Array[String] = []
-	for file_name in directory.get_files():
-		if file_name.to_lower().ends_with(".png"):
-			names.append(file_name)
-	names.sort()
-	for file_name in names:
-		var image := Image.load_from_file(root.path_join(file_name))
-		if not image.is_empty():
-			_trademark_frames.append(ImageTexture.create_from_image(image))
+	_trademark_frame_count = _trademark_stream.animation_frame_count(TRADEMARK_RNG)
+	var palette := _database.load_palette(TRADEMARK_PALETTE, false)
+	if palette.size() >= PaletteDecoder.PALETTE_BYTES:
+		var palette_image := Image.create_from_data(256, 1, false, Image.FORMAT_RGB8, palette)
+		_trademark_material.set_shader_parameter("palette_texture", ImageTexture.create_from_image(palette_image))
 
 
 func _begin_trademark() -> void:
 	phase = Phase.TRADEMARK
 	_trademark_elapsed = 0.0
+	_trademark_frame_index = 0
+	if _trademark_frame_count > 0 and _trademark_stream.open(TRADEMARK_RNG, 0, -1):
+		_update_trademark_texture()
+		_trademark_fade.color = Color(0, 0, 0, 0)
+		_trademark_layer.show()
+	else:
+		_trademark_frame_count = 0
+		_trademark_stream.close()
+		_trademark_layer.hide()
 	queue_redraw()
 
 
 func _begin_splash() -> void:
+	_trademark_layer.hide()
+	_trademark_stream.close()
+	_trademark_view.texture = null
+	_trademark_texture = null
 	phase = Phase.SPLASH
 	_splash_elapsed = 0.0
 	_splash_tick = 0
@@ -204,8 +246,15 @@ func _process(delta: float) -> void:
 	match phase:
 		Phase.TRADEMARK:
 			_trademark_elapsed += delta
-			var movie_seconds := float(_trademark_frames.size()) / TRADEMARK_FPS
-			if _trademark_frames.is_empty() or _trademark_elapsed >= movie_seconds + TRADEMARK_HOLD_SECONDS + TRADEMARK_FADE_SECONDS:
+			var movie_seconds := float(_trademark_frame_count) / TRADEMARK_FPS
+			if _trademark_frame_count > 0 and _trademark_elapsed < movie_seconds:
+				var desired_frame := mini(_trademark_frame_count - 1, int(_trademark_elapsed * TRADEMARK_FPS))
+				while _trademark_stream.frame_index < desired_frame and _trademark_stream.advance():
+					_trademark_frame_index = _trademark_stream.frame_index
+					_update_trademark_texture()
+			var fade := clampf((_trademark_elapsed - movie_seconds - TRADEMARK_HOLD_SECONDS) / TRADEMARK_FADE_SECONDS, 0.0, 1.0)
+			_trademark_fade.color = Color(0, 0, 0, fade)
+			if _trademark_frame_count <= 0 or _trademark_elapsed >= movie_seconds + TRADEMARK_HOLD_SECONDS + TRADEMARK_FADE_SECONDS:
 				_begin_splash()
 		Phase.SPLASH:
 			if _splash_exit_remaining >= 0.0:
@@ -333,7 +382,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), Color.BLACK)
 	match phase:
 		Phase.TRADEMARK:
-			_draw_trademark()
+			pass
 		Phase.SPLASH:
 			_draw_splash()
 		Phase.SPLASH_FADE:
@@ -350,15 +399,16 @@ func _draw() -> void:
 				draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, alpha))
 
 
-func _draw_trademark() -> void:
-	if _trademark_frames.is_empty():
+func _update_trademark_texture() -> void:
+	var indexed := _trademark_stream.current_indexed_image()
+	if not indexed.is_valid():
 		return
-	var movie_seconds := float(_trademark_frames.size()) / TRADEMARK_FPS
-	var frame_index := mini(_trademark_frames.size() - 1, int(_trademark_elapsed * TRADEMARK_FPS))
-	draw_texture_rect(_trademark_frames[frame_index], Rect2(Vector2.ZERO, size), false)
-	if _trademark_elapsed > movie_seconds + TRADEMARK_HOLD_SECONDS:
-		var fade := clampf((_trademark_elapsed - movie_seconds - TRADEMARK_HOLD_SECONDS) / TRADEMARK_FADE_SECONDS, 0.0, 1.0)
-		draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, fade))
+	var image := indexed.to_index_alpha_image()
+	if _trademark_texture == null:
+		_trademark_texture = ImageTexture.create_from_image(image)
+	else:
+		_trademark_texture.update(image)
+	_trademark_view.texture = _trademark_texture
 
 
 func _draw_splash() -> void:

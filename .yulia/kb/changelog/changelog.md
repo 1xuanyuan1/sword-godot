@@ -174,6 +174,38 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-078] [feat] 将 RNG 过场改为运行时增量流式解码
+
+- **关联需求**: M1、M5 过场播放与运行性能
+- **关联 TODO**: TD-014
+- **功能描述**: 导入格式升级到 4，默认只安装压缩 `RNG.MKF` 并清除旧的逐帧 PNG，`--rng-previews` 仅保留作显式诊断选项。新增 `RngPlaybackStream`，配置时只常驻外层偏移表，播放时按需读取当前动画分块；非零起始帧从第 0 帧预热，只维护一张 320×200 索引画布。剧情、商标和资源实验室播放器统一复用一个可更新 RG8 纹理与调色板 Shader，保留脚本帧区间、帧率、渐显、暂停、字幕层级和 VM 阻塞时序，并在资源损坏时异步解除剧情等待。
+- **验证情况**: 382 项合成检查通过，覆盖压缩 MKF、增量连续性、按需分块读取、缺失归档和跳段预热；真实资源默认重导入得到 12 段／1464 帧、零 RNG PNG，并逐帧完成全量 YJ1 解码。御剑教学、最终章 11 段 RNG 信号链和启动读档相邻回归通过；Godot 4.7 Metal 真窗口下检查御剑首帧与调色板 3 商标截图，无黑屏、调色板或缩放异常。
+- **涉及文件**:
+  - `src/formats/rng_animation.gd`
+  - `src/formats/rng_playback_stream.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/import/pal_import_report.gd`
+  - `src/ui/pal_rng_player.gd`
+  - `src/ui/pal_startup.gd`
+  - `src/ui/rng_preview.gd`
+  - `src/ui/import_lab.gd`
+  - `src/world/map_explorer.gd`
+  - `tools/import_cli.gd`
+  - `tools/generate_resources.py`
+  - `tests/run_tests.gd`
+  - `tests/run_local_rng_player_test.gd`
+  - `tests/run_local_startup_load_test.gd`
+  - `README.md`
+  - `docs/RNG_FORMAT.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场

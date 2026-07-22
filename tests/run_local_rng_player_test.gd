@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用本机生成内容验证剧情脚本引用的 RNG 动画均已导入，并实际播放一个两帧区间。
+## 使用本机压缩 RNG.MKF 验证全部动画、跳段预热、单纹理播放和御剑术首帧渐显。
 ## Headless 验证时序；带窗口时把御剑术首帧写入被 Git 忽略的视觉目录，绝不提交原版画面。
 extends SceneTree
 
@@ -23,24 +23,70 @@ func _run() -> void:
 	if referenced_animations.is_empty():
 		_fail("脚本中没有找到 RNG 动画引用")
 		return
+	var archive_path := database.root_path.path_join("archives/rng.mkf")
+	var archive := MkfArchive.load_file(archive_path)
+	if not archive.is_valid():
+		_fail("RNG 运行时归档不可用：%s" % archive.error_message)
+		return
 	var total_frames := 0
-	for animation_number in referenced_animations:
-		var directory_path := database.root_path.get_base_dir().path_join("rng/%03d" % animation_number)
-		var directory := DirAccess.open(ProjectSettings.globalize_path(directory_path))
-		if directory == null:
-			_fail("脚本引用的 RNG 动画 %d 尚未导入" % animation_number)
-			return
-		var frame_count := 0
-		for file_name in directory.get_files():
-			if file_name.to_lower().ends_with(".png"):
-				frame_count += 1
-		if frame_count == 0:
-			_fail("RNG 动画 %d 没有可播放帧" % animation_number)
-			return
+	var animation_count := 0
+	for animation_number in range(archive.chunk_count()):
+		var chunk := archive.get_chunk(animation_number)
+		if chunk.is_empty():
+			continue
+		var animation := RngAnimation.from_mkf_chunk(chunk)
+		var frame_count := animation.playable_frame_count() if animation.is_valid() else 0
+		if frame_count <= 0:
+			continue
+		animation_count += 1
 		total_frames += frame_count
+		if referenced_animations.has(animation_number):
+			referenced_animations[animation_number] = frame_count
+	if animation_count != 12 or total_frames != 1464:
+		_fail("RNG 运行时归档统计错误：animations=%d frames=%d" % [animation_count, total_frames])
+		return
+	for animation_number in referenced_animations:
+		if int(referenced_animations[animation_number]) <= 0:
+			_fail("脚本引用的 RNG 动画 %d 不可播放" % animation_number)
+			return
+	var full_stream := RngPlaybackStream.new()
+	if not full_stream.configure(archive_path):
+		_fail("RNG 全量流无法配置：%s" % full_stream.error_message)
+		return
+	for animation_number in range(archive.chunk_count()):
+		var expected_frames := full_stream.animation_frame_count(animation_number)
+		if expected_frames <= 0:
+			continue
+		if not full_stream.open(animation_number, 0, -1):
+			_fail("RNG 动画 %d 无法打开：%s" % [animation_number, full_stream.error_message])
+			return
+		while full_stream.has_next():
+			if not full_stream.advance():
+				_fail("RNG 动画 %d 帧 %d 解码失败：%s" % [animation_number, full_stream.frame_index + 1, full_stream.error_message])
+				return
+		if full_stream.decoded_frame_count != expected_frames or full_stream.frame_index != expected_frames - 1:
+			_fail("RNG 动画 %d 没有完整解码：%d/%d" % [animation_number, full_stream.decoded_frame_count, expected_frames])
+			return
+	full_stream.close()
+
+	# 从非零帧开始时必须预热前序增量，结果应与手工顺序解码相同。
+	var prewarm_animation_number := 1
+	var prewarm_target := 10
+	var prewarm_animation := RngAnimation.from_mkf_chunk(archive.get_chunk(prewarm_animation_number))
+	var baseline_decoder := RngFrameDecoder.new()
+	for frame_index in range(prewarm_target + 1):
+		if not baseline_decoder.apply_delta(prewarm_animation.decompress_frame(frame_index)):
+			_fail("RNG 跳段基准解码失败：%s" % baseline_decoder.error_message)
+			return
+	var jump_stream := RngPlaybackStream.new()
+	if not jump_stream.configure(archive_path) or not jump_stream.open(prewarm_animation_number, prewarm_target, prewarm_target) or jump_stream.current_indices() != baseline_decoder.indices:
+		_fail("RNG 非零起始帧没有正确预热前序增量：%s" % jump_stream.error_message)
+		return
 	var player := PalRngPlayer.new()
 	root.add_child(player)
-	player.configure(database)
+	if not player.configure(database):
+		_fail("RNG 播放器无法绑定运行时归档：%s" % player.error_message)
+		return
 	await process_frame
 	var finished := [false]
 	player.playback_finished.connect(func() -> void: finished[0] = true)
@@ -53,9 +99,14 @@ func _run() -> void:
 	if player._frame_index != 0 or not player.visible:
 		_fail("RNG 暂停时没有保持第一帧可见")
 		return
+	var texture_id := player._texture.get_instance_id()
 	player.set_playback_paused(false)
-	# Headless 帧间隔可能接近零；显式推进足够的测试时间，不依赖机器渲染速度。
-	player._process(0.01)
+	player._process(0.001)
+	if player._frame_index != 1 or player._texture.get_instance_id() != texture_id or player._stream.decoded_frame_count != 2:
+		_fail("RNG 播放没有复用单一可更新纹理：frame=%d decoded=%d" % [player._frame_index, player._stream.decoded_frame_count])
+		return
+	# 最后一帧显示满一个帧间隔后才结束，显式推进避免依赖机器渲染速度。
+	player._process(0.001)
 	await process_frame
 	if not finished[0] or player.visible:
 		_fail("RNG 两帧区间没有结束或没有正确隐藏")
@@ -87,6 +138,9 @@ func _run() -> void:
 	if explorer._rng_player._frame_index != 0 or not explorer._fade_overlay.visible:
 		_fail("御剑术 RNG #1 渐显前没有保持第一帧或黑色遮罩状态")
 		return
+	if explorer._dialog_box.visible or explorer._rng_player.get_index() >= explorer._dialog_box.get_index():
+		_fail("RNG 开始时没有收起旧对话，或电影层阻挡了后续字幕")
+		return
 	await create_timer(0.7).timeout
 	if explorer._screen_fade_active or explorer._fade_overlay.visible or explorer._rng_player._paused or not explorer._rng_player.visible or explorer._rng_player._frame_index > 1:
 		_fail("御剑术 RNG #1 渐显后没有揭开画面并从首帧继续：frame=%d" % explorer._rng_player._frame_index)
@@ -111,7 +165,7 @@ func _run() -> void:
 	if explorer._audio_player != null:
 		explorer._audio_player.stop_all()
 	explorer.free()
-	print("PASS: %d 个脚本 RNG 动画共 %d 帧均已导入；御剑术 RNG #1 首帧渐显并继续播放" % [referenced_animations.size(), total_frames])
+	print("PASS: RNG.MKF 12 段／1464 帧流式可读，脚本引用、跳段预热、单纹理与御剑术首帧渐显均通过")
 	quit(0)
 
 

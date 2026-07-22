@@ -25,6 +25,7 @@ func _init() -> void:
 	_test_rng_animation_table()
 	_test_rng_frame_decoder()
 	_test_rng_rejects_malformed_delta()
+	_test_rng_playback_stream()
 	_test_map_helpers()
 	_test_tileset_builder()
 	_test_voc_decoder()
@@ -245,6 +246,7 @@ func _test_rng_animation_table() -> void:
 	var animation := RngAnimation.from_mkf_chunk(data)
 	_expect(animation.is_valid(), "RNG nested MKF table")
 	_expect(animation.frame_count() == 2, "RNG nested frame count")
+	_expect(animation.playable_frame_count() == 1, "RNG trailing empty frame excluded from playable count")
 	_expect(animation.get_compressed_frame(0) == "YJ_1".to_ascii_buffer(), "RNG compressed frame access")
 	_expect(animation.frame_size(1) == 0, "RNG trailing empty frame")
 
@@ -276,6 +278,63 @@ func _test_rng_rejects_malformed_delta() -> void:
 	_expect(not decoder.apply_delta(PackedByteArray([0x0c, 1, 0, 7, 8])), "RNG truncated literal rejection")
 	_expect(not decoder.error_message.is_empty(), "RNG malformed error state")
 	_expect(not decoder.apply_delta(PackedByteArray([0x05])), "RNG unknown opcode rejection")
+
+
+func _test_rng_playback_stream() -> void:
+	var first_delta := PackedByteArray([0x06, 1, 2, 0x00])
+	var second_delta := PackedByteArray([0x02, 0x06, 3, 4, 0x00])
+	var third_delta := PackedByteArray([0x03, 0, 0x06, 5, 6, 0x00])
+	var animation_chunk := _synthetic_mkf([
+		_synthetic_yj1_raw(first_delta),
+		_synthetic_yj1_raw(second_delta),
+		_synthetic_yj1_raw(third_delta),
+		PackedByteArray(),
+	])
+	var archive_path := "user://rng_stream_synthetic.mkf"
+	var file := FileAccess.open(archive_path, FileAccess.WRITE)
+	if file != null:
+		file.store_buffer(_synthetic_mkf([animation_chunk]))
+		file.close()
+	var stream := RngPlaybackStream.new()
+	_expect(file != null and stream.configure(archive_path), "RNG runtime stream opens compressed MKF")
+	_expect(stream.animation_count() == 1 and stream.animation_frame_count(0) == 3, "RNG runtime stream scans playable frames without decoding PNGs")
+	_expect(stream.open(0, 1, 2), "RNG runtime stream opens nonzero frame range")
+	_expect(stream.decoded_frame_count == 2 and stream.frame_index == 1 and stream.current_indices().slice(0, 4) == PackedByteArray([1, 2, 3, 4]), "RNG nonzero start prewarms all previous deltas")
+	_expect(stream.has_next() and stream.advance() and stream.frame_index == 2 and stream.current_indices().slice(0, 4) == PackedByteArray([1, 2, 5, 6]), "RNG runtime stream advances on one persistent indexed canvas")
+	_expect(not stream.has_next() and not stream.advance(), "RNG runtime stream stops at requested inclusive end frame")
+	stream.close()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(archive_path))
+	_expect(not stream.open(0) and not stream.error_message.is_empty(), "RNG runtime stream reads the current animation chunk on demand")
+	var missing := RngPlaybackStream.new()
+	_expect(not missing.configure("user://missing_rng_stream.mkf") and not missing.error_message.is_empty(), "RNG runtime stream reports missing archive")
+
+
+func _synthetic_yj1_raw(data: PackedByteArray) -> PackedByteArray:
+	var result := PackedByteArray()
+	PalBinary.append_u32_le(result, Yj1Decoder.SIGNATURE)
+	PalBinary.append_u32_le(result, data.size())
+	PalBinary.append_u32_le(result, 20 + data.size())
+	PalBinary.append_u16_le(result, 1)
+	result.append(0)
+	result.append(0)
+	PalBinary.append_u16_le(result, data.size())
+	PalBinary.append_u16_le(result, 0)
+	result.append_array(data)
+	return result
+
+
+func _synthetic_mkf(chunks: Array) -> PackedByteArray:
+	var result := PackedByteArray()
+	var offset := (chunks.size() + 1) * 4
+	for raw_chunk in chunks:
+		var chunk: PackedByteArray = raw_chunk
+		PalBinary.append_u32_le(result, offset)
+		offset += chunk.size()
+	PalBinary.append_u32_le(result, offset)
+	for raw_chunk in chunks:
+		var chunk_bytes: PackedByteArray = raw_chunk
+		result.append_array(chunk_bytes)
+	return result
 
 
 func _test_map_helpers() -> void:

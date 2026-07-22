@@ -1,35 +1,25 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 播放导入器生成的首个 RNG 增量动画预览，用于验证帧序和 16 FPS 时序。
-## 最终剧情过场将由 ScriptVM 和专用播放器接管，本界面仅属资源实验室。
+## 使用正式运行时流循环播放 RNG.MKF 第 0 段，验证增量帧序和 16 FPS 时序。
 extends Control
 
-const FRAME_DIRECTORY := "res://generated/pal/rng/000"
-const FRAME_DURATION := 1.0 / 16.0
+const ANIMATION_NUMBER := 0
+const FRAME_RATE := 16
 
-var _preview: TextureRect
+var _player: PalRngPlayer
 var _frame_label: Label
 var _play_button: Button
-var _textures: Array[Texture2D] = []
-var _frame_index := 0
-var _elapsed := 0.0
 var _playing := true
 
 
 func _ready() -> void:
 	_build_interface()
-	_load_frames()
-	_show_frame()
+	_start_stream()
 
 
-func _process(delta: float) -> void:
-	if not _playing or _textures.size() < 2:
-		return
-	_elapsed += delta
-	while _elapsed >= FRAME_DURATION:
-		_elapsed -= FRAME_DURATION
-		_frame_index = (_frame_index + 1) % _textures.size()
-		_show_frame()
+func _process(_delta: float) -> void:
+	if _player != null and _player._selected_frame_count > 0:
+		_frame_label.text = "%d / %d" % [_player._frame_index + 1, _player._stream.frame_count]
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -47,12 +37,10 @@ func _build_interface() -> void:
 	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(background)
 
-	_preview = TextureRect.new()
-	_preview.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_preview.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_preview.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_preview.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	add_child(_preview)
+	_player = PalRngPlayer.new()
+	_player.name = "RuntimeRngPreview"
+	_player.playback_finished.connect(_on_playback_finished)
+	add_child(_player)
 
 	var toolbar := PanelContainer.new()
 	toolbar.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
@@ -69,7 +57,7 @@ func _build_interface() -> void:
 	controls.add_child(back_button)
 
 	var title := Label.new()
-	title.text = "RNG 增量动画预览（调色板 0）"
+	title.text = "RNG.MKF 运行时流（调色板 0）"
 	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	controls.add_child(title)
 
@@ -93,39 +81,31 @@ func _build_interface() -> void:
 	add_child(hint)
 
 
-func _load_frames() -> void:
-	var directory := DirAccess.open(FRAME_DIRECTORY)
-	if directory == null:
-		_frame_label.text = "没有本地预览，请先导入资源"
-		_playing = false
-		_play_button.disabled = true
-		return
-	var file_names: Array[String] = []
-	for file_name in directory.get_files():
-		if file_name.to_lower().ends_with(".png"):
-			file_names.append(file_name)
-	file_names.sort()
-	for file_name in file_names:
-		var image := Image.load_from_file(FRAME_DIRECTORY.path_join(file_name))
-		if not image.is_empty():
-			_textures.append(ImageTexture.create_from_image(image))
-	if _textures.is_empty():
-		_frame_label.text = "预览帧读取失败"
+func _start_stream() -> void:
+	var database := PalContentDatabase.new()
+	if not database.load_generated() or not _player.configure(database) or not _player.play(ANIMATION_NUMBER, 0, -1, FRAME_RATE):
+		_frame_label.text = "RNG 运行时流不可用：%s" % _player.error_message
 		_playing = false
 		_play_button.disabled = true
 
 
-func _show_frame() -> void:
-	if _textures.is_empty():
-		return
-	_preview.texture = _textures[_frame_index]
-	_frame_label.text = "%d / %d" % [_frame_index + 1, _textures.size()]
+func _on_playback_finished() -> void:
+	if _playing and is_inside_tree():
+		call_deferred("_restart_stream")
+
+
+func _restart_stream() -> void:
+	if _playing and not _player.play(ANIMATION_NUMBER, 0, -1, FRAME_RATE):
+		_frame_label.text = "RNG 重播失败：%s" % _player.error_message
+		_playing = false
+		_play_button.disabled = true
 
 
 func _toggle_playback() -> void:
-	if _textures.size() < 2:
+	if _player == null or _play_button.disabled:
 		return
 	_playing = not _playing
+	_player.set_playback_paused(not _playing)
 	_play_button.text = "暂停" if _playing else "播放"
 
 

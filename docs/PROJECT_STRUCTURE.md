@@ -38,7 +38,7 @@ sword/
 
 ### `src/formats`
 
-纯格式层，不持有游戏进度。输入通常是 `PackedByteArray`，输出是解析后的数据对象或索引图像。这里实现 MKF 分块、YJ1 解压、RLE、PAL Sprite、地图位字段、调色板、RNG 和 VOC。
+纯格式层，不持有游戏进度。输入通常是 `PackedByteArray`，输出是解析后的数据对象或索引图像。这里实现 MKF 分块、YJ1 解压、RLE、PAL Sprite、地图位字段、调色板、RNG 和 VOC；`RngPlaybackStream` 只常驻外层偏移表，按动画分块读取并维护单张 320×200 索引画布。
 
 ### `src/audio`
 
@@ -66,7 +66,7 @@ sword/
 
 ### `src/ui`
 
-只负责屏幕控件和输入反馈。`PalStartup` 使用原版 RNG、FBP、MGO、点阵字和 RIX 编排正式片头与标题菜单，缺少本地内容时才转入资源实验室；`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备、系统和启动读档页。它们读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalClassicFont` 为自定义简体 UI 文案复用原版 Big5 字库中已有的繁体点阵，避免单个缺字回退到尺寸不同的系统字体；真正存在的简体字形永远优先。`PalRngPlayer` 只播放导入后的帧区间，并以完成信号解除 VM 的剧情等待。
+只负责屏幕控件和输入反馈。`PalStartup` 使用原版 RNG、FBP、MGO、点阵字和 RIX 编排正式片头与标题菜单，缺少本地内容时才转入资源实验室；`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备、系统和启动读档页。它们读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalClassicFont` 为自定义简体 UI 文案复用原版 Big5 字库中已有的繁体点阵，避免单个缺字回退到尺寸不同的系统字体；真正存在的简体字形永远优先。`PalRngPlayer` 从压缩归档流式播放脚本指定的帧区间，复用 RG8 纹理和调色板 Shader，并以完成信号解除 VM 的剧情等待。
 
 ### `src/debug`
 
@@ -81,6 +81,7 @@ sword/
 - `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。
+- `generated/pal/content/archives/rng.mkf`：正式运行时按需读取的压缩 RNG 归档；默认不生成逐帧 PNG。
 - `generated/pal/audio/`：本机 RIX/OPL 与 VOC 转换结果。
 - `generated/pal/visual_tests/`：本地截图和像素对照结果。
 

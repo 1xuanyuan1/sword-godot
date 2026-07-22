@@ -20,6 +20,8 @@
 
 导入器会构建本机 `tools/rix_renderer/build/rix_renderer`，扫描脚本引用并生成 RIX/OPL WAV。首次完整导入约生成 72 首曲目、占用约 289 MB；该目录已被 Git 忽略。新增 WAV 后若 Godot 编辑器尚未识别，可重启编辑器或执行一次资源扫描。
 
+RNG 正式运行只安装压缩的 `generated/pal/content/archives/rng.mkf`；默认导入会清除旧的 `generated/pal/rng/` PNG。只有诊断格式或逐帧对照时才追加 `--rng-previews`，例如 `./tools/generate_resources.sh /path/to/Data --rng-previews`，这些本地派生图片同样不得提交。
+
 ## 测试层级
 
 ### 合成测试
@@ -81,7 +83,7 @@ RNG 剧情动画引用、导入完整性和 HUD 播放回归：
   --script res://tests/run_local_rng_player_test.gd
 ```
 
-Headless 路径验证全部脚本引用、暂停首帧、渐显状态和 VM 等待；修改 RNG、HUD 层级或屏幕渐变后，还必须去掉 `--headless` 用真实渲染器运行同一测试。带窗口路径会执行山神庙脚本 `6622` 到 RNG #1，确认黑色遮罩渐显后仍从首帧继续，并把非全黑截图写入 `generated/pal/visual_tests/training_rng_001.png`。
+Headless 路径会逐帧解压并应用全部 12 段／1464 帧，验证脚本引用、非零起始帧预热、单一可更新纹理、暂停首帧、渐显状态和 VM 等待。修改 RNG、HUD 层级或屏幕渐变后，还必须去掉 `--headless` 用真实渲染器运行同一测试；带窗口路径会执行山神庙脚本 `6622` 到 RNG #1，确认黑色遮罩渐显后仍从首帧继续，并把非全黑截图写入 `generated/pal/visual_tests/training_rng_001.png`。商标路径同时由带窗口的 `run_local_startup_load_test.gd` 检查调色板 3 和 `startup_trademark.png`。
 
 全部场景 EventObject 自动行为回归：
 

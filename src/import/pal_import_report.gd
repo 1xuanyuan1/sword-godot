@@ -5,7 +5,7 @@
 class_name PalImportReport
 extends RefCounted
 
-const FORMAT_VERSION := 3
+const FORMAT_VERSION := 4
 
 ## 用户选择的源数据目录。
 var source_directory: String = ""

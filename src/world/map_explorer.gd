@@ -89,7 +89,7 @@ func _ready() -> void:
 	_game_menu.configure(_database, _session)
 	_refresh_save_slot_summaries()
 	_game_menu.audio_settings_changed.connect(_on_audio_settings_changed)
-	_rng_player.configure(_database)
+	_rng_player.configure(_database, _session)
 	_audio_player = AudioPlayer.new()
 	_audio_player.name = "PalAudioPlayer"
 	add_child(_audio_player)
@@ -231,6 +231,12 @@ func _build_interface() -> void:
 	_ending_player.playback_finished.connect(_on_ending_playback_finished)
 	_ui_layer.add_child(_ending_player)
 
+	# RNG 覆盖普通地图 HUD，但保留后续对话层在其上方，以兼容电影字幕叠加。
+	_rng_player = PalRngPlayer.new()
+	_rng_player.name = "RngPlayer"
+	_rng_player.playback_finished.connect(_on_rng_playback_finished)
+	_ui_layer.add_child(_rng_player)
+
 	_dialog_box = PalDialogBox.new()
 	_dialog_box.name = "DialogBox"
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -248,11 +254,6 @@ func _build_interface() -> void:
 	_game_menu.shop_closed.connect(_on_shop_closed)
 	_game_menu.load_menu_cancelled.connect(_on_load_menu_cancelled)
 	_ui_layer.add_child(_game_menu)
-
-	_rng_player = PalRngPlayer.new()
-	_rng_player.name = "RngPlayer"
-	_rng_player.playback_finished.connect(_on_rng_playback_finished)
-	_ui_layer.add_child(_rng_player)
 
 	_battle_view = PalBattlePreview.new()
 	_battle_view.name = "BattleView"
@@ -1071,6 +1072,9 @@ func _on_rng_animation_requested(animation_number: int, start_frame: int, end_fr
 	if _rng_player == null:
 		_script_vm.complete_rng_animation()
 		return
+	# 前一段正文确认后 VM 会立即进入电影指令；先收起旧对话，后续字幕仍可在 RNG 上方显示。
+	if _dialog_box != null:
+		_dialog_box.hide_dialog()
 	var started := _rng_player.play(animation_number, start_frame, end_frame, frames_per_second)
 	# 官方 PAL_RNGPlay 会先画出第一帧，再消费 0050 留下的 fNeedToFadeIn，并在
 	# 渐显完成前暂停电影计时。黑色 HUD 遮罩若不在这里渐显，整段 RNG 都会被盖住。

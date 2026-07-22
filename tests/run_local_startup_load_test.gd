@@ -24,24 +24,24 @@ func _run() -> void:
 	viewport.add_child(startup)
 	await process_frame
 	await process_frame
-	if startup.phase != PalStartup.Phase.TRADEMARK or startup._trademark_frames.size() != 54:
+	if startup.phase != PalStartup.Phase.TRADEMARK or startup._trademark_frame_count != 54 or startup._trademark_texture == null:
 		_fail("正式启动没有从完整商标 RNG #6 开始")
 		return
 	var manifest_file := FileAccess.open("res://generated/pal/manifest.json", FileAccess.READ)
 	var manifest = JSON.parse_string(manifest_file.get_as_text()) if manifest_file != null else null
-	var rng_six = manifest.get("files", {}).get("rng_preview", {}).get("animations", {}).get("6", {}) if manifest is Dictionary else {}
+	var rng_six = manifest.get("files", {}).get("rng_runtime", {}).get("animations", {}).get("6", {}) if manifest is Dictionary else {}
 	if not manifest is Dictionary or int(manifest.get("format_version", 0)) < PalImportReport.FORMAT_VERSION or int(rng_six.get("palette", -1)) != 3:
 		_fail("本地导入产物没有用 SDLPal 商标调色板 3 生成 RNG #6")
 		return
 	var output_directory := ProjectSettings.globalize_path("res://generated/pal/visual_tests")
 	DirAccess.make_dir_recursive_absolute(output_directory)
-	startup._trademark_elapsed = float(startup._trademark_frames.size() - 1) / PalStartup.TRADEMARK_FPS
+	startup._trademark_elapsed = float(startup._trademark_frame_count - 1) / PalStartup.TRADEMARK_FPS
 	await process_frame
 	var trademark_image := viewport.get_texture().get_image()
 	if trademark_image == null or trademark_image.get_size() != Vector2i(320, 200) or trademark_image.save_png(output_directory.path_join("startup_trademark.png")) != OK:
 		_fail("无法保存 320×200 商标 RNG 截图")
 		return
-	startup._trademark_elapsed = float(startup._trademark_frames.size()) / PalStartup.TRADEMARK_FPS + PalStartup.TRADEMARK_HOLD_SECONDS + PalStartup.TRADEMARK_FADE_SECONDS
+	startup._trademark_elapsed = float(startup._trademark_frame_count) / PalStartup.TRADEMARK_FPS + PalStartup.TRADEMARK_HOLD_SECONDS + PalStartup.TRADEMARK_FADE_SECONDS
 	startup._process(0.0)
 	if startup.phase != PalStartup.Phase.SPLASH or startup._audio_player.current_music_number != PalStartup.TITLE_MUSIC or not startup._audio_player._music_player.playing:
 		_fail("商标结束后没有进入山水片头并播放标题曲")
@@ -109,6 +109,9 @@ func _run() -> void:
 		return
 	if lab._explore_button.disabled or lab._load_save_button.disabled or not lab._save_system_available:
 		_fail("本地生成内容存在时开始游戏或读取存档入口不可用")
+		return
+	if lab._rng_button.disabled:
+		_fail("资源实验室没有从压缩 RNG.MKF 启用运行时预览入口")
 		return
 	if lab._explore_button.get_global_rect().intersects(lab._load_save_button.get_global_rect()):
 		_fail("开始新游戏与读取存档按钮发生布局重叠")

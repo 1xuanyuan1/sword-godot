@@ -23,9 +23,9 @@ const ARCHIVE_FILES: PackedStringArray = [
 ]
 
 
-## 校验必需文件并生成内容数据库、预览、音频和地图资源。
+## 校验必需文件并生成内容数据库、可选预览、音频和地图资源。
 ## 返回报告包含全部错误和警告；原始目录不会被修改。
-static func import_from(source_dir: String, output_dir: String = "res://generated/pal") -> PalImportReport:
+static func import_from(source_dir: String, output_dir: String = "res://generated/pal", generate_rng_previews: bool = false) -> PalImportReport:
 	var report := PalImportReport.new()
 	report.source_directory = source_dir.simplify_path()
 	report.output_directory = output_dir
@@ -73,6 +73,7 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 
 	_generate_palette_previews(files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_content_database(files_by_lowercase, absolute_output, report)
+	_install_rng_runtime(files_by_lowercase["rng.mkf"], absolute_output, report)
 	_generate_tileset_maps(absolute_output, report)
 	_convert_item_bitmaps(files_by_lowercase["ball.mkf"], absolute_output, report)
 	_convert_mgo_sprites(files_by_lowercase["mgo.mkf"], absolute_output, report)
@@ -83,7 +84,9 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_convert_rgm_portraits(files_by_lowercase["rgm.mkf"], absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)
 	_generate_fbp_preview(files_by_lowercase["fbp.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
-	_generate_rng_preview(files_by_lowercase["rng.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
+	_clear_directory_contents(absolute_output.path_join("rng"))
+	if generate_rng_previews:
+		_generate_rng_preview(files_by_lowercase["rng.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_sprite_preview(files_by_lowercase["ball.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_map_preview(files_by_lowercase["map.mkf"], files_by_lowercase["gop.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_convert_voc_audio(files_by_lowercase["voc.mkf"], absolute_output, report)
@@ -184,6 +187,49 @@ static func _generate_content_database(files_by_lowercase: Dictionary, absolute_
 	}
 
 
+## 保存正式运行直接读取的压缩 RNG.MKF，并只扫描嵌套帧表统计，不生成 RGBA 帧。
+static func _install_rng_runtime(rng_path: String, absolute_output: String, report: PalImportReport) -> void:
+	var archive := MkfArchive.load_file(rng_path)
+	if not archive.is_valid():
+		report.errors.append("RNG.MKF 运行时归档无效：%s" % archive.error_message)
+		return
+	var runtime_directory := absolute_output.path_join("content/archives")
+	DirAccess.make_dir_recursive_absolute(runtime_directory)
+	var runtime_path := runtime_directory.path_join("rng.mkf")
+	var source_bytes := _read_bytes(rng_path)
+	if source_bytes.is_empty() or not _write_bytes(runtime_path, source_bytes):
+		report.errors.append("无法写入 RNG 运行时归档：%s" % runtime_path)
+		return
+	var animations: Dictionary = {}
+	var total_frames := 0
+	for animation_index in range(archive.chunk_count()):
+		var chunk := archive.get_chunk(animation_index)
+		if chunk.is_empty():
+			continue
+		var animation := RngAnimation.from_mkf_chunk(chunk)
+		if not animation.is_valid():
+			report.warnings.append("RNG 动画 %d 帧表无效：%s" % [animation_index, animation.error_message])
+			continue
+		var frames := animation.playable_frame_count()
+		if frames <= 0:
+			continue
+		animations[str(animation_index)] = {
+			"frames": frames,
+			"frame_rate": 16,
+			"palette": int(RNG_PALETTE_OVERRIDES.get(animation_index, 0)),
+		}
+		total_frames += frames
+	report.files["rng_runtime"] = {
+		"animation_count": animations.size(),
+		"total_frames": total_frames,
+		"compressed_bytes": source_bytes.size(),
+		"animations": animations,
+		"path": runtime_path,
+	}
+	if animations.is_empty():
+		report.errors.append("RNG.MKF 中没有可播放动画")
+
+
 static func _generate_tileset_maps(absolute_output: String, report: PalImportReport) -> void:
 	var content_root := absolute_output.path_join("content")
 	var map_directory := content_root.path_join("world/maps")
@@ -246,6 +292,19 @@ static func _clear_generated_resources(path: String, extension: String) -> void:
 	for file_name in directory.get_files():
 		if file_name.ends_with(extension):
 			directory.remove(file_name)
+
+
+static func _clear_directory_contents(path: String) -> void:
+	var directory := DirAccess.open(path)
+	if directory == null:
+		return
+	directory.include_hidden = true
+	for file_name in directory.get_files():
+		directory.remove(file_name)
+	for child_name in directory.get_directories():
+		var child_path := path.path_join(child_name)
+		_clear_directory_contents(child_path)
+		DirAccess.remove_absolute(child_path)
 
 
 static func _convert_mgo_sprites(mgo_path: String, absolute_output: String, report: PalImportReport) -> void:

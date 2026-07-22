@@ -173,6 +173,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Godot 输出路径（默认：res://generated/pal）",
     )
     parser.add_argument(
+        "--rng-previews",
+        action="store_true",
+        help="额外生成完整 RNG PNG 调试预览；正式运行不需要",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="只显示解析结果和将执行的命令"
     )
     return parser
@@ -213,6 +218,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--output",
         args.output,
     ]
+    if args.rng_previews:
+        command.append("--rng-previews")
     environment = os.environ.copy()
     environment["SDLPAL_DIR"] = str(sdlpal)
 

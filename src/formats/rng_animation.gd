@@ -32,6 +32,16 @@ func frame_count() -> int:
 	return _frames.chunk_count() if is_valid() else 0
 
 
+## 返回末尾第一个空分块之前可实际解码的帧数。
+func playable_frame_count() -> int:
+	if not is_valid():
+		return 0
+	for index in range(_frames.chunk_count()):
+		if _frames.chunk_size(index) <= 0:
+			return index
+	return _frames.chunk_count()
+
+
 ## 返回指定压缩帧大小，越界时为 0。
 func frame_size(index: int) -> int:
 	return _frames.chunk_size(index) if is_valid() else -1
