@@ -50,6 +50,7 @@ func _init() -> void:
 	_test_audio_settings()
 	_test_audio_player_foundation()
 	_test_script_vm_foundation()
+	_test_script_vm_bounded_jumps()
 	_test_script_vm_audio_requests()
 	_test_script_vm_screen_fade_wait()
 	_test_script_vm_fbp_and_scene_fade_wait()
@@ -969,6 +970,32 @@ func _test_script_vm_foundation() -> void:
 	var next_entry := vm.run_trigger(1)
 	_expect(session.viewport_position == Vector2i(1152, 176), "script VM party position opcode")
 	_expect(next_entry == 1, "opcode 0000 preserves a repeatable trigger entry")
+	vm.free()
+
+
+func _test_script_vm_bounded_jumps() -> void:
+	var database := PalContentDatabase.new()
+	for _index in range(7):
+		database.scripts.append(_script_entry(0x0000))
+	database.scripts[1] = _script_entry(0x006e, 8, 8, 0)
+	database.scripts[2] = _script_entry(0x0003, 1, 3, 0)
+	database.scripts[4] = _script_entry(0x0002, 4, 3, 0)
+	database.scripts[5] = _script_entry(0x001e, 10, 0, 0)
+	var event := PalEventObject.new()
+	event.object_id = 1
+	event.state = 1
+	database.event_objects.append(event)
+	var session := GameSession.new()
+	var vm := ScriptVM.new()
+	vm.configure(database, session)
+	var initial_position := session.party_world_position()
+	vm.run_trigger(1, event.object_id)
+	_expect(session.party_world_position() - initial_position == Vector2i(24, 24) and event.script_idle_frame == 0, "trigger 0003 operand[1] repeats N-1 times, then continues after the Nth pass")
+	vm.run_trigger(4, event.object_id)
+	vm.run_trigger(4, event.object_id)
+	_expect(session.cash == 0 and event.script_idle_frame == 2, "trigger 0002 keeps its replacement entry during the first N-1 invocations")
+	vm.run_trigger(4, event.object_id)
+	_expect(session.cash == 10 and event.script_idle_frame == 0, "trigger 0002 resets its counter and continues on the Nth invocation")
 	vm.free()
 
 

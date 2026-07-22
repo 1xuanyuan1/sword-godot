@@ -403,16 +403,19 @@ func _continue_execution() -> int:
 				if _return_from_call():
 					continue
 				return _finish(next_cursor)
-			# 停止脚本，并把 operand[0] 指定入口保存为未来触发入口。
+			# 停止脚本，并把 operand[0] 指定入口保存为未来触发入口；operand[1]
+			# 非零时只在前 N-1 次停止，第 N 次清零事件计数并继续下一条。
 			0x0002:
-				if _dialog_has_body:
-					return _pause_at_dialog_boundary()
-				if _return_from_call():
-					continue
-				return _finish(entry.operands[0])
-			# 无条件跳转到 operand[0]。
+				if _trigger_jump_repeats(entry):
+					if _dialog_has_body:
+						return _pause_at_dialog_boundary()
+					if _return_from_call():
+						continue
+					return _finish(entry.operands[0])
+				_cursor = next_cursor
+			# 跳转到 operand[0]；operand[1] 非零时第 N 次改为继续下一条。
 			0x0003:
-				_cursor = entry.operands[0]
+				_cursor = entry.operands[0] if _trigger_jump_repeats(entry) else next_cursor
 				continue
 			# 调用子脚本：operand[0] 为入口，operand[1] 为事件编号；0 表示沿用当前事件。
 			0x0004:
@@ -1377,6 +1380,20 @@ func _event_by_id(event_object_id: int) -> PalEventObject:
 	if database == null or event_object_id <= 0 or event_object_id > database.event_objects.size():
 		return null
 	return database.event_objects[event_object_id - 1]
+
+
+func _trigger_jump_repeats(entry: PalScriptEntry) -> bool:
+	if entry.operands[1] == 0:
+		return true
+	var event := _event_by_id(_event_object_id)
+	if event == null:
+		# 官方计数保存在触发事件上；无事件上下文无法形成有界重试，沿用普通跳转。
+		return true
+	event.script_idle_frame += 1
+	if event.script_idle_frame < entry.operands[1]:
+		return true
+	event.script_idle_frame = 0
+	return false
 
 
 func _resolve_event(operand: int) -> PalEventObject:
