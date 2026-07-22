@@ -8,6 +8,10 @@ extends RefCounted
 const KIND_POISON := "poison"
 const KIND_STATUS := "status"
 
+const ICON_SIZE := 16
+const ICON_COUNT := 10
+const ICON_ATLAS: Texture2D = preload("res://assets/ui/status_condition_icons.png")
+
 const NEGATIVE_STATUS_COLOR := 0x1b
 const POSITIVE_STATUS_COLOR := 0x3c
 const STATUS_NAMES := ["混乱", "定身", "昏睡", "封咒", "傀儡", "勇气", "防护", "加速", "双击"]
@@ -36,6 +40,7 @@ static func entries_for_role(session: GameSession, database: PalContentDatabase,
 		entries.append({
 			"kind": KIND_POISON,
 			"id": poison_id,
+			"icon_index": 0,
 			"name": poison_name,
 			"compact_name": _compact_poison_name(poison_name),
 			"rounds": 0,
@@ -50,6 +55,7 @@ static func entries_for_role(session: GameSession, database: PalContentDatabase,
 		entries.append({
 			"kind": KIND_STATUS,
 			"id": status_id,
+			"icon_index": status_id + 1,
 			"name": STATUS_NAMES[status_id],
 			"compact_name": STATUS_COMPACT_NAMES[status_id],
 			"rounds": rounds,

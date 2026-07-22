@@ -383,27 +383,30 @@ func _draw_role_condition_strip(role_index: int, position: Vector2i) -> void:
 	var conditions := RoleConditionDisplay.entries_for_role(session, database, role_index)
 	if conditions.is_empty():
 		return
-	var tokens: Array[Dictionary] = []
-	var used_width := 0
-	var maximum_width := 72
-	for condition in conditions:
-		var token := RoleConditionDisplay.compact_text(condition)
-		var token_width := _pal_text_width(token)
-		var gap := 2 if not tokens.is_empty() else 0
-		if used_width + gap + token_width > maximum_width:
-			var overflow_width := _pal_text_width("+")
-			if used_width + gap + overflow_width <= maximum_width:
-				tokens.append({"text": "+", "width": overflow_width, "color_index": COLOR_MENU_NORMAL, "gap": gap})
-				used_width += gap + overflow_width
-			break
-		tokens.append({"text": token, "width": token_width, "color_index": condition.get("color_index", COLOR_MENU_NORMAL), "gap": gap})
-		used_width += gap + token_width
-	draw_rect(Rect2(position + Vector2i(-2, -2), Vector2(maxi(12, used_width + 4), 19)), Color(0, 0, 0, 0.82), true)
-	var x := position.x
-	for token in tokens:
-		x += int(token.get("gap", 0))
-		_draw_pal_text(str(token.get("text", "")), Vector2i(x, position.y), _palette_color(int(token.get("color_index", COLOR_MENU_NORMAL))), true)
-		x += int(token.get("width", 0))
+	if RoleConditionDisplay.ICON_ATLAS == null:
+		_draw_pal_text(RoleConditionDisplay.compact_text(conditions[0]), position, _palette_color(int(conditions[0].get("color_index", COLOR_MENU_NORMAL))), true)
+		return
+	var overflow := conditions.size() > 4
+	var visible_count := mini(3 if overflow else 4, conditions.size())
+	var used_width := visible_count * RoleConditionDisplay.ICON_SIZE + maxi(0, visible_count - 1) * 2 + (10 if overflow else 0)
+	draw_rect(Rect2(position + Vector2i(-2, -2), Vector2(used_width + 4, 19)), Color(0, 0, 0, 0.82), true)
+	for condition_index in range(visible_count):
+		var icon_position := position + Vector2i(condition_index * (RoleConditionDisplay.ICON_SIZE + 2), 0)
+		var condition := conditions[condition_index]
+		_draw_role_condition_icon(condition, icon_position)
+		var rounds := int(condition.get("rounds", 0))
+		if rounds > 0 and rounds <= 9:
+			_draw_number(rounds, 1, icon_position + Vector2i(10, 9), UI_FRAME_NUMBER_YELLOW)
+	if overflow:
+		_draw_pal_text("+", position + Vector2i(visible_count * (RoleConditionDisplay.ICON_SIZE + 2), 0), _palette_color(COLOR_MENU_NORMAL), true)
+
+
+func _draw_role_condition_icon(condition: Dictionary, position: Vector2i) -> void:
+	if RoleConditionDisplay.ICON_ATLAS == null:
+		return
+	var icon_index := clampi(int(condition.get("icon_index", 0)), 0, RoleConditionDisplay.ICON_COUNT - 1)
+	var source := Rect2(Vector2(icon_index * RoleConditionDisplay.ICON_SIZE, 0), Vector2(RoleConditionDisplay.ICON_SIZE, RoleConditionDisplay.ICON_SIZE))
+	draw_texture_rect_region(RoleConditionDisplay.ICON_ATLAS, Rect2(Vector2(position), source.size), source)
 
 
 func _draw_current_player_arrow() -> void:

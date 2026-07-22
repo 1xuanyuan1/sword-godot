@@ -136,8 +136,9 @@ func _test_role_condition_display() -> void:
 	session.set_role_status(0, GameSession.STATUS_PROTECT, 5)
 	var entries := RoleConditionDisplay.entries_for_role(session, database, 0)
 	_expect(entries.size() == 4, "role condition display includes ordinary/strong poison and active statuses but hides level-99 equipment poison")
-	_expect(entries[0].get("name") == "赤毒" and entries[1].get("name") == "食妖虫附", "role condition display keeps real poison names in stable object order")
+	_expect(entries[0].get("name") == "赤毒" and entries[1].get("name") == "食妖虫附" and entries[0].get("icon_index") == 0, "role condition display keeps real poison names and the poison icon in stable object order")
 	_expect(RoleConditionDisplay.detailed_text(entries[2]) == "混乱3" and RoleConditionDisplay.compact_text(entries[3]) == "护5", "role condition display shares full field and compact battle labels with remaining rounds")
+	_expect(entries[2].get("icon_index") == 1 and entries[3].get("icon_index") == 7 and RoleConditionDisplay.ICON_ATLAS.get_size() == Vector2(160, 16), "role conditions map nine statuses to the generated 16-pixel icon atlas")
 
 
 func _test_battle_reward_number_alignment() -> void:

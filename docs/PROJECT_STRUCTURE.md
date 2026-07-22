@@ -5,6 +5,7 @@
 ```text
 sword/
 ├── project.godot          # Godot 工程配置，主场景为 scenes/main.tscn
+├── assets/                # 可随仓库分发的项目自有 UI 图集
 ├── scenes/                # 可直接切换的 Godot 场景
 ├── src/
 │   ├── audio/             # Godot 原生 BGM/音效播放与音量应用
@@ -45,7 +46,7 @@ sword/
 
 ### `src/battle`
 
-`PalBattleRandom` 复现 SDLPal 的固定随机序列；`PalBattleController` 持有单场敌人体力、敌人毒/状态、三类敌人脚本游标、可变仙术、合击贡献者、指令、物品预留、逃跑、敌人施法 AI 和行动队列，并把玩家 HP/MP、毒/状态、库存、经验、金钱与升级写回 `GameSession`；其 `ScriptEvent` 只描述战斗对白、音频、召唤/变身和脚本终止等副作用。`PalBattlePreview` 编排双方 Sprite、敌我目标、物理攻击、保护格挡、合击、毒性结算、敌人脚本事件、物品、逃跑和 FIRE 仙术动画；`PalBattleUI` 使用原版 UI Sprite 绘制角色状态框、毒／状态标签、四向指令、其他/物品菜单、仙术列表、上浮数字和战后成长页。战斗与场外菜单共用 `PalRoleConditionDisplay` 整理毒名、状态名、颜色和剩余回合；静态敌人、物品、毒、仙术与成长规则仍属于 `src/content`，场景节点不直接计算伤害。
+`PalBattleRandom` 复现 SDLPal 的固定随机序列；`PalBattleController` 持有单场敌人体力、敌人毒/状态、三类敌人脚本游标、可变仙术、合击贡献者、指令、物品预留、逃跑、敌人施法 AI 和行动队列，并把玩家 HP/MP、毒/状态、库存、经验、金钱与升级写回 `GameSession`；其 `ScriptEvent` 只描述战斗对白、音频、召唤/变身和脚本终止等副作用。`PalBattlePreview` 编排双方 Sprite、敌我目标、物理攻击、保护格挡、合击、毒性结算、敌人脚本事件、物品、逃跑和 FIRE 仙术动画；`PalBattleUI` 使用原版 UI Sprite 绘制角色状态框、毒／状态图标、四向指令、其他/物品菜单、仙术列表、上浮数字和战后成长页。战斗与场外菜单共用 `PalRoleConditionDisplay` 整理毒名、状态名、图集格子、颜色和剩余回合；静态敌人、物品、毒、仙术与成长规则仍属于 `src/content`，场景节点不直接计算伤害。
 
 ### `src/import`
 
