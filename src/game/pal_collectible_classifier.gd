@@ -17,6 +17,7 @@ var _database: PalContentDatabase
 var _root_cache: Dictionary = {}
 
 
+## 绑定当前内容数据库并清空按脚本根入口缓存的分类结果。
 func configure(database: PalContentDatabase) -> void:
 	if _database == database:
 		return
