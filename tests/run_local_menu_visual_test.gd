@@ -67,7 +67,31 @@ func _init() -> void:
 	menu._confirm_selection()
 	await process_frame
 	await process_frame
-	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_status.png"))
+	var clean_status_image := viewport.get_texture().get_image()
+	clean_status_image.save_png(output_dir.path_join("classic_status.png"))
+	var ordinary_poison := database.poison_definition(551)
+	var strong_attachment := database.poison_definition(561)
+	if ordinary_poison == null or strong_attachment == null:
+		printerr("FAIL: 状态页回归需要的真实普通毒或四级附着不存在")
+		quit(1)
+		return
+	session.add_role_poison(0, 551, ordinary_poison.player_script)
+	session.add_role_poison(0, 561, strong_attachment.player_script)
+	session.set_role_status(0, GameSession.STATUS_SILENCE, 3)
+	session.set_role_status(0, GameSession.STATUS_PROTECT, 5)
+	menu.queue_redraw()
+	await process_frame
+	await process_frame
+	var condition_status_image := viewport.get_texture().get_image()
+	var condition_status_path := output_dir.path_join("classic_status_conditions.png")
+	if condition_status_image.save_png(condition_status_path) != OK:
+		printerr("FAIL: 无法写入场外毒与状态页截图")
+		quit(1)
+		return
+	if _pixel_difference_in_rect(clean_status_image, condition_status_image, Rect2i(180, 52, 136, 96)) < 40:
+		printerr("FAIL: 场外状态页没有绘制普通毒、四级附着与异常状态")
+		quit(1)
+		return
 	var field_magic_id := 0
 	var magic_candidates := PackedInt32Array()
 	for role_index in range(PalPlayerRoles.ROLE_COUNT):
@@ -156,3 +180,15 @@ func _init() -> void:
 		session.flee_rate_for(0),
 	])
 	quit(0)
+
+
+func _pixel_difference_in_rect(first: Image, second: Image, region: Rect2i) -> int:
+	if first == null or second == null or first.get_size() != second.get_size():
+		return -1
+	var clipped := region.intersection(Rect2i(Vector2i.ZERO, first.get_size()))
+	var difference := 0
+	for y in range(clipped.position.y, clipped.end.y):
+		for x in range(clipped.position.x, clipped.end.x):
+			if first.get_pixel(x, y) != second.get_pixel(x, y):
+				difference += 1
+	return difference

@@ -6,6 +6,8 @@
 class_name PalGameMenu
 extends Control
 
+const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
+
 ## 玩家确认使用物品时发出；接收方负责运行脚本并决定是否消耗。
 signal item_use_requested(item_id: int)
 ## 玩家在装备页确认角色时发出；接收方负责运行装备脚本和交换背包物品。
@@ -643,17 +645,15 @@ func _draw_status_page() -> void:
 			continue
 		_draw_item_bitmap(item.bitmap, STATUS_EQUIPMENT_IMAGE_POSITIONS[slot_index] + Vector2i.ONE)
 		_draw_pal_text(database.get_word(item_id), STATUS_EQUIPMENT_NAME_POSITIONS[slot_index], _palette_color(COLOR_EQUIPPED), true)
-	var poison_slot := 0
-	if role_index >= 0 and role_index < session.role_poisons_by_role.size():
-		for raw_poison_id in session.role_poisons_by_role[role_index].keys():
-			var poison_id := int(raw_poison_id)
-			var poison := database.poison_definition(poison_id)
-			if poison == null or poison.poison_level > 3:
-				continue
-			_draw_pal_text(database.get_word(poison_id), STATUS_POISON_POSITIONS[poison_slot], _palette_color(poison.color + 10), true)
-			poison_slot += 1
-			if poison_slot >= STATUS_POISON_POSITIONS.size():
-				break
+	var conditions := RoleConditionDisplay.entries_for_role(session, database, role_index)
+	for condition_index in range(mini(conditions.size(), STATUS_POISON_POSITIONS.size())):
+		var condition := conditions[condition_index]
+		_draw_pal_text(
+			RoleConditionDisplay.detailed_text(condition),
+			STATUS_POISON_POSITIONS[condition_index],
+			_palette_color(int(condition.get("color_index", COLOR_NORMAL))),
+			true
+		)
 
 
 func _draw_magic_caster_page() -> void:
@@ -669,6 +669,7 @@ func _draw_magic_caster_page() -> void:
 		if party_index == _magic_caster_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
 		_draw_pal_text(database.get_word(database.player_roles.name_word_for(role_index)), MAGIC_CASTER_NAME_POSITION + Vector2i(0, party_index * 18), _palette_color(color_index), true)
+	_draw_party_condition_strips()
 
 
 func _draw_magic_list_page() -> void:
@@ -709,6 +710,7 @@ func _draw_magic_list_page() -> void:
 			_draw_ui_frame(UI_FRAME_CURSOR, position + Vector2i(25, 10))
 	if _magic_entries.is_empty():
 		_draw_pal_text("没有可用仙术", Vector2i(35, 54), _palette_color(COLOR_INACTIVE), true)
+	_draw_party_condition_strips()
 
 
 func _draw_magic_target_page() -> void:
@@ -717,6 +719,7 @@ func _draw_magic_target_page() -> void:
 		return
 	_magic_target_selection = clampi(_magic_target_selection, 0, session.party_roles.size() - 1)
 	var frame := UI_FRAME_TARGET_CURSOR_RED if int(Time.get_ticks_msec() / 80) % 2 == 0 else UI_FRAME_TARGET_CURSOR
+	_draw_party_condition_strips()
 	_draw_ui_frame(frame, Vector2i(75 + MAGIC_PLAYER_INFO_SPACING * _magic_target_selection, 158))
 
 
@@ -732,6 +735,40 @@ func _draw_party_info_boxes() -> void:
 		_draw_ui_frame(UI_FRAME_SLASH, position + Vector2i(49, 22))
 		_draw_number(_role_value(session.role_max_mp, role_index), 4, position + Vector2i(47, 24), UI_FRAME_NUMBER_CYAN)
 		_draw_number(_role_value(session.role_mp, role_index), 4, position + Vector2i(26, 21), UI_FRAME_NUMBER_CYAN)
+
+
+func _draw_party_condition_strips() -> void:
+	for party_index in range(session.party_roles.size()):
+		var role_index := session.party_roles[party_index]
+		var position := MAGIC_PLAYER_INFO_POSITION + Vector2i(MAGIC_PLAYER_INFO_SPACING * party_index, -24)
+		_draw_role_condition_strip(role_index, position)
+
+
+func _draw_role_condition_strip(role_index: int, position: Vector2i) -> void:
+	var conditions := RoleConditionDisplay.entries_for_role(session, database, role_index)
+	if conditions.is_empty():
+		return
+	var tokens: Array[Dictionary] = []
+	var used_width := 0
+	var maximum_width := 72
+	for condition in conditions:
+		var token := RoleConditionDisplay.compact_text(condition)
+		var token_width := _pal_text_width(token)
+		var gap := 2 if not tokens.is_empty() else 0
+		if used_width + gap + token_width > maximum_width:
+			var overflow_width := _pal_text_width("+")
+			if used_width + gap + overflow_width <= maximum_width:
+				tokens.append({"text": "+", "width": overflow_width, "color_index": COLOR_NORMAL, "gap": gap})
+				used_width += gap + overflow_width
+			break
+		tokens.append({"text": token, "width": token_width, "color_index": condition.get("color_index", COLOR_NORMAL), "gap": gap})
+		used_width += gap + token_width
+	draw_rect(Rect2(position + Vector2i(-2, -2), Vector2(maxi(12, used_width + 4), 19)), Color(0, 0, 0, 0.82), true)
+	var x := position.x
+	for token in tokens:
+		x += int(token.get("gap", 0))
+		_draw_pal_text(str(token.get("text", "")), Vector2i(x, position.y), _palette_color(int(token.get("color_index", COLOR_NORMAL))), true)
+		x += int(token.get("width", 0))
 
 
 func _draw_system_menu() -> void:

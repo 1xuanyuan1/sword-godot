@@ -6,6 +6,8 @@
 class_name PalBattleUI
 extends Control
 
+const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
+
 enum Mode {
 	WAITING,
 	COMMAND,
@@ -374,6 +376,34 @@ func _draw_player_status_boxes() -> void:
 		_draw_ui_frame(UI_FRAME_SLASH, position + Vector2i(49, 22))
 		_draw_number(session.role_max_mp[role_index], 4, position + Vector2i(47, 24), UI_FRAME_NUMBER_CYAN)
 		_draw_number(session.role_mp[role_index], 4, position + Vector2i(26, 21), UI_FRAME_NUMBER_CYAN)
+		_draw_role_condition_strip(role_index, position + Vector2i(0, -18))
+
+
+func _draw_role_condition_strip(role_index: int, position: Vector2i) -> void:
+	var conditions := RoleConditionDisplay.entries_for_role(session, database, role_index)
+	if conditions.is_empty():
+		return
+	var tokens: Array[Dictionary] = []
+	var used_width := 0
+	var maximum_width := 72
+	for condition in conditions:
+		var token := RoleConditionDisplay.compact_text(condition)
+		var token_width := _pal_text_width(token)
+		var gap := 2 if not tokens.is_empty() else 0
+		if used_width + gap + token_width > maximum_width:
+			var overflow_width := _pal_text_width("+")
+			if used_width + gap + overflow_width <= maximum_width:
+				tokens.append({"text": "+", "width": overflow_width, "color_index": COLOR_MENU_NORMAL, "gap": gap})
+				used_width += gap + overflow_width
+			break
+		tokens.append({"text": token, "width": token_width, "color_index": condition.get("color_index", COLOR_MENU_NORMAL), "gap": gap})
+		used_width += gap + token_width
+	draw_rect(Rect2(position + Vector2i(-2, -2), Vector2(maxi(12, used_width + 4), 19)), Color(0, 0, 0, 0.82), true)
+	var x := position.x
+	for token in tokens:
+		x += int(token.get("gap", 0))
+		_draw_pal_text(str(token.get("text", "")), Vector2i(x, position.y), _palette_color(int(token.get("color_index", COLOR_MENU_NORMAL))), true)
+		x += int(token.get("width", 0))
 
 
 func _draw_current_player_arrow() -> void:

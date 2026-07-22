@@ -7,6 +7,7 @@ const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
+const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -31,6 +32,7 @@ func _init() -> void:
 	_test_content_structures()
 	_test_collectible_classifier()
 	_test_classic_font_aliases()
+	_test_role_condition_display()
 	_test_explorer_manual_search()
 	_test_explorer_touch_scan()
 	_test_item_definition()
@@ -104,6 +106,38 @@ func _test_classic_font_aliases() -> void:
 	_expect(resolved.get("戏") == original["戲"] and resolved.get("档") == original["檔"], "classic font maps simplified game/save labels to original Big5 bitmap glyphs")
 	_expect(resolved.get("栈") == original["棧"] and resolved.get("间") == original["間"], "classic font maps simplified location labels without falling back to a system font")
 	_expect(not original.has("戏") and not original.has("档"), "classic font compatibility does not mutate imported glyph metadata")
+
+
+func _test_role_condition_display() -> void:
+	var database := PalContentDatabase.new()
+	database.words.resize(4)
+	database.words[1] = "赤毒"
+	database.words[2] = "食妖虫附"
+	database.words[3] = "装备效果"
+	database.poisons.resize(4)
+	for poison_id in range(1, 4):
+		var poison := PoisonDefinition.PoisonData.new()
+		poison.object_id = poison_id
+		poison.poison_level = [0, 3, 4, 99][poison_id]
+		poison.color = 20 + poison_id
+		database.poisons[poison_id] = poison
+	var session := GameSession.new()
+	session.role_hp = PackedInt32Array([100, 100, 100, 100, 100, 100])
+	for _role_index in range(PalPlayerRoles.ROLE_COUNT):
+		session.role_poisons_by_role.append({})
+		var statuses := PackedInt32Array()
+		statuses.resize(GameSession.STATUS_COUNT)
+		statuses.fill(0)
+		session.role_status_rounds_by_role.append(statuses)
+	session.add_role_poison(0, 1, 0)
+	session.add_role_poison(0, 2, 0)
+	session.add_role_poison(0, 3, 0)
+	session.set_role_status(0, GameSession.STATUS_CONFUSED, 3)
+	session.set_role_status(0, GameSession.STATUS_PROTECT, 5)
+	var entries := RoleConditionDisplay.entries_for_role(session, database, 0)
+	_expect(entries.size() == 4, "role condition display includes ordinary/strong poison and active statuses but hides level-99 equipment poison")
+	_expect(entries[0].get("name") == "赤毒" and entries[1].get("name") == "食妖虫附", "role condition display keeps real poison names in stable object order")
+	_expect(RoleConditionDisplay.detailed_text(entries[2]) == "混乱3" and RoleConditionDisplay.compact_text(entries[3]) == "护5", "role condition display shares full field and compact battle labels with remaining rounds")
 
 
 func _test_battle_reward_number_alignment() -> void:

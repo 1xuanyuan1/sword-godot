@@ -57,6 +57,27 @@ func _run() -> void:
 	if image.save_png(output_path) != OK:
 		_fail("无法写入战斗样板截图")
 		return
+	var ordinary_poison := preview._database.poison_definition(551)
+	if ordinary_poison == null:
+		_fail("战斗状态框回归需要的真实赤毒定义不存在")
+		return
+	preview._session.add_role_poison(0, 551, ordinary_poison.player_script)
+	preview._session.set_role_status(0, GameSession.STATUS_SILENCE, 3)
+	preview._battle_ui.queue_redraw()
+	await process_frame
+	await process_frame
+	var condition_image := viewport.get_texture().get_image()
+	var condition_path := output_directory.path_join("battle_player_conditions.png")
+	if condition_image == null or condition_image.save_png(condition_path) != OK:
+		_fail("无法写入战斗毒与异常状态截图")
+		return
+	if _pixel_difference_in_rect(image, condition_image, Rect2i(88, 144, 78, 21)) < 20:
+		_fail("战斗角色状态框没有绘制毒与异常状态")
+		return
+	preview._session.cure_role_poison(0, 551)
+	preview._session.remove_role_status(0, GameSession.STATUS_SILENCE)
+	preview._battle_ui.queue_redraw()
+	await process_frame
 	preview._handle_direction(Vector2i(1, 0))
 	if preview._selected_action != 2 or not preview._controller.can_pending_player_use_cooperative_magic():
 		_fail("两名健康队员没有启用右侧经典合击图标")
@@ -446,6 +467,8 @@ func _run() -> void:
 	if preview._persistent_effect_root.get_child_count() != 1:
 		_fail("胖苗弦月斩结束后没有留下一个战场破坏层")
 		return
+	# Metal 可能在节点出现后仍未完成 SubViewport 提交；先等正式渲染帧结束再读取有特效画面。
+	await RenderingServer.frame_post_draw
 	var terrain_image := viewport.get_texture().get_image()
 	var terrain_path := output_directory.path_join("battle_enemy_persistent_terrain.png")
 	if terrain_image == null or terrain_image.save_png(terrain_path) != OK:
@@ -454,6 +477,7 @@ func _run() -> void:
 	preview._persistent_effect_root.hide()
 	await process_frame
 	await process_frame
+	await RenderingServer.frame_post_draw
 	var terrain_without_effect := viewport.get_texture().get_image()
 	preview._persistent_effect_root.show()
 	if _pixel_difference(terrain_image, terrain_without_effect) <= 0:
@@ -681,6 +705,18 @@ func _pixel_difference(first: Image, second: Image) -> int:
 	var difference := 0
 	for y in range(first.get_height()):
 		for x in range(first.get_width()):
+			if first.get_pixel(x, y) != second.get_pixel(x, y):
+				difference += 1
+	return difference
+
+
+func _pixel_difference_in_rect(first: Image, second: Image, region: Rect2i) -> int:
+	if first == null or second == null or first.get_size() != second.get_size():
+		return -1
+	var clipped := region.intersection(Rect2i(Vector2i.ZERO, first.get_size()))
+	var difference := 0
+	for y in range(clipped.position.y, clipped.end.y):
+		for x in range(clipped.position.x, clipped.end.x):
 			if first.get_pixel(x, y) != second.get_pixel(x, y):
 				difference += 1
 	return difference
