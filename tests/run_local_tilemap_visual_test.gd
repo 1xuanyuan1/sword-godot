@@ -130,6 +130,18 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "trial_cave_third_224", "scene": 224, "position": Vector2i(928, 896), "night": false, "party": [0, 4]},
 	{"name": "trial_cave_third_225", "scene": 225, "position": Vector2i(384, 1152), "night": false, "party": [0, 4]},
 	{"name": "trial_cave_nuwa_ruins", "scene": 212, "position": Vector2i(1552, 600), "night": false, "party": [0, 4]},
+	{"name": "dali_war_outskirts_front", "scene": 258, "position": Vector2i(1104, 648), "night": false, "party": [1, 0, 4]},
+	{"name": "dali_war_trial_road", "scene": 259, "position": Vector2i(800, 1296), "night": false, "party": [1, 0, 4]},
+	{"name": "dali_nuwa_defense_exterior", "scene": 262, "position": Vector2i(1104, 936), "night": false, "party": [1, 0, 4]},
+	{"name": "dali_nuwa_defense_temple", "scene": 264, "position": Vector2i(928, 960), "night": false, "party": [1, 0, 4]},
+	{"name": "dali_linger_worship", "scene": 263, "position": Vector2i(1200, 744), "night": false, "party": [0], "role_sprites": {0: 232}},
+	{"name": "dali_altar_open", "scene": 271, "position": Vector2i(1136, 1048), "night": false, "party": [1, 0, 4], "event_states": {4923: 0, 4924: 1, 4925: 2, 4926: 2, 4927: 2, 4928: 2, 4929: 2}},
+	{"name": "dali_altar_filled", "scene": 257, "position": Vector2i(1152, 1040), "night": false, "party": [0], "role_sprites": {0: 232}},
+	{"name": "dali_altar_celebration", "scene": 261, "position": Vector2i(800, 1344), "night": false, "party": [1, 0, 4]},
+	{"name": "dali_earth_demon", "scene": 261, "position": Vector2i(880, 1256), "night": false, "party": [1, 0, 4], "event_states": {4788: 0, 4789: 0, 4790: 0, 4791: 0, 4792: 0, 4793: 0, 4794: 0, 4795: 0, 4796: 0, 4797: 0, 4798: 0, 4799: 1, 4800: 1, 4801: 1, 4802: 1, 4803: 1, 4804: 1, 4805: 1, 4806: 1, 4807: 1, 4808: 1, 4809: 1, 4810: 1}},
+	{"name": "dali_rain_aftermath", "scene": 274, "position": Vector2i(672, 1296), "night": false, "party": [0], "role_sprites": {0: 232}},
+	{"name": "dali_rain_temple_exterior", "scene": 275, "position": Vector2i(832, 976), "night": false, "party": [0], "role_sprites": {0: 232}},
+	{"name": "bottomless_abyss_entry", "scene": 290, "position": Vector2i(240, 1672), "night": false, "party": [1, 0, 4]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
@@ -143,7 +155,14 @@ func _run() -> void:
 	if not database.load_generated():
 		_fail("本地生成内容不可用：%s" % database.error_message)
 		return
+	var requested_case := ""
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with("--pal-visual-case="):
+			requested_case = argument.trim_prefix("--pal-visual-case=")
+	var tested_count := 0
 	for test_case in TEST_CASES:
+		if not requested_case.is_empty() and test_case["name"] != requested_case:
+			continue
 		# Metal 后端在同一 SubViewport 连续换图时偶尔会读回上一地图的完整旧帧；每个用例
 		# 使用独立视口和正式 PalTileMapWorld，避免用延长固定等待掩盖 GPU 换图时序。
 		var viewport := SubViewport.new()
@@ -160,7 +179,11 @@ func _run() -> void:
 		if not failure.is_empty():
 			_fail(failure)
 			return
-	print("PASS: %d 个 TileMapLayer 固定视口与 CPU 基准均为 320×200 零像素差异" % TEST_CASES.size())
+		tested_count += 1
+	if tested_count == 0:
+		_fail("没有名为 %s 的 TileMap 视觉用例" % requested_case)
+		return
+	print("PASS: %d 个 TileMapLayer 固定视口与 CPU 基准均为 320×200 零像素差异" % tested_count)
 	quit(0)
 
 

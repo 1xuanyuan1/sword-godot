@@ -1848,16 +1848,23 @@ func _test_script_vm_quoted_narration_toast() -> void:
 
 func _test_explorer_scene_enter_persistence() -> void:
 	var database := PalContentDatabase.new()
-	for operation in [0, 1, 0]:
+	for operation in [0, 1, 0, 0x006e, 0x0003, 0, 0]:
 		var entry := PalScriptEntry.new()
 		entry.operation = operation
 		entry.operands = PackedInt32Array([0, 0, 0])
 		database.scripts.append(entry)
+	database.scripts[3].operands = PackedInt32Array([8, 8, 0])
+	database.scripts[4].operands = PackedInt32Array([3, 3, 0])
+	var event := PalEventObject.new()
+	event.object_id = 1
+	event.state = 1
+	database.event_objects.append(event)
 	var scene := PalSceneDefinition.new()
 	scene.script_on_enter = 1
 	database.scenes.append(scene)
+	var session := GameSession.new()
 	var vm := ScriptVM.new()
-	vm.configure(database, GameSession.new())
+	vm.configure(database, session)
 	var explorer_script: Script = load("res://src/world/map_explorer.gd")
 	var explorer: Control = explorer_script.new()
 	explorer._database = database
@@ -1869,6 +1876,15 @@ func _test_explorer_scene_enter_persistence() -> void:
 	_expect(scene.script_on_enter == 2 and explorer._active_scene_enter_index == -1, "scene enter script persists its returned entry")
 	explorer._run_scene_enter_script(0)
 	_expect(executed_entries == [1, 2], "re-entering a scene resumes from the persisted entry instead of replaying the intro")
+	# SDLPal 以 0xFFFF 让场景入口沿用最近的 EventObject；入口中的 0002/0003
+	# 有限循环依赖该对象保存计数。大理庆典入口正是这种真实脚本。
+	vm.run_trigger(6, event.object_id)
+	scene.script_on_enter = 3
+	var initial_position := session.party_world_position()
+	var unsupported: Array[int] = []
+	vm.unsupported_instruction.connect(func(_index: int, operation: int) -> void: unsupported.append(operation))
+	explorer._run_scene_enter_script(0)
+	_expect(session.party_world_position() - initial_position == Vector2i(24, 24) and event.script_idle_frame == 0 and unsupported.is_empty(), "scene enter scripts inherit the last EventObject so bounded jumps finish")
 	explorer.free()
 	vm.free()
 

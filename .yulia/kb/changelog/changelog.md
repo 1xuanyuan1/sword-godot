@@ -132,6 +132,28 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-076] [feat] 完成五灵珠祭雨与大理地魔兽主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从第十六章场景 173“李逍遥醒来”的稳定状态继续，经战时大理城郊、试炼窟外和女娲神殿防线完成灵儿拜母、圣灵珠 260 开启祭坛、五灵珠 `263–267` 放置、祭雨、雨后大理、庆典与地魔兽。固定两场黑苗遭遇敌队 319／102、战场 7，地魔兽敌队 287／战场 36／对象 466，以及祭雨场景链 `257 → 260 → 273 → 274 → 275 → 257 → 261`；庆典入口真实归还圣灵珠与五灵珠。地魔兽胜利后运行场景 290“无底深渊”入口，稳定为灵儿／逍遥／阿奴 `[1,0,4]`、坐标 `(240,1672)`、音乐 26、战场 58 和后续入口 `3798`。同时修复场景进入脚本没有沿用最近 EventObject、导致庆典有限循环永久回跳的问题。
+- **验证情况**: 373 项合成检查和新增五灵珠祭坛真实资源主线回归通过。新增战时大理、神殿内外、灵儿拜母、五珠祭坛、庆典、地魔兽、雨后大理和无底深渊 12 个正式视口；共登记 138 个 TileMapLayer 像素用例，新增用例均以 Godot 4.7 Metal 真窗口逐个与 CPU 基准达到 320×200 零差异，截图已实际检查人物、五个石孔、祭坛闪光、雨景、场景边界与遮挡。
+- **涉及文件**:
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_dali_altar_battle_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/bugfix/map-explorer.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场

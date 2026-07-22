@@ -627,8 +627,10 @@ func _run_scene_enter_script(scene_index: int) -> void:
 	if entry <= 0 or entry >= _database.scripts.size():
 		return
 	# SDLPal 会把触发脚本返回的新入口写回 rgScene，避免再次进入时重跑一次性剧情。
+	# 场景入口以 0xFFFF 沿用最近触发转场的 EventObject；0002/0003 的有限循环
+	# 计数保存在该对象上。传 0 会让大理庆典等入口失去计数上下文并永久循环。
 	_active_scene_enter_index = scene_index
-	_script_vm.run_trigger(entry)
+	_script_vm.run_trigger(entry, 0xffff)
 
 
 func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
