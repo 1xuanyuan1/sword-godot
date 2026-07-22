@@ -56,6 +56,24 @@ keywords:
   - `docs/SCENE_RENDERING.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-072] [feat] 完成神木林树洞并抵达大理
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: 无
+- **功能描述**: 从阿奴会合后的场景 187 继续，经隐密树洞入口／深处、另一端出口、神木林底层和灵山抵达大理城郊及汉人聚居地。固定场景 `187 → 183 → 186 → 185 → 178 → 201 → 205`、消息 `9922–10023`、队伍从阿奴／李逍遥 `[4,0]` 调整为李逍遥／阿奴 `[0,4]`、最终坐标 `(352,1744)` 和场景入口 `33031`。真实脚本确认抵达大理时金凤凰蛋壳 275 尚未取得，其取得指令位于后续脚本 `34687`，不按攻略概述提前伪造道具。
+- **验证情况**: 扩展圣姑神木林真实资源回归通过，树洞两段连续消息、全部转场、队伍顺序、关键灵珠和蛋壳未提前入包均有断言。新增树洞入口／深处／出口、灵山、大理城郊和汉人聚居地 6 个正式视口；Godot 4.7 OpenGL/Metal 真实窗口下 94/94 个 TileMapLayer 视口与 CPU 基准均保持 320×200 零像素差，新增截图已逐张检查地图边界、箱子、树干桥、木桥、围墙遮挡和 Y 排序。
+- **涉及文件**:
+  - `tests/run_local_shenggu_sacred_tree_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场

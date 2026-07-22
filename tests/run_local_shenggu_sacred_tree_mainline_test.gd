@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用本机真实资源验证圣姑住处、神木林、金翅凤凰、风灵珠与阿奴会合主线。
+## 使用本机真实资源验证圣姑住处、神木林、金翅凤凰、树洞与抵达大理主线。
 ## 测试只比较消息编号、场景状态和道具变化，不输出或提交原版对白与画面资源。
 extends SceneTree
 
@@ -22,7 +22,7 @@ func _init() -> void:
 		printerr("FAIL: %s" % failure)
 		quit(1)
 		return
-	print("PASS: 圣姑住处、神木林、金翅凤凰、风灵珠与阿奴会合主线完成")
+	print("PASS: 圣姑住处、神木林、金翅凤凰、树洞与抵达大理主线完成")
 	quit(0)
 
 
@@ -115,6 +115,66 @@ func _test_shenggu_sacred_tree_mainline(database: PalContentDatabase) -> String:
 		if session.item_count(item_id) != 1:
 			vm.free()
 			return "阿奴会合后关键物品 %d 数量错误：%d" % [item_id, session.item_count(item_id)]
+
+	# 与阿奴进入隐密树洞；入口长剧情后，深处事件把队伍顺序恢复为李逍遥／阿奴。
+	failure = _run_transition(vm, database.event_objects[3320], 183, Vector2i(320, 624))
+	if not failure.is_empty():
+		vm.free()
+		return "废神木林没有进入隐密树洞：%s" % failure
+	_run_scene_enter(vm, database, 183)
+	if not _unsupported.is_empty() or _messages != _message_range(9922, 9940) or session.party_roles != PackedInt32Array([4, 0]) or session.party_world_position() != Vector2i(336, 616) or database.scenes[183].script_on_enter != 31041:
+		vm.free()
+		return "树洞入口剧情状态错误：messages=%s party=%s pos=%s enter=%d unsupported=%s" % [_messages, session.party_roles, session.party_world_position(), database.scenes[183].script_on_enter, _unsupported]
+	failure = _run_event(vm, database.event_objects[3166])
+	if not failure.is_empty() or _messages != _message_range(9941, 10023) or session.party_roles != PackedInt32Array([0, 4]) or session.party_world_position() != Vector2i(752, 1032) or database.event_objects[3166].trigger_script != 31045:
+		vm.free()
+		return "树洞深处剧情或队伍换序错误：failure=%s messages=%s party=%s pos=%s event=%d" % [failure, _messages, session.party_roles, session.party_world_position(), database.event_objects[3166].trigger_script]
+
+	# 从树洞另一端返回神木林底层，经灵山抵达大理城郊和汉人聚居地。
+	failure = _run_transition(vm, database.event_objects[3163], 186, Vector2i(384, 1248))
+	if not failure.is_empty():
+		vm.free()
+		return "树洞深处没有抵达出口区域：%s" % failure
+	_run_scene_enter(vm, database, 186)
+	if not _unsupported.is_empty() or not _messages.is_empty() or database.scenes[186].script_on_enter != 32091:
+		vm.free()
+		return "树洞出口区域状态错误：messages=%s enter=%d unsupported=%s" % [_messages, database.scenes[186].script_on_enter, _unsupported]
+	failure = _run_transition(vm, database.event_objects[3315], 185, Vector2i(224, 1408))
+	if not failure.is_empty():
+		vm.free()
+		return "树洞出口没有返回神木林底层：%s" % failure
+	_run_scene_enter(vm, database, 185)
+	if not _unsupported.is_empty() or not _messages.is_empty():
+		vm.free()
+		return "返回神木林底层时出现额外剧情：messages=%s unsupported=%s" % [_messages, _unsupported]
+	failure = _run_transition(vm, database.event_objects[3296], 178, Vector2i(1664, 1440))
+	if not failure.is_empty():
+		vm.free()
+		return "神木林底层没有进入灵山：%s" % failure
+	_run_scene_enter(vm, database, 178)
+	if not _unsupported.is_empty() or not _messages.is_empty():
+		vm.free()
+		return "灵山入口状态错误：messages=%s unsupported=%s" % [_messages, _unsupported]
+	failure = _run_transition(vm, database.event_objects[3107], 201, Vector2i(208, 504))
+	if not failure.is_empty():
+		vm.free()
+		return "灵山没有抵达大理城郊：%s" % failure
+	_run_scene_enter(vm, database, 201)
+	if not _unsupported.is_empty() or not _messages.is_empty() or database.scenes[201].script_on_enter != 33029:
+		vm.free()
+		return "大理城郊入口状态错误：messages=%s enter=%d unsupported=%s" % [_messages, database.scenes[201].script_on_enter, _unsupported]
+	failure = _run_transition(vm, database.event_objects[3594], 205, Vector2i(352, 1744))
+	if not failure.is_empty():
+		vm.free()
+		return "大理城郊没有进入汉人聚居地：%s" % failure
+	_run_scene_enter(vm, database, 205)
+	if not _unsupported.is_empty() or not _messages.is_empty() or PalSceneCatalog.name_for_scene_index(session.scene_index) != "大理·废汉人聚居地" or session.party_roles != PackedInt32Array([0, 4]) or session.party_world_position() != Vector2i(352, 1744) or database.scenes[205].script_on_enter != 33031 or session.item_count(275) != 0:
+		vm.free()
+		return "抵达大理后的稳定状态错误：messages=%s scene=%s party=%s pos=%s enter=%d egg_shell=%d unsupported=%s" % [_messages, PalSceneCatalog.name_for_scene_index(session.scene_index), session.party_roles, session.party_world_position(), database.scenes[205].script_on_enter, session.item_count(275), _unsupported]
+	for item_id in [262, 263, 264, 267, 274, 186]:
+		if session.item_count(item_id) != 1:
+			vm.free()
+			return "抵达大理后关键物品 %d 数量错误：%d" % [item_id, session.item_count(item_id)]
 	vm.free()
 	return ""
 

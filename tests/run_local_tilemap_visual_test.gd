@@ -92,6 +92,12 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "sacred_tree_maze", "scene": 191, "position": Vector2i(1488, 1512), "night": false, "party": [0]},
 	{"name": "sacred_tree_phoenix_nest", "scene": 184, "position": Vector2i(912, 1352), "night": false, "party": [0]},
 	{"name": "sacred_tree_anu_join", "scene": 187, "position": Vector2i(544, 1440), "night": false, "party": [4, 0]},
+	{"name": "sacred_tree_cave_entry", "scene": 183, "position": Vector2i(336, 616), "night": false, "party": [4, 0]},
+	{"name": "sacred_tree_cave_deep", "scene": 183, "position": Vector2i(752, 1032), "night": false, "party": [0, 4]},
+	{"name": "sacred_tree_cave_exit", "scene": 186, "position": Vector2i(384, 1248), "night": false, "party": [0, 4]},
+	{"name": "lingshan_to_dali", "scene": 178, "position": Vector2i(1664, 1440), "night": false, "party": [0, 4]},
+	{"name": "dali_outskirts_arrival", "scene": 201, "position": Vector2i(208, 504), "night": false, "party": [0, 4]},
+	{"name": "dali_han_settlement", "scene": 205, "position": Vector2i(352, 1744), "night": false, "party": [0, 4]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
