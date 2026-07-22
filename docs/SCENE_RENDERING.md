@@ -86,4 +86,4 @@ CPU 整屏合成不新增星芒能力。像素基准测试通过 `PalTileMapWorl
 
 `ScriptVM 007F` 使用独立的剧情镜头偏移。它只改变 `PalCamera` 和 CPU 对照渲染使用的视口左上角，不修改 `GameSession.viewport_position`、队伍脚底、轨迹或事件坐标；逐帧平移、固定格坐标和复位因此不会误触碰撞。场景切换会清空临时偏移。
 
-本地 `run_local_tilemap_visual_test.gd` 会让 TileMapLayer 和 CPU 使用同一会话状态。正式项目的默认清屏色固定为黑色，与 CPU 索引画布初始化及 SDLPal 地图边界语义一致；否则地图图块之间极少量未覆盖像素会露出 Godot 默认灰底。离屏 SubViewport 推进场景帧后还会等待 `RenderingServer.frame_post_draw`，避免 Metal 尚未提交纹理时读到全透明帧。当前从余杭到蜀山、锁妖塔各层、塔底、崩塌和月如回忆共 83 个固定视口达到 320×200 零差异像素。
+本地 `run_local_tilemap_visual_test.gd` 会让 TileMapLayer 和 CPU 使用同一会话状态。正式项目的默认清屏色固定为黑色，与 CPU 索引画布初始化及 SDLPal 地图边界语义一致；否则地图图块之间极少量未覆盖像素会露出 Godot 默认灰底。离屏 SubViewport 推进场景帧后还会等待 `RenderingServer.frame_post_draw`，避免 Metal 尚未提交纹理时读到全透明帧。当前从余杭到蜀山、锁妖塔、圣姑住处和神木林前段共 88 个固定视口达到 320×200 零差异像素。

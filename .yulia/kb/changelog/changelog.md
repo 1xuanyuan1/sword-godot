@@ -38,6 +38,24 @@ keywords:
   - `docs/PROJECT_STRUCTURE.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-071] [feat] 推进神木林主线到阿奴会合
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: 无
+- **功能描述**: 从场景 173“李逍遥醒来”的稳定入口继续，经圣姑室外、神木林底层、主迷宫和凤凰巢完成金翅凤凰剧情战；固定场景 `173 → 175 → 185 → 191 → 184 → 187`、敌队 203／战场 14／对象 464、风灵珠 263 入包、阿奴救醒李逍遥及最终阿奴／李逍遥 `[4,0]` 队伍。真实 DATA 升级表同步确认李逍遥 7 级先学天师符法 349、13 级再学万剑诀 346；御剑术、飞龙探云手等剧情仙术不混入升级规则。
+- **验证情况**: 368 项合成检查、上一阶段蜀山锁妖塔回归和新增圣姑神木林真实资源回归均通过。新增圣姑室外、神木林底层、主迷宫、凤凰巢与阿奴会合 5 个正式视口；Godot 4.7 OpenGL/Metal 真实窗口下 88/88 个 TileMapLayer 视口与 CPU 基准均保持 320×200 零像素差，新增截图已逐张检查人物位置、树干遮挡和 Y 排序。
+- **涉及文件**:
+  - `tests/run_local_shenggu_sacred_tree_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场

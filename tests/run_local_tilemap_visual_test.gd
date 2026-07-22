@@ -87,6 +87,11 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "tower_yueru_last_memory", "scene": 198, "position": Vector2i(1680, 424), "night": false, "party": [0]},
 	{"name": "tower_li_wakes", "scene": 173, "position": Vector2i(528, 488), "night": false, "party": [0]},
 	{"name": "tower_sword_saint_leaves", "scene": 176, "position": Vector2i(1408, 704), "night": false, "party": [0]},
+	{"name": "shenggu_exterior", "scene": 175, "position": Vector2i(1424, 712), "night": false, "party": [0]},
+	{"name": "sacred_tree_bottom", "scene": 185, "position": Vector2i(1808, 1160), "night": false, "party": [0]},
+	{"name": "sacred_tree_maze", "scene": 191, "position": Vector2i(1488, 1512), "night": false, "party": [0]},
+	{"name": "sacred_tree_phoenix_nest", "scene": 184, "position": Vector2i(912, 1352), "night": false, "party": [0]},
+	{"name": "sacred_tree_anu_join", "scene": 187, "position": Vector2i(544, 1440), "night": false, "party": [4, 0]},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
