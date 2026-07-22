@@ -46,6 +46,7 @@ func _init() -> void:
 	_test_throw_item_magic_damage()
 	_test_flee_success_and_boss_failure()
 	_test_repeat_previous_magic_commands()
+	_test_repeat_retargets_defeated_enemy_at_execution()
 	_test_repeat_exhausted_items()
 	_test_defeat()
 	if _failures.is_empty():
@@ -852,6 +853,53 @@ func _test_repeat_previous_magic_commands() -> void:
 	session.role_mp[1] = 50
 	controller.repeat_previous_commands()
 	_expect(controller.players[0].action_type == PalBattleController.ActionType.MAGIC and controller.players[0].action_id == 100 and controller.players[1].action_type == PalBattleController.ActionType.MAGIC and controller.players[1].action_id == 101, "repeat fallback does not overwrite the original previous-turn magic cache")
+
+
+func _test_repeat_retargets_defeated_enemy_at_execution() -> void:
+	var database := _synthetic_database([
+		_enemy_definition(1, 1, 1, 0, 0, false),
+		_enemy_definition(1, 1, 1, 0, 0, false),
+		_enemy_definition(999, 1, 1, 0, 0, false),
+	])
+	for role_index in [0, 1]:
+		database.player_roles.attack_strengths[role_index] = 200
+		database.player_roles.dexterities[role_index] = 999
+	var controller := PalBattleController.new()
+	controller.start_battle(database, _session_for(database, PackedInt32Array([0, 1])), 0, 0, 69)
+	for player in controller.players:
+		player.previous_action_type = PalBattleController.ActionType.ATTACK
+		player.previous_target_index = 0
+	controller.enemies[0].hp = 0
+	_expect(controller.repeat_previous_commands() and controller.players.all(func(player: PalBattleController.PlayerState) -> bool: return player.target_index == 1), "R initially replaces the defeated previous target with the next living enemy")
+	var first_result := controller.execute_next_action()
+	var second_result := controller.execute_next_action()
+	_expect(first_result != null and not first_result.hits.is_empty() and first_result.target_index == 1 and first_result.hits[0].target_index == 1, "the first repeated attack defeats the replacement target")
+	_expect(second_result != null and not second_result.hits.is_empty() and second_result.target_index == 2 and second_result.hits[0].target_index == 2, "a later repeated attack retargets again when an earlier queued player defeated its replacement")
+	_expect(second_result != null and controller.players[second_result.actor_index].target_index == 2, "the repeated command state records the enemy actually used by its action and presentation")
+
+	var magic_database := _synthetic_database([
+		_enemy_definition(1, 1, 1, 0, 0, false),
+		_enemy_definition(1, 1, 1, 0, 0, false),
+		_enemy_definition(999, 1, 1, 0, 0, false),
+	])
+	for role_index in [0, 1]:
+		magic_database.player_roles.dexterities[role_index] = 999
+	_add_magic(magic_database, 100, PalMagicDefinition.TYPE_NORMAL, 1, 50, PalMagicObjectDefinition.FLAG_USABLE_IN_BATTLE | PalMagicObjectDefinition.FLAG_USABLE_TO_ENEMY, 0)
+	var magic_session := _session_for(magic_database, PackedInt32Array([0, 1]))
+	magic_session.learned_magics_by_role[0] = PackedInt32Array([100])
+	magic_session.learned_magics_by_role[1] = PackedInt32Array([100])
+	var magic_controller := PalBattleController.new()
+	magic_controller.start_battle(magic_database, magic_session, 0, 0, 70)
+	for player in magic_controller.players:
+		player.previous_action_type = PalBattleController.ActionType.MAGIC
+		player.previous_action_id = 100
+		player.previous_target_index = 0
+	magic_controller.enemies[0].hp = 0
+	_expect(magic_controller.repeat_previous_commands() and magic_controller.players.all(func(player: PalBattleController.PlayerState) -> bool: return player.target_index == 1), "R initially retargets repeated single-enemy magic away from its defeated previous target")
+	var first_magic_result := magic_controller.execute_next_action()
+	var second_magic_result := magic_controller.execute_next_action()
+	_expect(first_magic_result != null and not first_magic_result.hits.is_empty() and first_magic_result.target_index == 1 and first_magic_result.hits[0].target_index == 1, "the first repeated single-enemy magic defeats its replacement target")
+	_expect(second_magic_result != null and not second_magic_result.hits.is_empty() and second_magic_result.target_index == 2 and second_magic_result.hits[0].target_index == 2, "later repeated magic moves both its effect metadata and damage to the next living enemy")
 
 
 func _test_repeat_exhausted_items() -> void:

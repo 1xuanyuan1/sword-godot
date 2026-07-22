@@ -1026,6 +1026,10 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 		result.skipped = true
 		result.summary = "%s本回合无法行动" % _role_name(player.role_index)
 		return result
+	# 指令选择与真正执行之间，更高身法的队员可能已经击倒当时的目标。
+	# SDLPal 会在 PAL_BattlePlayerPerformAction() 开始时再调用
+	# PAL_BattlePlayerValidateAction()；这里同样在动作、脚本和画面结果生成前统一换目标。
+	_retarget_player_enemy_action(player)
 	if player.action_type == ActionType.ATTACK_MATE:
 		_execute_player_attack_mate(entry.combatant_index, result)
 		return result
@@ -1053,13 +1057,15 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 		result.summary = "未支持的玩家指令"
 		return result
 	if session.can_attack_all(player.role_index, database.player_roles):
+		result.target_index = -1
 		_execute_player_attack_all(player, result)
 	else:
-		var target_index := _find_alive_enemy_from(player.target_index)
+		var target_index := player.target_index
 		if target_index < 0:
 			result.skipped = true
 			result.summary = "没有可攻击目标"
 			return result
+		result.target_index = target_index
 		var attack_times := 2 if session.status_rounds_for(player.role_index, GameSession.STATUS_DUAL_ATTACK) > 0 else 1
 		for attack_index in range(attack_times):
 			if not enemies[target_index].is_alive():
@@ -1074,6 +1080,21 @@ func _execute_player_action(entry: QueueEntry) -> ActionResult:
 			critical = critical or hit.critical
 		result.summary = "%s攻击敌人，造成%d点伤害%s" % [_role_name(player.role_index), total_damage, "（暴击）" if critical else ""]
 	return result
+
+
+func _retarget_player_enemy_action(player: PlayerState) -> void:
+	var targets_single_enemy := false
+	if player.action_type == ActionType.ATTACK:
+		targets_single_enemy = not session.can_attack_all(player.role_index, database.player_roles)
+	elif player.action_type in [ActionType.MAGIC, ActionType.COOPERATIVE_MAGIC]:
+		var object := database.magic_object_definition(player.action_id)
+		var definition := database.magic_definition_for_object(player.action_id)
+		targets_single_enemy = object != null and definition != null and object.is_used_on_enemy() and not object.applies_to_all() and definition.magic_type not in [PalMagicDefinition.TYPE_ATTACK_ALL, PalMagicDefinition.TYPE_ATTACK_WHOLE, PalMagicDefinition.TYPE_ATTACK_FIELD, PalMagicDefinition.TYPE_SUMMON]
+	elif player.action_type == ActionType.THROW_ITEM:
+		var item := database.item_definition(player.action_id)
+		targets_single_enemy = item != null and not item.applies_to_all()
+	if targets_single_enemy:
+		player.target_index = _find_alive_enemy_from(player.target_index)
 
 
 func _execute_player_magic(player: PlayerState, result: ActionResult) -> void:
