@@ -142,6 +142,17 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "dali_rain_aftermath", "scene": 274, "position": Vector2i(672, 1296), "night": false, "party": [0], "role_sprites": {0: 232}},
 	{"name": "dali_rain_temple_exterior", "scene": 275, "position": Vector2i(832, 976), "night": false, "party": [0], "role_sprites": {0: 232}},
 	{"name": "bottomless_abyss_entry", "scene": 290, "position": Vector2i(240, 1672), "night": false, "party": [1, 0, 4]},
+	{"name": "bottomless_abyss_second", "scene": 291, "position": Vector2i(208, 1800), "night": false, "party": [1, 0, 4]},
+	{"name": "bottomless_abyss_depth", "scene": 292, "position": Vector2i(240, 1736), "night": false, "party": [1, 0, 4]},
+	{"name": "nanzhao_palace_secret_passage", "scene": 278, "position": Vector2i(1408, 704), "night": false, "party": [1, 0, 4]},
+	{"name": "nanzhao_palace_dungeon_deep", "scene": 287, "position": Vector2i(336, 392), "night": false, "party": [1, 0, 4]},
+	{"name": "nanzhao_palace_dungeon_mid", "scene": 286, "position": Vector2i(912, 952), "night": false, "party": [1, 0, 4]},
+	{"name": "nanzhao_palace_dungeon_gate", "scene": 284, "position": Vector2i(1008, 712), "night": false, "party": [1, 0, 4]},
+	{"name": "nanzhao_palace_exterior", "scene": 276, "position": Vector2i(848, 1528), "night": false, "party": [1, 0, 4]},
+	{"name": "nanzhao_palace_hall", "scene": 280, "position": Vector2i(1296, 1272), "night": false, "party": [1, 0, 4]},
+	{"name": "nanzhao_fake_shaman_confrontation", "scene": 277, "position": Vector2i(1408, 1136), "night": false, "party": [0, 1, 4], "role_sprites": {0: 232}, "event_states": {4997: 1, 4999: 1, 5000: 1, 5001: 1, 5002: 1, 5003: 1, 5004: 1}},
+	{"name": "nanzhao_fake_shaman_aftermath", "scene": 277, "position": Vector2i(1424, 1144), "night": false, "party": [0], "role_sprites": {0: 2}, "event_states": {4997: 0, 4999: 0, 5000: 0, 5001: 0, 5002: 0, 5003: 0, 5004: 0, 5005: 2}},
+	{"name": "nanzhao_final_confrontation", "scene": 280, "position": Vector2i(1104, 1368), "night": false, "party": [0, 1, 4], "role_sprites": {0: 2}, "event_states": {5054: 1, 5056: 0, 5057: 1, 5058: 1}},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
