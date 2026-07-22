@@ -93,6 +93,25 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-074] [feat] 完成回魂仙梦南诏与水灵珠主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从场景 226“路途·回魂仙梦”继续，完成两场黑苗守卫战、十年前南诏王宫与秘道、取得天蛇杖、救出巫后、两次水魔兽战和十年前余杭。固定敌队 102／113／315、战场 9／64／4、天蛇杖 195、包袱 292、木剑 166、水灵珠 265，并在返回场景 202“女娲神殿”后由真实脚本 `34687` 正式取得金凤凰蛋壳 275；最终队伍为李逍遥／阿奴 `[0,4]`、音乐 55、场景入口 `34711`。
+- **验证情况**: 新增独立真实资源主线测试，连续断言四场战斗的敌队／战场／对象、强制出图续段、分段交互、包袱使用、3 号木剑商店、关键物品、队伍和场景入口。新增南诏城、王宫外、地牢、秘道、天蛇杖房、水底秘道、十年前余杭山神庙／集市／木匠铺 9 个正式视口；Godot 4.7 Metal 真实窗口下 111/111 个 TileMapLayer 视口与 CPU 基准保持 320×200 零像素差，新增截图已逐张检查人物、围栏、石墙、水面、建筑和遮挡。
+- **涉及文件**:
+  - `tests/run_local_nanzhao_flashback_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场

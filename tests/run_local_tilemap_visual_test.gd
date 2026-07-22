@@ -106,6 +106,15 @@ const TEST_CASES: Array[Dictionary] = [
 	{"name": "dali_nuwa_temple_plot", "scene": 202, "position": Vector2i(1184, 752), "night": false, "party": [0], "role_sprites": {0: 232}, "event_states": {3635: 1, 3637: 1}},
 	{"name": "dali_dream_bed", "scene": 200, "position": Vector2i(896, 832), "night": false, "party": [0], "event_states": {3593: 1}},
 	{"name": "flashback_road_entry", "scene": 226, "position": Vector2i(896, 832), "night": false, "party": [0]},
+	{"name": "flashback_nanzhao_city", "scene": 234, "position": Vector2i(1680, 1720), "night": false, "party": [0], "role_sprites": {0: 563}},
+	{"name": "flashback_nanzhao_palace_exterior", "scene": 228, "position": Vector2i(1216, 1504), "night": false, "party": [0], "role_sprites": {0: 563}},
+	{"name": "flashback_nanzhao_dungeon", "scene": 227, "position": Vector2i(560, 824), "night": false, "party": [0], "role_sprites": {0: 563}},
+	{"name": "flashback_nanzhao_secret_passage", "scene": 229, "position": Vector2i(336, 696), "night": false, "party": [0], "role_sprites": {0: 563}},
+	{"name": "flashback_nanzhao_staff_chamber", "scene": 245, "position": Vector2i(624, 856), "night": false, "party": [0], "role_sprites": {0: 563}},
+	{"name": "flashback_nanzhao_underwater", "scene": 232, "position": Vector2i(336, 376), "night": false, "party": [3, 0], "role_sprites": {0: 563}},
+	{"name": "flashback_yuhang_shrine", "scene": 248, "position": Vector2i(464, 504), "night": false, "party": [0], "role_sprites": {0: 541}},
+	{"name": "flashback_yuhang_market", "scene": 253, "position": Vector2i(240, 1640), "night": false, "party": [0], "role_sprites": {0: 541}},
+	{"name": "flashback_yuhang_carpenter", "scene": 256, "position": Vector2i(672, 880), "night": false, "party": [0], "role_sprites": {0: 541}},
 	{"name": "compact_two_person_formation", "scene": 41, "position": Vector2i(1808, 1768), "night": false, "party": [0, 1], "direction": GameSession.DIR_SOUTH, "steps": 3, "expected_follower_delta": Vector2i(32, -16)},
 ]
 
