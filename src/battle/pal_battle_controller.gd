@@ -56,6 +56,12 @@ enum ScriptEventType {
 	PRE_MAGIC,
 }
 
+enum StealOutcome {
+	SUCCESS,
+	FAILED,
+	NO_ITEMS,
+}
+
 ## 单个敌人在本场战斗中的可变状态。
 class EnemyState extends RefCounted:
 	var slot_index: int = 0
@@ -84,6 +90,7 @@ class ScriptEvent extends RefCounted:
 	var value: int = 0
 	var secondary: int = 0
 	var tertiary: int = 0
+	var outcome: int = StealOutcome.SUCCESS
 
 
 ## 一名队员在本场战斗中的指令和防御状态。
@@ -1634,6 +1641,7 @@ func _steal_from_enemy(enemy_index: int, steal_rate: int, result: ActionResult) 
 	var enemy := enemies[enemy_index]
 	var stolen_object_id := 0
 	var amount := 0
+	var outcome := StealOutcome.NO_ITEMS if enemy.steal_item_count <= 0 else StealOutcome.FAILED
 	if enemy.steal_item_count > 0 and (steal_rate == 0 or _random.next_int(0, 10) <= steal_rate):
 		stolen_object_id = enemy.steal_item
 		if enemy.steal_item == 0:
@@ -1645,9 +1653,13 @@ func _steal_from_enemy(enemy_index: int, steal_rate: int, result: ActionResult) 
 			enemy.steal_item_count -= 1
 			session.set_item_count(enemy.steal_item, mini(99, before + 1))
 			amount = session.item_count(enemy.steal_item) - before
+		if amount > 0:
+			outcome = StealOutcome.SUCCESS
 	# 006A 的专用掠过动作无论是否偷到东西都会播放；第三个字段保留目标敌人。
-	result.script_events.append(_script_event(ScriptEventType.STEAL, stolen_object_id, amount, enemy_index))
-	return amount > 0
+	var event := _script_event(ScriptEventType.STEAL, stolen_object_id, amount, enemy_index)
+	event.outcome = outcome
+	result.script_events.append(event)
+	return outcome == StealOutcome.SUCCESS
 
 
 func _battle_player_target(target_index: int) -> int:

@@ -45,6 +45,23 @@ keywords:
 
 ---
 
+### [BF-046] 飞龙探云手未区分随机失败与敌人已空
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M4 经典战斗偷窃反馈
+- **问题描述**: SDLPal 原版的飞龙探云手只在偷到物品或金钱时显示单行战斗弹窗；随机失败和敌人的可偷数量已归零都静默结束。Godot 版忠实保留了这个行为，但玩家无法判断本次是随机失败、还是目标已经没有任何可偷物品。
+- **涉及文件**:
+  - `src/battle/pal_battle_controller.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_script_opcode_behavior_tests.gd`
+  - `tests/run_local_battle_steal_feedback_test.gd`
+  - `docs/BATTLE.md`
+  - `.yulia/kb/bugfix/battle.md`
+- **修复内容**: 为 `STEAL` 脚本事件增加成功、随机失败、目标已空三种明确结果；随机失败显示“偷取失败”，可偷数量归零显示“敌人已无可偷物品”。两者与偷到物品时一样统一调用 `PalBattleUI.show_message()`，使用同样的顶部单行边框、字体和居中布局。合成回归固定三种结果与偷窃池消耗规则；专用 OpenGL 回归分别读回两种文案并生成 320×200 截图。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-20
 
 ### [BF-033] 战后奖励金钱数值压住前方文字

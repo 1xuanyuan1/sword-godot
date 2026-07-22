@@ -30,6 +30,8 @@ const PLAYER_POSITIONS: Array = [
 const COOPERATIVE_POSITIONS: Array[Vector2i] = [Vector2i(208, 157), Vector2i(234, 170), Vector2i(260, 183)]
 const BATTLE_FRAME_SECONDS := 0.04
 const DEFAULT_LAB_BATTLE_MUSIC := 37
+const STEAL_FAILED_MESSAGE := "偷取失败"
+const STEAL_NO_ITEMS_MESSAGE := "敌人已无可偷物品"
 
 ## 为真时作为资源实验室独立样板运行；剧情覆盖层应在加入场景树前设为 `false`。
 @export var lab_mode: bool = true
@@ -1148,13 +1150,20 @@ func _play_steal_event(event: PalBattleController.ScriptEvent, actor_index: int)
 
 
 func _show_steal_message(event: PalBattleController.ScriptEvent) -> void:
-	if event.secondary <= 0:
-		return
-	var message := (
-		"%s %d %s" % [_database.get_word(34), event.secondary, _database.get_word(10)]
-		if event.value == 0
-		else "%s %s" % [_database.get_word(34), _database.get_word(event.value)]
-	)
+	var message := ""
+	match event.outcome:
+		PalBattleController.StealOutcome.FAILED:
+			message = STEAL_FAILED_MESSAGE
+		PalBattleController.StealOutcome.NO_ITEMS:
+			message = STEAL_NO_ITEMS_MESSAGE
+		_:
+			message = (
+				"%s %d %s" % [_database.get_word(34), event.secondary, _database.get_word(10)]
+				if event.value == 0
+				else "%s %s" % [_database.get_word(34), _database.get_word(event.value)]
+			)
+			if event.secondary <= 0:
+				message = STEAL_FAILED_MESSAGE
 	_battle_ui.show_message(message, 800)
 	await _wait_frames(20)
 
