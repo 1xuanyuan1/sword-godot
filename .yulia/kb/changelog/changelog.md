@@ -112,6 +112,26 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-075] [feat] 完成灵儿生产与试炼窟傀儡虫主线
+
+- **关联需求**: M5 完整流程
+- **关联 TODO**: TD-008（阶段性）
+- **功能描述**: 从场景 202“女娲神殿”继续，经大理、灵山和神木林返回圣姑住处，交付金凤凰蛋壳 275 与火眼麒麟角 276，完成赵灵儿生产及 36 只傀儡虫 152 任务。固定盖罗娇敌队 223／战场 6／对象 `[501,490]`、六类傀儡虫掉落敌人、试炼窟场景 213–225、女娲遗迹 212、芦苇漂 294、土灵珠 267 脱离和傀儡虫不足／足量分支；交付后组成灵儿／逍遥／阿奴 `[1,0,4]` 三人队，稳定停在场景 173、坐标 `(720,616)`、进入脚本 `32941`。同时补充火麒麟后女娲神殿剧情必须把大理出口从临时入口 `34728` 恢复为 `33047` 的前章连续状态断言。
+- **验证情况**: 372 项合成检查、火麒麟回归、回魂仙梦回归和新增圣姑试炼窟真实资源回归均通过。新增生产房、试炼窟外、洞窟各层和女娲遗迹 15 个正式视口；Godot 4.7 Metal 真实窗口下 126/126 个 TileMapLayer 视口与 CPU 基准保持 320×200 零像素差，新增截图已逐张检查人物、洞口、岩壁、宝箱、层间落差和女娲遗迹。
+- **涉及文件**:
+  - `tests/run_local_shenggu_trial_cave_mainline_test.gd`
+  - `tests/run_local_dali_fire_kirin_mainline_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场

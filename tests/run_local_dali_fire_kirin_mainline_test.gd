@@ -123,9 +123,9 @@ func _test_dali_fire_kirin_mainline(database: PalContentDatabase) -> String:
 		vm.free()
 		return "女娲神殿入口状态错误：music=%d unsupported=%s" % [session.music_number, _unsupported]
 	failure = _run_event(vm, database.event_objects[3615])
-	if not failure.is_empty() or _messages != _message_range(11370, 11418) or _requested_scenes != [200] or session.scene_index != 200 or session.party_roles != PackedInt32Array([0]) or database.event_objects[3615].trigger_script != 34601:
+	if not failure.is_empty() or _messages != _message_range(11370, 11418) or _requested_scenes != [200] or session.scene_index != 200 or session.party_roles != PackedInt32Array([0]) or database.event_objects[3615].trigger_script != 34601 or database.event_objects[3669].trigger_script != 33047:
 		vm.free()
-		return "女娲神殿长剧情或梦境入口错误：failure=%s messages=%s scenes=%s/%d party=%s next=%d" % [failure, _messages, _requested_scenes, session.scene_index, session.party_roles, database.event_objects[3615].trigger_script]
+		return "女娲神殿长剧情、梦境入口或大理出口恢复错误：failure=%s messages=%s scenes=%s/%d party=%s next=%d exit=%d" % [failure, _messages, _requested_scenes, session.scene_index, session.party_roles, database.event_objects[3615].trigger_script, database.event_objects[3669].trigger_script]
 	_run_scene_enter(vm, database, 200)
 	if not _unsupported.is_empty() or _messages != _message_range(11485, 11513) or _requested_scenes != [226] or PalSceneCatalog.name_for_scene_index(session.scene_index) != "路途·回魂仙梦" or session.party_roles != PackedInt32Array([0]) or session.party_world_position() != Vector2i(896, 832) or session.music_number != 59 or session.item_count(266) != 1 or session.item_count(276) != 1 or session.item_count(275) != 0:
 		vm.free()
