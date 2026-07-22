@@ -74,6 +74,32 @@ func _run() -> void:
 	if _pixel_difference_in_rect(image, condition_image, Rect2i(88, 144, 78, 21)) < 20:
 		_fail("战斗角色状态框没有绘制毒与异常状态")
 		return
+	if _pixel_difference_in_rect(image, condition_image, Rect2i(89, 145, 2, 2)) != 0:
+		_fail("战斗异常状态图标仍绘制了方形黑底")
+		return
+	if "--conditions-only" in OS.get_cmdline_user_args():
+		var condition_poison_result := PalBattleController.ActionResult.new()
+		condition_poison_result.action_type = PalBattleController.ActionType.POISON
+		condition_poison_result.poison_tick = true
+		condition_poison_result.summary = "毒性发作"
+		var condition_poison_hit := PalBattleController.Hit.new()
+		condition_poison_hit.target_index = 0
+		condition_poison_hit.damage = 7
+		condition_poison_result.hits.append(condition_poison_hit)
+		preview._session.increase_role_hp_mp(preview._controller.players[0].role_index, -7, 0)
+		preview._play_poison_result(condition_poison_result)
+		await create_timer(0.08).timeout
+		var condition_poison_image := viewport.get_texture().get_image()
+		var condition_poison_path := output_directory.path_join("battle_poison_tick.png")
+		if condition_poison_image == null or condition_poison_image.save_png(condition_poison_path) != OK:
+			_fail("无法写入保留异常状态图标的毒性结算截图")
+			return
+		if _pixel_difference_in_rect(image, condition_poison_image, Rect2i(89, 145, 2, 2)) != 0:
+			_fail("毒性结算期间异常状态图标仍绘制了方形黑底")
+			return
+		print("PASS: 战斗场景已显示中毒与封咒透明图标，并保留到毒性发作结算帧")
+		quit(0)
+		return
 	preview._session.cure_role_poison(0, 551)
 	preview._session.remove_role_status(0, GameSession.STATUS_SILENCE)
 	preview._battle_ui.queue_redraw()
@@ -604,6 +630,10 @@ func _run() -> void:
 		return
 
 	preview.load_battle(18, 21, PackedInt32Array([0, 1]))
+	preview._session.add_role_poison(0, 551, ordinary_poison.player_script)
+	preview._session.set_role_status(0, GameSession.STATUS_SILENCE, 3)
+	preview._battle_ui.queue_redraw()
+	await process_frame
 	var poison_result := PalBattleController.ActionResult.new()
 	poison_result.action_type = PalBattleController.ActionType.POISON
 	poison_result.poison_tick = true

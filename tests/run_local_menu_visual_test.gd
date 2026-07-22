@@ -111,9 +111,22 @@ func _init() -> void:
 	menu._confirm_selection()
 	await process_frame
 	await process_frame
-	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_field_magic.png"))
+	var condition_magic_image := viewport.get_texture().get_image()
+	condition_magic_image.save_png(output_dir.path_join("classic_field_magic.png"))
 	if field_magic_id <= 0:
 		printerr("FAIL: 玩家初始/升级仙术表中没有找到合法的场外仙术")
+		quit(1)
+		return
+	session.cure_role_poison(0, 551)
+	session.cure_role_poison(0, 561)
+	session.remove_role_status(0, GameSession.STATUS_SILENCE)
+	session.remove_role_status(0, GameSession.STATUS_PROTECT)
+	menu.queue_redraw()
+	await process_frame
+	await process_frame
+	var clean_magic_image := viewport.get_texture().get_image()
+	if _pixel_difference_in_rect(condition_magic_image, clean_magic_image, Rect2i(43, 139, 2, 2)) != 0:
+		printerr("FAIL: 场外队伍异常状态图标仍绘制了方形黑底")
 		quit(1)
 		return
 	var field_definition := database.magic_definition_for_object(field_magic_id)

@@ -754,8 +754,6 @@ func _draw_role_condition_strip(role_index: int, position: Vector2i) -> void:
 		return
 	var overflow := conditions.size() > 4
 	var visible_count := mini(3 if overflow else 4, conditions.size())
-	var used_width := visible_count * RoleConditionDisplay.ICON_SIZE + maxi(0, visible_count - 1) * 2 + (10 if overflow else 0)
-	draw_rect(Rect2(position + Vector2i(-2, -2), Vector2(used_width + 4, 19)), Color(0, 0, 0, 0.82), true)
 	for condition_index in range(visible_count):
 		var icon_position := position + Vector2i(condition_index * (RoleConditionDisplay.ICON_SIZE + 2), 0)
 		var condition := conditions[condition_index]
