@@ -13,6 +13,31 @@ keywords:
 
 ## 变更记录
 
+## 2026-07-22
+
+### [FT-070] [feat] 补齐正式片头与标题菜单
+
+- **关联需求**: M5 完整流程与音画
+- **关联 TODO**: 无
+- **功能描述**: 将默认主场景从资源实验室改为正式启动流程，按 SDLPal 依次播放调色板 3 的商标 RNG #6、FBP #38/#39 山水合拢、MGO #73 仙鹤和 MGO #71 竖向题字，再以 FBP #60、原版词条和点阵字显示“新的故事／旧的回忆”。新游戏与正式 100 槽读档均接入既有 `MapExplorer`，片头、标题和进游戏之间带原版方向的音乐与画面渐变；本地内容缺失或按 F10 时进入独立资源实验室。导入格式升级到 3，固定商标 RNG 使用调色板 3。
+- **验证情况**: 364 项合成检查与 11 段剧情 RNG 共 1410 帧回归通过；完整本地资源重新导入通过。Godot 4.7 OpenGL/Metal 真实窗口回归检查 320×200 商标、山水/仙鹤/题字、标题菜单、启动读档和资源实验室截图，并从标题读档恢复正式槽位 001 到场景 22，未重跑场景进入脚本。
+- **涉及文件**:
+  - `scenes/main.tscn`
+  - `scenes/import_lab.tscn`
+  - `src/ui/pal_startup.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/import/pal_import_report.gd`
+  - `src/world/map_explorer.gd`
+  - `src/ui/rng_preview.gd`
+  - `src/debug/story_test_lab.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_local_startup_load_test.gd`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场

@@ -683,7 +683,7 @@ func _cancel_or_leave() -> void:
 	elif _input_mode in [InputMode.ENEMY_TARGET, InputMode.PLAYER_TARGET, InputMode.MAGIC_LIST]:
 		_enter_command_mode()
 	elif lab_mode:
-		get_tree().change_scene_to_file("res://scenes/main.tscn")
+		get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
 
 
 func _confirm_battle_result() -> void:

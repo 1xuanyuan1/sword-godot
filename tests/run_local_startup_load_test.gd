@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用本机生成内容渲染资源实验室的开始/读档入口，并验证经典读取页可独立打开和取消。
+## 使用本机生成内容渲染正式片头、标题菜单与资源实验室，并验证经典读取页可独立打开和取消。
 ## 测试只读取正式存档摘要，截图写入被 Git 忽略的 `generated/pal/visual_tests/`。
 extends SceneTree
 
@@ -16,7 +16,87 @@ func _run() -> void:
 	viewport.size = Vector2i(320, 200)
 	viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
 	root.add_child(viewport)
-	var lab_scene := load("res://scenes/main.tscn") as PackedScene
+	var startup_scene := load("res://scenes/main.tscn") as PackedScene
+	var startup = startup_scene.instantiate() if startup_scene != null else null
+	if startup == null:
+		_fail("无法实例化正式启动场景")
+		return
+	viewport.add_child(startup)
+	await process_frame
+	await process_frame
+	if startup.phase != PalStartup.Phase.TRADEMARK or startup._trademark_frames.size() != 54:
+		_fail("正式启动没有从完整商标 RNG #6 开始")
+		return
+	var manifest_file := FileAccess.open("res://generated/pal/manifest.json", FileAccess.READ)
+	var manifest = JSON.parse_string(manifest_file.get_as_text()) if manifest_file != null else null
+	var rng_six = manifest.get("files", {}).get("rng_preview", {}).get("animations", {}).get("6", {}) if manifest is Dictionary else {}
+	if not manifest is Dictionary or int(manifest.get("format_version", 0)) < PalImportReport.FORMAT_VERSION or int(rng_six.get("palette", -1)) != 3:
+		_fail("本地导入产物没有用 SDLPal 商标调色板 3 生成 RNG #6")
+		return
+	var output_directory := ProjectSettings.globalize_path("res://generated/pal/visual_tests")
+	DirAccess.make_dir_recursive_absolute(output_directory)
+	startup._trademark_elapsed = float(startup._trademark_frames.size() - 1) / PalStartup.TRADEMARK_FPS
+	await process_frame
+	var trademark_image := viewport.get_texture().get_image()
+	if trademark_image == null or trademark_image.get_size() != Vector2i(320, 200) or trademark_image.save_png(output_directory.path_join("startup_trademark.png")) != OK:
+		_fail("无法保存 320×200 商标 RNG 截图")
+		return
+	startup._trademark_elapsed = float(startup._trademark_frames.size()) / PalStartup.TRADEMARK_FPS + PalStartup.TRADEMARK_HOLD_SECONDS + PalStartup.TRADEMARK_FADE_SECONDS
+	startup._process(0.0)
+	if startup.phase != PalStartup.Phase.SPLASH or startup._audio_player.current_music_number != PalStartup.TITLE_MUSIC or not startup._audio_player._music_player.playing:
+		_fail("商标结束后没有进入山水片头并播放标题曲")
+		return
+	startup._splash_elapsed = PalStartup.SPLASH_PALETTE_FADE_SECONDS
+	startup._split_position = 1
+	startup._title_reveal_height = startup._title_texture.get_height()
+	await process_frame
+	var splash_image := viewport.get_texture().get_image()
+	if splash_image == null or splash_image.get_size() != Vector2i(320, 200) or splash_image.save_png(output_directory.path_join("startup_splash.png")) != OK:
+		_fail("无法保存 320×200 山水片头截图")
+		return
+	startup._finish_splash()
+	startup._process(PalStartup.SPLASH_EXIT_DELAY_SECONDS + 0.01)
+	if startup.phase != PalStartup.Phase.SPLASH_FADE:
+		_fail("确认山水片头后没有执行原版淡出")
+		return
+	startup._process(PalStartup.OPENING_MENU_FADE_SECONDS + 0.01)
+	startup._opening_menu_elapsed = PalStartup.OPENING_MENU_FADE_SECONDS
+	await process_frame
+	await process_frame
+	if startup.phase != PalStartup.Phase.OPENING_MENU or startup.menu_selection != 0 or startup._audio_player.current_music_number != PalStartup.OPENING_MENU_MUSIC or not startup._audio_player._music_player.playing:
+		_fail("片头结束后没有进入正式标题菜单")
+		return
+	if startup._database.get_word(7) != "新的故事" or startup._database.get_word(8) != "舊的回憶":
+		_fail("标题菜单没有使用原版词条")
+		return
+	var opening_image := viewport.get_texture().get_image()
+	if opening_image == null or opening_image.get_size() != Vector2i(320, 200) or opening_image.save_png(output_directory.path_join("startup_opening_menu.png")) != OK:
+		_fail("无法保存 320×200 正式标题菜单截图")
+		return
+	startup.menu_selection = 1
+	startup._confirm_opening_menu()
+	await process_frame
+	await process_frame
+	if not startup._save_menu.visible or startup._save_menu.current_page != PalGameMenu.Page.LOAD_SLOTS:
+		_fail("标题菜单的“旧的回忆”没有打开经典 100 槽读取界面")
+		return
+	var opening_load_image := viewport.get_texture().get_image()
+	if opening_load_image == null or opening_load_image.get_size() != Vector2i(320, 200) or opening_load_image.save_png(output_directory.path_join("startup_opening_load.png")) != OK:
+		_fail("无法保存标题菜单的 320×200 读取界面截图")
+		return
+	startup._save_menu.go_back()
+	if startup._save_menu.visible or startup.phase != PalStartup.Phase.OPENING_MENU:
+		_fail("标题读档界面取消后没有返回标题菜单")
+		return
+	startup.menu_selection = 0
+	startup._confirm_opening_menu()
+	if startup.phase != PalStartup.Phase.FADE_TO_GAME:
+		_fail("标题菜单的“新的故事”没有进入新游戏转场")
+		return
+	startup.free()
+	await process_frame
+
+	var lab_scene := load("res://scenes/import_lab.tscn") as PackedScene
 	var lab = lab_scene.instantiate() if lab_scene != null else null
 	if lab == null:
 		_fail("无法实例化资源实验室主场景")
@@ -33,8 +113,6 @@ func _run() -> void:
 	if lab._explore_button.get_global_rect().intersects(lab._load_save_button.get_global_rect()):
 		_fail("开始新游戏与读取存档按钮发生布局重叠")
 		return
-	var output_directory := ProjectSettings.globalize_path("res://generated/pal/visual_tests")
-	DirAccess.make_dir_recursive_absolute(output_directory)
 	var lab_image := viewport.get_texture().get_image()
 	if lab_image == null or lab_image.get_size() != Vector2i(320, 200) or lab_image.save_png(output_directory.path_join("startup_lab.png")) != OK:
 		_fail("无法保存 320×200 资源实验室启动页截图")

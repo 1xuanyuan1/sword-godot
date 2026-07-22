@@ -6,6 +6,10 @@
 class_name PalDataImporter
 extends RefCounted
 
+const RNG_PALETTE_OVERRIDES := {
+	6: 3, # SDLPal PAL_TrademarkScreen() 在播放 RNG #6 前固定切到调色板 3。
+}
+
 const REQUIRED_FILES: PackedStringArray = [
 	"abc.mkf", "ball.mkf", "data.mkf", "f.mkf", "fbp.mkf", "fire.mkf",
 	"gop.mkf", "map.mkf", "mgo.mkf", "mus.mkf", "pat.mkf", "rgm.mkf",
@@ -472,12 +476,17 @@ static func _generate_rng_preview(rng_path: String, palette_path: String, absolu
 	var palette_archive := MkfArchive.load_file(palette_path)
 	if not rng_archive.is_valid() or not palette_archive.is_valid():
 		return
-	var palette_rgb := PaletteDecoder.decode_rgb(palette_archive.get_chunk(0), false)
-	if palette_rgb.is_empty():
-		return
 	var rendered_animations: Dictionary = {}
 	var total_frames := 0
 	for animation_index in range(rng_archive.chunk_count()):
+		var palette_index := int(RNG_PALETTE_OVERRIDES.get(animation_index, 0))
+		if palette_index < 0 or palette_index >= palette_archive.chunk_count():
+			report.warnings.append("RNG 动画 %d 指定的调色板 %d 不存在" % [animation_index, palette_index])
+			continue
+		var palette_rgb := PaletteDecoder.decode_rgb(palette_archive.get_chunk(palette_index), false)
+		if palette_rgb.is_empty():
+			report.warnings.append("RNG 动画 %d 无法读取调色板 %d" % [animation_index, palette_index])
+			continue
 		var animation_chunk := rng_archive.get_chunk(animation_index)
 		if animation_chunk.is_empty():
 			continue
@@ -510,7 +519,7 @@ static func _generate_rng_preview(rng_path: String, palette_path: String, absolu
 			rendered_animations[str(animation_index)] = {
 				"frames": rendered_frames,
 				"frame_rate": 16,
-				"palette": 0,
+				"palette": palette_index,
 				"output": output_dir,
 				"path": last_preview_path,
 			}

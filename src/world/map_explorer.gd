@@ -379,7 +379,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		if _pending_magic_object_id > 0:
 			return
 	if event is InputEventKey and event.keycode == RETURN_TO_LAB_KEYCODE:
-		get_tree().change_scene_to_file("res://scenes/main.tscn")
+		get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
 		return
 	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
 		_inspect_nearby_event()

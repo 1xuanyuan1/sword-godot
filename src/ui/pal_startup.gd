@@ -1,0 +1,425 @@
+# Copyright (C) 2026 sword-godot contributors
+# Adapted from SDLPal main.c and uigame.c.
+# SPDX-License-Identifier: GPL-3.0-or-later
+## 正式游戏启动入口：播放商标 RNG、山水标题动画，并显示原版“新的故事／旧的回忆”菜单。
+## 本地内容缺失时自动进入资源实验室；F10 始终保留为开发入口。
+class_name PalStartup
+extends Control
+
+const StartupRequest := preload("res://src/game/pal_startup_request.gd")
+const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
+
+enum Phase {
+	TRADEMARK,
+	SPLASH,
+	SPLASH_FADE,
+	OPENING_MENU,
+	FADE_TO_GAME,
+}
+
+const TRADEMARK_RNG := 6
+const TRADEMARK_FPS := 25.0
+const TRADEMARK_HOLD_SECONDS := 1.0
+const TRADEMARK_FADE_SECONDS := 0.5
+const SPLASH_TICK_SECONDS := 0.085
+const SPLASH_PALETTE_FADE_SECONDS := 15.0
+const SPLASH_EXIT_DELAY_SECONDS := 0.5
+const OPENING_MENU_FADE_SECONDS := 0.6
+const TITLE_MUSIC := 5
+const OPENING_MENU_MUSIC := 4
+const COLOR_NORMAL := 0x4f
+const COLOR_SELECTED_FIRST := 0xf9
+const MENU_POSITIONS := [Vector2i(125, 95), Vector2i(125, 112)]
+const REQUIRED_STARTUP_FILES := [
+	"res://generated/pal/content/battle/backgrounds/038.idx",
+	"res://generated/pal/content/battle/backgrounds/039.idx",
+	"res://generated/pal/content/battle/backgrounds/060.idx",
+	"res://generated/pal/content/sprites/mgo/071.spr",
+	"res://generated/pal/content/sprites/mgo/073.spr",
+	"res://generated/pal/rng/006/000.png",
+	"res://generated/pal/rng/006/053.png",
+	"res://generated/pal/audio/rix/004.wav",
+	"res://generated/pal/audio/rix/005.wav",
+]
+
+var phase: Phase = Phase.TRADEMARK
+var menu_selection: int = 0
+
+var _database := PalContentDatabase.new()
+var _session := GameSession.new()
+var _save_manager := PalSaveManager.new()
+var _save_menu: PalGameMenu
+var _audio_player: Node
+var _save_system_available: bool = false
+var _startup_ready: bool = false
+
+var _trademark_frames: Array[Texture2D] = []
+var _trademark_elapsed: float = 0.0
+var _splash_elapsed: float = 0.0
+var _splash_tick: int = 0
+var _splash_exit_remaining: float = -1.0
+var _split_position: int = 200
+var _title_reveal_height: int = 0
+var _cranes: Array[Dictionary] = []
+var _transition_elapsed: float = 0.0
+var _opening_menu_elapsed: float = OPENING_MENU_FADE_SECONDS
+
+var _splash_up_texture: Texture2D
+var _splash_down_texture: Texture2D
+var _opening_menu_texture: Texture2D
+var _title_texture: Texture2D
+var _crane_textures: Array[Texture2D] = []
+var _palette: PackedByteArray = PackedByteArray()
+var _font_texture: Texture2D
+var _font_glyphs: Dictionary = {}
+
+
+func _ready() -> void:
+	mouse_filter = Control.MOUSE_FILTER_STOP
+	set_process(true)
+	_build_save_menu()
+	if not _has_startup_content() or not _database.load_generated():
+		call_deferred("_open_resource_lab")
+		return
+	_session.reset_new_game()
+	_session.initialize_role_state(_database.player_roles)
+	_save_system_available = _save_manager.configure(_database)
+	_save_menu.configure(_database, _session)
+	if _save_system_available:
+		_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
+	_load_classic_resources()
+	_audio_player = AudioPlayer.new()
+	_audio_player.name = "PalStartupAudio"
+	add_child(_audio_player)
+	_audio_player.configure(_database, _session)
+	_startup_ready = true
+	if "--pal-skip-intro" in OS.get_cmdline_user_args():
+		skip_to_opening_menu()
+	else:
+		_begin_trademark()
+
+
+func _build_save_menu() -> void:
+	_save_menu = PalGameMenu.new()
+	_save_menu.name = "StartupSaveMenu"
+	_save_menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_save_menu.load_slot_requested.connect(_on_load_slot_requested)
+	add_child(_save_menu)
+
+
+func _has_startup_content() -> bool:
+	if not FileAccess.file_exists("res://generated/pal/content/core/scenes.bin"):
+		return false
+	var manifest_file := FileAccess.open("res://generated/pal/manifest.json", FileAccess.READ)
+	var manifest = JSON.parse_string(manifest_file.get_as_text()) if manifest_file != null else null
+	if not manifest is Dictionary or int(manifest.get("format_version", 0)) < PalImportReport.FORMAT_VERSION:
+		return false
+	for path in REQUIRED_STARTUP_FILES:
+		if not FileAccess.file_exists(path):
+			return false
+	return true
+
+
+func _load_classic_resources() -> void:
+	_palette = _database.load_palette(0, false)
+	_splash_up_texture = _indexed_texture(_database.load_battle_background(38), _database.load_palette(1, false))
+	_splash_down_texture = _indexed_texture(_database.load_battle_background(39), _database.load_palette(1, false))
+	_opening_menu_texture = _indexed_texture(_database.load_battle_background(60), _palette)
+	var splash_palette := _database.load_palette(1, false)
+	var title_sprite := _database.load_mgo_sprite(71)
+	_title_texture = _sprite_frame_texture(title_sprite, 0, splash_palette)
+	var crane_sprite := _database.load_mgo_sprite(73)
+	for frame_index in range(crane_sprite.frame_count()):
+		_crane_textures.append(_sprite_frame_texture(crane_sprite, frame_index, splash_palette))
+	var metadata_file := FileAccess.open(_database.root_path.path_join("text/font_glyphs.json"), FileAccess.READ)
+	if metadata_file != null:
+		var parsed = JSON.parse_string(metadata_file.get_as_text())
+		if parsed is Dictionary:
+			_font_glyphs = PalClassicFont.with_compatibility_aliases(parsed.get("glyphs", {}))
+	var atlas_image := Image.load_from_file(ProjectSettings.globalize_path(_database.root_path.path_join("text/font_atlas.png")))
+	if not atlas_image.is_empty():
+		_font_texture = ImageTexture.create_from_image(atlas_image)
+	_load_trademark_frames()
+
+
+func _load_trademark_frames() -> void:
+	_trademark_frames.clear()
+	var root := ProjectSettings.globalize_path("res://generated/pal/rng/%03d" % TRADEMARK_RNG)
+	var directory := DirAccess.open(root)
+	if directory == null:
+		return
+	var names: Array[String] = []
+	for file_name in directory.get_files():
+		if file_name.to_lower().ends_with(".png"):
+			names.append(file_name)
+	names.sort()
+	for file_name in names:
+		var image := Image.load_from_file(root.path_join(file_name))
+		if not image.is_empty():
+			_trademark_frames.append(ImageTexture.create_from_image(image))
+
+
+func _begin_trademark() -> void:
+	phase = Phase.TRADEMARK
+	_trademark_elapsed = 0.0
+	queue_redraw()
+
+
+func _begin_splash() -> void:
+	phase = Phase.SPLASH
+	_splash_elapsed = 0.0
+	_splash_tick = 0
+	_splash_exit_remaining = -1.0
+	_split_position = 200
+	_title_reveal_height = 0
+	_cranes.clear()
+	var random := RandomNumberGenerator.new()
+	random.randomize()
+	for index in range(9):
+		_cranes.append({
+			"x": random.randi_range(300, 600),
+			"y": random.randi_range(0, 80),
+			"frame": random.randi_range(0, 7),
+		})
+	_advance_splash_tick()
+	_audio_player.play_music(TITLE_MUSIC, true, 2.0)
+	queue_redraw()
+
+
+## 直接显示正式标题菜单，供本地视觉回归和 `--pal-skip-intro` 使用。
+func skip_to_opening_menu(fade_in: bool = false) -> void:
+	if _audio_player == null:
+		return
+	phase = Phase.OPENING_MENU
+	menu_selection = 0
+	_splash_exit_remaining = -1.0
+	_opening_menu_elapsed = 0.0 if fade_in else OPENING_MENU_FADE_SECONDS
+	_audio_player.play_music(OPENING_MENU_MUSIC, true, 1.0)
+	queue_redraw()
+
+
+func _process(delta: float) -> void:
+	if not _startup_ready:
+		return
+	match phase:
+		Phase.TRADEMARK:
+			_trademark_elapsed += delta
+			var movie_seconds := float(_trademark_frames.size()) / TRADEMARK_FPS
+			if _trademark_frames.is_empty() or _trademark_elapsed >= movie_seconds + TRADEMARK_HOLD_SECONDS + TRADEMARK_FADE_SECONDS:
+				_begin_splash()
+		Phase.SPLASH:
+			if _splash_exit_remaining >= 0.0:
+				_splash_exit_remaining -= delta
+				if _splash_exit_remaining <= 0.0:
+					_begin_splash_fade()
+			else:
+				_splash_elapsed += delta
+				while _splash_elapsed >= float(_splash_tick) * SPLASH_TICK_SECONDS:
+					_advance_splash_tick()
+		Phase.SPLASH_FADE:
+			_transition_elapsed += delta
+			if _transition_elapsed >= OPENING_MENU_FADE_SECONDS:
+				skip_to_opening_menu(true)
+		Phase.OPENING_MENU:
+			_opening_menu_elapsed = minf(OPENING_MENU_FADE_SECONDS, _opening_menu_elapsed + delta)
+		Phase.FADE_TO_GAME:
+			_transition_elapsed += delta
+			if _transition_elapsed >= OPENING_MENU_FADE_SECONDS:
+				get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
+	queue_redraw()
+
+
+func _advance_splash_tick() -> void:
+	if _split_position > 1:
+		_split_position -= 1
+	for index in range(_cranes.size()):
+		var crane: Dictionary = _cranes[index]
+		if not _crane_textures.is_empty():
+			crane["frame"] = posmod(int(crane["frame"]) + (_splash_tick & 1), _crane_textures.size())
+		if _split_position > 1 and (_split_position & 1) != 0:
+			crane["y"] = int(crane["y"]) + 1
+		crane["x"] = int(crane["x"]) - 1
+		_cranes[index] = crane
+	_title_reveal_height = mini(_title_texture.get_height() if _title_texture != null else 0, _title_reveal_height + 1)
+	_splash_tick += 1
+
+
+func _input(event: InputEvent) -> void:
+	if not event.is_pressed() or event.is_echo() or event is not InputEventKey:
+		return
+	if event.keycode == KEY_F10:
+		_open_resource_lab()
+		get_viewport().set_input_as_handled()
+		return
+	if _save_menu != null and _save_menu.visible:
+		return
+	match phase:
+		Phase.SPLASH:
+			if event.keycode in [KEY_ESCAPE, KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
+				_finish_splash()
+				get_viewport().set_input_as_handled()
+		Phase.OPENING_MENU:
+			if _opening_menu_elapsed < OPENING_MENU_FADE_SECONDS:
+				return
+			match event.keycode:
+				KEY_UP, KEY_LEFT:
+					menu_selection = posmod(menu_selection - 1, 2)
+				KEY_DOWN, KEY_RIGHT:
+					menu_selection = posmod(menu_selection + 1, 2)
+				KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
+					_confirm_opening_menu()
+				KEY_ESCAPE:
+					_start_game(0)
+				_:
+					return
+			get_viewport().set_input_as_handled()
+
+
+func _gui_input(event: InputEvent) -> void:
+	if phase != Phase.OPENING_MENU or _opening_menu_elapsed < OPENING_MENU_FADE_SECONDS or _save_menu.visible or event is not InputEventMouseButton or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+		return
+	for index in range(MENU_POSITIONS.size()):
+		if Rect2i(MENU_POSITIONS[index] - Vector2i(3, 2), Vector2i(86, 18)).has_point(Vector2i(event.position)):
+			menu_selection = index
+			_confirm_opening_menu()
+			accept_event()
+			return
+
+
+func _finish_splash() -> void:
+	_split_position = 1
+	_title_reveal_height = _title_texture.get_height() if _title_texture != null else 0
+	_splash_elapsed = SPLASH_PALETTE_FADE_SECONDS
+	_splash_exit_remaining = SPLASH_EXIT_DELAY_SECONDS
+
+
+func _begin_splash_fade() -> void:
+	phase = Phase.SPLASH_FADE
+	_transition_elapsed = 0.0
+	_audio_player.play_music(0, false, OPENING_MENU_FADE_SECONDS)
+	queue_redraw()
+
+
+func _confirm_opening_menu() -> void:
+	if menu_selection == 0:
+		_start_game(0)
+	elif _save_system_available:
+		_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
+		_save_menu.open_load_slots(true)
+
+
+func _on_load_slot_requested(slot: int) -> void:
+	if StartupRequest.request_load_slot(slot):
+		_save_menu.close_menu()
+		_start_game(slot)
+
+
+func _start_game(slot: int) -> void:
+	if slot <= 0:
+		StartupRequest.consume_load_slot()
+	phase = Phase.FADE_TO_GAME
+	_transition_elapsed = 0.0
+	_audio_player.play_music(0, false, OPENING_MENU_FADE_SECONDS)
+	queue_redraw()
+
+
+func _open_resource_lab() -> void:
+	if _audio_player != null:
+		_audio_player.stop_all()
+	get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
+
+
+func _draw() -> void:
+	draw_rect(Rect2(Vector2.ZERO, size), Color.BLACK)
+	match phase:
+		Phase.TRADEMARK:
+			_draw_trademark()
+		Phase.SPLASH:
+			_draw_splash()
+		Phase.SPLASH_FADE:
+			_draw_splash()
+			var splash_fade := clampf(_transition_elapsed / OPENING_MENU_FADE_SECONDS, 0.0, 1.0)
+			draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, splash_fade))
+		Phase.OPENING_MENU, Phase.FADE_TO_GAME:
+			_draw_opening_menu()
+			if phase == Phase.OPENING_MENU and _opening_menu_elapsed < OPENING_MENU_FADE_SECONDS:
+				var opening_alpha := 1.0 - clampf(_opening_menu_elapsed / OPENING_MENU_FADE_SECONDS, 0.0, 1.0)
+				draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, opening_alpha))
+			elif phase == Phase.FADE_TO_GAME:
+				var alpha := clampf(_transition_elapsed / OPENING_MENU_FADE_SECONDS, 0.0, 1.0)
+				draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, alpha))
+
+
+func _draw_trademark() -> void:
+	if _trademark_frames.is_empty():
+		return
+	var movie_seconds := float(_trademark_frames.size()) / TRADEMARK_FPS
+	var frame_index := mini(_trademark_frames.size() - 1, int(_trademark_elapsed * TRADEMARK_FPS))
+	draw_texture_rect(_trademark_frames[frame_index], Rect2(Vector2.ZERO, size), false)
+	if _trademark_elapsed > movie_seconds + TRADEMARK_HOLD_SECONDS:
+		var fade := clampf((_trademark_elapsed - movie_seconds - TRADEMARK_HOLD_SECONDS) / TRADEMARK_FADE_SECONDS, 0.0, 1.0)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, fade))
+
+
+func _draw_splash() -> void:
+	var brightness := 1.0 if _splash_exit_remaining >= 0.0 else clampf(_splash_elapsed / SPLASH_PALETTE_FADE_SECONDS, 0.0, 1.0)
+	var modulate := Color(brightness, brightness, brightness, 1.0)
+	if _splash_up_texture != null and _split_position < 200:
+		var upper_height := 200 - _split_position
+		draw_texture_rect_region(_splash_up_texture, Rect2(0, 0, 320, upper_height), Rect2(0, _split_position, 320, upper_height), modulate)
+	if _splash_down_texture != null and _split_position > 0:
+		draw_texture_rect_region(_splash_down_texture, Rect2(0, 200 - _split_position, 320, _split_position), Rect2(0, 0, 320, _split_position), modulate)
+	for crane in _cranes:
+		var frame_index := int(crane.get("frame", 0))
+		if frame_index >= 0 and frame_index < _crane_textures.size() and _crane_textures[frame_index] != null:
+			draw_texture(_crane_textures[frame_index], Vector2(int(crane.get("x", 0)), int(crane.get("y", 0))), modulate)
+	if _title_texture != null and _title_reveal_height > 0:
+		var reveal := mini(_title_reveal_height, _title_texture.get_height())
+		draw_texture_rect_region(_title_texture, Rect2(255, 10, _title_texture.get_width(), reveal), Rect2(0, 0, _title_texture.get_width(), reveal), modulate)
+
+
+func _draw_opening_menu() -> void:
+	if _opening_menu_texture != null:
+		draw_texture_rect(_opening_menu_texture, Rect2(Vector2.ZERO, size), false)
+	for index in range(2):
+		var color_index := COLOR_SELECTED_FIRST + int(Time.get_ticks_msec() / 100) % 6 if index == menu_selection else COLOR_NORMAL
+		_draw_pal_text(_database.get_word(7 + index), MENU_POSITIONS[index], _palette_color(color_index), true)
+
+
+func _draw_pal_text(text: String, position: Vector2i, color: Color, shadow: bool = false) -> void:
+	if shadow:
+		_draw_pal_glyphs(text, position + Vector2i(1, 1), Color(0, 0, 0, 0.9))
+	_draw_pal_glyphs(text, position, color)
+
+
+func _draw_pal_glyphs(text: String, position: Vector2i, color: Color) -> void:
+	if _font_texture == null or _font_glyphs.is_empty():
+		draw_string(ThemeDB.fallback_font, Vector2(position + Vector2i(0, 13)), text, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+		return
+	var x := position.x
+	for character in text:
+		var key := str(character)
+		if _font_glyphs.has(key):
+			var values: Array = _font_glyphs[key]
+			var region := Rect2(float(values[0]), float(values[1]), float(values[2]), float(values[3]))
+			draw_texture_rect_region(_font_texture, Rect2(Vector2(x, position.y), region.size), region, color)
+			x += 16
+		else:
+			draw_string(ThemeDB.fallback_font, Vector2(x, position.y + 13), key, HORIZONTAL_ALIGNMENT_LEFT, -1, 12, color)
+			x += 8
+
+
+func _indexed_texture(indexed: PalIndexedImage, palette: PackedByteArray) -> Texture2D:
+	return ImageTexture.create_from_image(indexed.to_rgba_image(palette)) if indexed != null and indexed.is_valid() and not palette.is_empty() else null
+
+
+func _sprite_frame_texture(sprite: PalSprite, frame_index: int, palette: PackedByteArray) -> Texture2D:
+	if sprite == null or not sprite.is_valid() or frame_index < 0 or frame_index >= sprite.frame_count():
+		return null
+	return _indexed_texture(RleDecoder.decode(sprite.get_frame(frame_index)), palette)
+
+
+func _palette_color(index: int) -> Color:
+	if index < 0 or _palette.size() < (index + 1) * 3:
+		return Color.WHITE
+	return Color8(_palette[index * 3], _palette[index * 3 + 1], _palette[index * 3 + 2])

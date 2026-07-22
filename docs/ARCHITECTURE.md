@@ -7,6 +7,7 @@ flowchart LR
     A[合法取得的 Data 目录] --> B[PalDataImporter]
     B --> C[generated/pal 本地产物]
     C --> D[PalContentDatabase]
+    D --> S[PalStartup]
     D --> E[GameSession]
     D --> F[ScriptVM]
     D --> P[PalEquipmentManager]
@@ -14,7 +15,9 @@ flowchart LR
     E <--> F
     E <--> Q[PalSaveManager]
     D --> Q
-    Q -. 启动页有效槽位 .-> R[PalStartupRequest]
+    Q --> S
+    S -. 有效槽位 .-> R[PalStartupRequest]
+    S --> G
     R --> G
     D --> G[MapExplorer]
     D --> O[PalBattlePreview / PalBattleController / PalBattleUI]
@@ -52,9 +55,9 @@ flowchart LR
 
 ## 启动与场景加载
 
-1. Godot 从 `scenes/main.tscn` 启动资源实验室。
-2. 用户选择本机数据目录后，`PalDataImporter` 只读原始文件并写入被忽略的 `generated/pal/`。
-3. 已有生成内容时，启动页提供“开始新游戏”和“读取存档”；读档页复用 `PalGameMenu` 的 100 槽原版 UI，只把确认的槽位写入一次性 `PalStartupRequest`。
+1. Godot 从 `scenes/main.tscn` 启动正式 `PalStartup`；已有生成内容时依次播放商标 RNG #6、山水/仙鹤/题字动画，再显示“新的故事／旧的回忆”标题菜单。
+2. 本地内容缺失时自动切换到 `scenes/import_lab.tscn`；用户选择本机数据目录后，`PalDataImporter` 只读原始文件并写入被忽略的 `generated/pal/`，F10 也可主动进入该开发入口。
+3. “新的故事”直接建立新会话；“旧的回忆”复用 `PalGameMenu` 的 100 槽原版 UI，只把确认的槽位写入一次性 `PalStartupRequest`。
 4. 进入探索场景时，`PalContentDatabase.load_generated()` 读取结构化内容，`GameSession.reset_new_game()` 先建立安全默认状态。
 5. 若存在启动读档请求，`MapExplorer` 让 `PalSaveManager` 重新验证并恢复该槽；否则按新游戏状态运行场景进入脚本。请求在读取后立即清空。
 6. `MapExplorer` 根据 `scene_index` 取得 `map_number` 与场景事件；读档不重跑 `script_on_enter`，新游戏才执行进入脚本。
