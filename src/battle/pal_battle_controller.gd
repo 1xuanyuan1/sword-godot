@@ -342,6 +342,29 @@ func pending_role_index() -> int:
 	return players[party_index].role_index if party_index >= 0 else -1
 
 
+## 撤销最近一名可手动下令队员的本回合指令，并将指令光标退回该队员。
+## 会跳过已倒下或受异常状态控制的队员，同时释放已撤销的消耗品预占。
+## 当前已是首名可下令队员，或不在指令阶段时返回 `false`。
+func cancel_pending_command() -> bool:
+	if not is_accepting_commands() or _command_cursor <= 0 or _queue_cursor > 0:
+		return false
+	var previous_index := _command_cursor - 1
+	while previous_index >= 0 and not _player_accepts_manual_command(previous_index):
+		previous_index -= 1
+	if previous_index < 0:
+		return false
+	for party_index in range(previous_index, _command_cursor):
+		var player := players[party_index]
+		_release_player_item_reservation(player)
+		player.action_type = -1
+		player.action_id = 0
+		player.target_index = -1
+		player.defending = false
+	_command_cursor = previous_index
+	_accepting_commands = true
+	return true
+
+
 ## 返回所有仍存活的敌人索引，用于目标光标和 UI 列表。
 func living_enemy_indices() -> PackedInt32Array:
 	var result := PackedInt32Array()
@@ -958,6 +981,13 @@ func _skip_players_without_commands() -> void:
 		else:
 			break
 		_command_cursor += 1
+
+
+func _player_accepts_manual_command(party_index: int) -> bool:
+	if party_index < 0 or party_index >= players.size():
+		return false
+	var role_index := players[party_index].role_index
+	return _role_hp(role_index) > 0 and session.status_rounds_for(role_index, GameSession.STATUS_SLEEP) <= 0 and session.status_rounds_for(role_index, GameSession.STATUS_PARALYZED) <= 0 and session.status_rounds_for(role_index, GameSession.STATUS_CONFUSED) <= 0
 
 
 func _enemy_queue_entry(enemy_index: int) -> QueueEntry:

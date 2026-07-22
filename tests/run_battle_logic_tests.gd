@@ -47,6 +47,7 @@ func _init() -> void:
 	_test_flee_success_and_boss_failure()
 	_test_repeat_previous_magic_commands()
 	_test_repeat_retargets_defeated_enemy_at_execution()
+	_test_cancel_returns_to_previous_player()
 	_test_repeat_exhausted_items()
 	_test_defeat()
 	if _failures.is_empty():
@@ -900,6 +901,32 @@ func _test_repeat_retargets_defeated_enemy_at_execution() -> void:
 	var second_magic_result := magic_controller.execute_next_action()
 	_expect(first_magic_result != null and not first_magic_result.hits.is_empty() and first_magic_result.target_index == 1 and first_magic_result.hits[0].target_index == 1, "the first repeated single-enemy magic defeats its replacement target")
 	_expect(second_magic_result != null and not second_magic_result.hits.is_empty() and second_magic_result.target_index == 2 and second_magic_result.hits[0].target_index == 2, "later repeated magic moves both its effect metadata and damage to the next living enemy")
+
+
+func _test_cancel_returns_to_previous_player() -> void:
+	var database := _synthetic_database([_enemy_definition(9999, 1, 1, 0, 0, false)])
+	var controller := PalBattleController.new()
+	controller.start_battle(database, _session_for(database, PackedInt32Array([0, 1])), 0, 0, 72)
+	_expect(controller.submit_attack(0) and controller.pending_party_index() == 1, "the second player becomes active after the first player submits an attack")
+	_expect(controller.cancel_pending_command() and controller.pending_party_index() == 0 and controller.players[0].action_type == -1, "cancel on the second player returns command selection to the first player")
+	_expect(not controller.cancel_pending_command() and controller.pending_party_index() == 0, "cancel cannot move before the first manually controllable player")
+
+	var item_database := _synthetic_database([_enemy_definition(9999, 1, 1, 0, 0, false)])
+	item_database.scripts = [PalScriptEntry.new(), _script_entry(0x001b, PackedInt32Array([0, 10, 0])), _script_entry(0x0000)]
+	_add_item(item_database, 99, 1, 0, PalItemDefinition.FLAG_USABLE | PalItemDefinition.FLAG_CONSUMING)
+	var item_session := _session_for(item_database, PackedInt32Array([0, 1]))
+	item_session.set_item_count(99, 1)
+	var item_controller := PalBattleController.new()
+	item_controller.start_battle(item_database, item_session, 0, 0, 74)
+	_expect(item_controller.submit_use_item(99, 0) and item_controller.available_item_count(99) == 0, "a submitted consuming item is reserved before the next player's command")
+	_expect(item_controller.cancel_pending_command() and item_controller.available_item_count(99) == 1 and item_controller.players[0].action_type == -1, "cancel releases the previous player's consuming-item reservation")
+
+	var skipped_session := _session_for(database, PackedInt32Array([0, 1, 2]))
+	skipped_session.set_role_status(1, GameSession.STATUS_SLEEP, 2)
+	var skipped_controller := PalBattleController.new()
+	skipped_controller.start_battle(database, skipped_session, 0, 0, 76)
+	_expect(skipped_controller.submit_attack(0) and skipped_controller.pending_party_index() == 2 and skipped_controller.players[1].action_type == PalBattleController.ActionType.PASS, "command selection skips a sleeping player between two healthy players")
+	_expect(skipped_controller.cancel_pending_command() and skipped_controller.pending_party_index() == 0 and skipped_controller.players[0].action_type == -1 and skipped_controller.players[1].action_type == -1, "cancel skips the sleeping player and clears its automatically assigned action while returning to the previous healthy player")
 
 
 func _test_repeat_exhausted_items() -> void:
