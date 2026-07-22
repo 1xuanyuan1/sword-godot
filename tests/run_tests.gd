@@ -101,10 +101,12 @@ func _test_classic_font_aliases() -> void:
 		"檔": [16, 0, 16, 15],
 		"棧": [32, 0, 16, 15],
 		"間": [48, 0, 16, 15],
+		"敗": [64, 0, 16, 15],
 	}
 	var resolved := PalClassicFont.with_compatibility_aliases(original)
 	_expect(resolved.get("戏") == original["戲"] and resolved.get("档") == original["檔"], "classic font maps simplified game/save labels to original Big5 bitmap glyphs")
 	_expect(resolved.get("栈") == original["棧"] and resolved.get("间") == original["間"], "classic font maps simplified location labels without falling back to a system font")
+	_expect(resolved.get("败") == original["敗"], "classic font maps simplified battle failure text to the original Big5 bitmap glyph")
 	_expect(not original.has("戏") and not original.has("档"), "classic font compatibility does not mutate imported glyph metadata")
 
 

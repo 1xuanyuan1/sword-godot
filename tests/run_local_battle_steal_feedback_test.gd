@@ -24,6 +24,15 @@ func _run() -> void:
 		_fail("无法启动飞龙探云手反馈的真实战斗回归")
 		return
 	preview.set_process(false)
+	var glyphs: Dictionary = preview._battle_ui._font_glyphs
+	for character in PalBattlePreview.STEAL_FAILED_MESSAGE:
+		if not glyphs.has(str(character)):
+			_fail("偷取失败文案缺少经典点阵字形：%s" % character)
+			return
+	var failed_glyph: Array = glyphs.get("败", [])
+	if not glyphs.has("敗") or failed_glyph != glyphs["敗"] or failed_glyph.size() < 4 or failed_glyph[2] != 16 or failed_glyph[3] != 15:
+		_fail("简体“败”没有复用繁体“敗”的 16×15 经典点阵字形")
+		return
 	var enemy := preview._controller.enemies[0]
 	enemy.steal_item = 99
 	enemy.steal_item_count = 0
