@@ -154,6 +154,26 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-077] [feat] 完成南诏王宫终战与完整通关
+
+- **关联需求**: M5 完整流程、经典战斗与音画
+- **关联 TODO**: TD-005、TD-006、TD-008
+- **功能描述**: 从第十七章场景 290“无底深渊”的稳定状态继续，固定 `290 → 291 → 292 → 278 → 287 → 286 → 284 → 276 → 280 → 277 → 280` 的深渊、王宫秘道、地牢和正殿主路径。假巫王剧情连续结算敌队 289／222、战场 57 和对象 `[528,528]`／`[462]`，战后把队伍收束为李逍遥 `[0]` 并解锁最终入口 5056；最终脚本重新组成逍遥／灵儿／阿奴 `[0,1,4]`，以敌队 313／战场 55／对象 546 完成拜月教主／水魔兽终战。胜利后从消息 565 连续执行 11 段 RNG、全部音乐切换与淡出、一次屏幕备份、16 个 `0096/00A4/00A5` 结局动作和 `00A0` 统一退出，使分章节真实资源回归首次覆盖从新游戏到完整结局。
+- **验证情况**: 373 项合成检查、五灵珠祭雨相邻回归、新增无底深渊／假巫王回归、终战／结局回归和 43/43 ScriptVM 操作码行为测试均通过。新增深渊后二层、王宫秘道／地牢、外殿、假巫王战前战后和最终对质 11 个正式视口；累计 149 个 TileMapLayer 像素用例，新增用例均以 Godot 4.7 Metal 真窗口逐个与 CPU 基准达到 320×200 零差异并实际验图。真实窗口下重新生成并检查 `0096` 与 `00A5` 结局合成截图，无空白或错误遮挡。
+- **涉及文件**:
+  - `tests/run_local_bottomless_palace_mainline_test.gd`
+  - `tests/run_local_final_battle_ending_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `README.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-20
 
 ### [FT-063] [fix] 完成苏州城外解救林月如战后过场
