@@ -110,12 +110,19 @@ func sync_world(session: GameSession, events: Array[PalEventObject], camera_offs
 		return false
 	if not _update_palette(session.palette_index, session.night_palette):
 		return false
+	if not session.party_roles.is_empty():
+		var leader_role := session.party_roles[0]
+		var leader_sprite := _player_sprite_for_role(leader_role)
+		if not leader_sprite.is_valid():
+			var sprite_number := _database.player_roles.scene_sprite_for(leader_role)
+			error_message = "主角 MGO Sprite %d 加载失败：%s" % [sprite_number, leader_sprite.error_message]
+			return false
 	var render_viewport := session.viewport_position + camera_offset
 	_camera.position = Vector2(render_viewport) + Vector2(VIEWPORT_SIZE) / 2.0
 	_wave_overlay.position = Vector2(render_viewport)
 	_clear_sort_items()
 	var scene_items := _build_scene_items(session, events, render_viewport)
-	var expanded := PalSceneRenderer.expanded_draw_items(_map_data, _tile_sprite, render_viewport, scene_items)
+	var expanded := PalSceneLayout.expanded_draw_items(_map_data, _tile_sprite, render_viewport, scene_items)
 	for item in expanded:
 		_add_draw_item(item, render_viewport)
 	return true
@@ -261,16 +268,16 @@ func _build_scene_items(session: GameSession, events: Array[PalEventObject], ren
 		var world_position := session.party_member_world_position(party_index)
 		if party_index > 0 and _is_blocked_with_events(world_position, events):
 			world_position = session.party_member_fallback_world_position()
-		result.append(PalSceneRenderer.player_item(frame, world_position - render_viewport, session.world_layer))
+		result.append(PalSceneLayout.player_item(frame, world_position - render_viewport, session.world_layer))
 
 	for follower_index in range(mini(2, session.follower_sprite_numbers.size())):
 		var trail_index := 3 + follower_index
 		if trail_index >= session.trail_positions.size() or trail_index >= session.trail_directions.size():
 			continue
 		var sprite := _event_sprite(session.follower_sprite_numbers[follower_index])
-		var frame := _decode_frame(sprite, PalSceneRenderer.follower_frame_index(session.trail_directions[trail_index], sprite.frame_count()))
+		var frame := _decode_frame(sprite, PalSceneLayout.follower_frame_index(session.trail_directions[trail_index], sprite.frame_count()))
 		if frame.is_valid():
-			result.append(PalSceneRenderer.player_item(frame, session.trail_positions[trail_index] - render_viewport, session.world_layer))
+			result.append(PalSceneLayout.player_item(frame, session.trail_positions[trail_index] - render_viewport, session.world_layer))
 
 	for event in events:
 		if not event.is_visible():
@@ -289,12 +296,12 @@ func _build_scene_items(session: GameSession, events: Array[PalEventObject], ren
 				frame = _decode_frame(sprite, frame_index)
 		var screen_position := event.position - render_viewport
 		if frame.is_valid() and not _outside_viewport(screen_position, frame.width, frame.height):
-			result.append(PalSceneRenderer.event_item(frame, screen_position, event.layer))
+			result.append(PalSceneLayout.event_item(frame, screen_position, event.layer))
 		if _collectible_markers_enabled and _collectible_classifier.is_available(event, session):
 			var source_height := frame.height if frame.is_valid() else SPRITELESS_COLLECTIBLE_HEIGHT
 			var marker_position := screen_position + Vector2i(0, -source_height - 2)
 			if not _outside_viewport(marker_position, COLLECTIBLE_MARKER_SIZE, COLLECTIBLE_MARKER_SIZE):
-				result.append(PalSceneRenderer.collectible_marker_item(_collectible_marker_frame, screen_position, event.layer, source_height, event.object_id))
+				result.append(PalSceneLayout.collectible_marker_item(_collectible_marker_frame, screen_position, event.layer, source_height, event.object_id))
 	return result
 
 
@@ -351,20 +358,20 @@ func _is_blocked_with_events(world_position: Vector2i, events: Array[PalEventObj
 	return false
 
 
-func _add_draw_item(item: PalSceneRenderer.DrawItem, viewport_position: Vector2i) -> void:
+func _add_draw_item(item: PalSceneLayout.DrawItem, viewport_position: Vector2i) -> void:
 	var texture := _texture_for_frame(item.frame)
 	if texture == null:
 		return
 	var anchor := Node2D.new()
 	anchor.position = Vector2(item.x + viewport_position.x, item.baseline_y + viewport_position.y)
-	if item.draw_kind == PalSceneRenderer.DRAW_KIND_COLLECTIBLE_MARKER:
+	if item.draw_kind == PalSceneLayout.DRAW_KIND_COLLECTIBLE_MARKER:
 		anchor.name = "CollectibleMarker_%d" % item.source_object_id
 	var sprite := Sprite2D.new()
 	sprite.centered = false
 	sprite.position = Vector2(0, -item.frame.height - item.logical_layer + item.draw_offset_y)
 	sprite.texture = texture
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.material = _collectible_marker_material if item.draw_kind == PalSceneRenderer.DRAW_KIND_COLLECTIBLE_MARKER else _palette_material
+	sprite.material = _collectible_marker_material if item.draw_kind == PalSceneLayout.DRAW_KIND_COLLECTIBLE_MARKER else _palette_material
 	anchor.add_child(sprite)
 	_sort_root.add_child(anchor)
 

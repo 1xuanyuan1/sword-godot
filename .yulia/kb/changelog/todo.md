@@ -30,8 +30,8 @@ keywords:
 - **优先级**: P2
 - **关联需求**: M2 TileMap 原生地图、M5 完整通关与发布质量
 - **说明**: 开发期间以 `TileMapLayer + PalTileMapWorld` 为正式渲染和测试基准，CPU 合成仅用于同一 `GameSession` 的临时像素对照；先把人物选帧、坐标、调色板、Y 排序和遮挡规则收敛为共享实现。全部有效地图、主线剧情、特殊遮挡及完整通关通过 TileMap 验收后，移除 `_map_view`、`_use_legacy_renderer`、`--pal-map-backend=legacy` 和生产流程中的整屏 CPU 合成；如仍需基准，只在测试或工具中保留最小对照能力。
-- **关联变更**: —
-- **状态**: ⬜ 待办
+- **关联变更**: FT-079
+- **状态**: ✅ 已完成
 
 ---
 

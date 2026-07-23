@@ -230,7 +230,7 @@ func _show_report(report: PalImportReport) -> void:
 	_details.clear()
 	var root := _details.create_item()
 	for file_name: String in report.files.keys():
-		if file_name in ["fbp_preview", "sprite_preview", "map_preview", "rng_preview", "rng_runtime", "voc_conversion", "rix_conversion", "mgo_conversion", "rgm_conversion", "content_database", "text_conversion", "enemy_battle_sprites", "player_battle_sprites", "magic_effect_sprites", "battle_backgrounds"]:
+		if file_name in ["fbp_preview", "sprite_preview", "rng_preview", "rng_runtime", "voc_conversion", "rix_conversion", "mgo_conversion", "rgm_conversion", "content_database", "text_conversion", "enemy_battle_sprites", "player_battle_sprites", "magic_effect_sprites", "battle_backgrounds"]:
 			continue
 		var metadata: Dictionary = report.files[file_name]
 		var item := _details.create_item(root)

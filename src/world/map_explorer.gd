@@ -21,9 +21,7 @@ var _session := GameSession.new()
 var _save_manager := PalSaveManager.new()
 var _collectible_classifier := CollectibleClassifier.new()
 var _map_data: PalMapData
-var _tile_sprite: PalSprite
 var _scene_events: Array[PalEventObject] = []
-var _map_view: TextureRect
 var _tile_world: PalTileMapWorld
 var _ui_layer: CanvasLayer
 var _status: Label
@@ -46,7 +44,6 @@ var _fade_in_after_scene_change: bool = false
 var _automatic_fade_in_duration: float = 0.6
 var _move_cooldown: float = 0.0
 var _script_vm: ScriptVM
-var _event_sprites: Dictionary = {}
 var _walk_phase: int = 0
 var _showing_walk_frame: bool = false
 var _pending_scene_index: int = -1
@@ -59,7 +56,6 @@ var _pending_magic_object_id: int = 0
 var _pending_magic_caster_role: int = -1
 var _pending_magic_target_role: int = -1
 var _pending_magic_stage: int = 0
-var _use_legacy_renderer: bool = false
 var _touch_scan_active: bool = false
 var _touch_scan_next_index: int = 0
 var _touch_scan_restart_requested: bool = false
@@ -75,7 +71,6 @@ var _screen_shake_serial: int = 0
 
 
 func _ready() -> void:
-	_use_legacy_renderer = "--pal-map-backend=legacy" in OS.get_cmdline_user_args()
 	_build_interface()
 	if not _database.load_generated():
 		_set_error(_database.error_message + "。请返回资源实验室重新导入。")
@@ -151,16 +146,7 @@ func _build_interface() -> void:
 
 	_tile_world = PalTileMapWorld.new()
 	_tile_world.name = "PalTileMapWorld"
-	_tile_world.visible = not _use_legacy_renderer
 	add_child(_tile_world)
-
-	_map_view = TextureRect.new()
-	_map_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	_map_view.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_map_view.stretch_mode = TextureRect.STRETCH_SCALE
-	_map_view.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	_map_view.visible = _use_legacy_renderer
-	add_child(_map_view)
 
 	# Camera2D 会变换默认世界画布。HUD 必须放在独立 CanvasLayer 中，
 	# 否则相机跟随队伍时，状态栏、对话框和菜单也会一起移出 320×200 视口。
@@ -400,7 +386,7 @@ func _is_blocked(world_position: Vector2i) -> bool:
 		return true
 	var tile := PalMapCoordinates.world_to_tile(world_position)
 	var map_blocked := PalMapData.is_blocked(_map_data.tile_value(tile.x, tile.y, tile.z))
-	if not _use_legacy_renderer and _tile_world != null and _tile_world.loaded_map_number >= 0:
+	if _tile_world != null and _tile_world.loaded_map_number >= 0:
 		map_blocked = _tile_world.is_map_blocked(world_position)
 	if map_blocked:
 		return true
@@ -596,22 +582,18 @@ func _load_scene(scene_index: int, run_enter_script: bool) -> void:
 	_script_frame_accumulator = 0.0
 	var scene := _database.scenes[scene_index]
 	_map_data = _database.load_map(scene.map_number)
-	_tile_sprite = _database.load_map_tiles(scene.map_number)
 	_script_vm.set_scene_map(_map_data)
 	# 已离开的 NPC 若在切场景前没走完自动脚本，重入时应保持离场，不能重播旧动作和对白。
 	_database.complete_pending_event_departures(scene_index)
 	_scene_events = _database.events_for_scene(scene_index)
-	_event_sprites.clear()
-	if not _map_data.is_valid() or not _tile_sprite.is_valid():
-		_set_error("场景 %d 地图加载失败：%s %s" % [scene_index + 1, _map_data.error_message, _tile_sprite.error_message])
+	if not _map_data.is_valid():
+		_set_error("场景 %d 地图加载失败：%s" % [scene_index + 1, _map_data.error_message])
 		return
-	if not _use_legacy_renderer and not _tile_world.load_map(_database, scene.map_number):
+	if not _tile_world.load_map(_database, scene.map_number):
 		_set_error("地图 %d Godot TileMapLayer 加载失败：%s" % [scene.map_number, _tile_world.error_message])
 		return
-	if not _load_scene_sprites():
-		return
 	_refresh_world()
-	_status.text = "方向键｜空格交互｜Esc 菜单｜F10 返回｜场景%d/地图%d｜%s" % [scene_index + 1, scene.map_number, "CPU 基准" if _use_legacy_renderer else "TileMapLayer"]
+	_status.text = "方向键｜空格交互｜Esc 菜单｜F10 返回｜场景%d/地图%d｜TileMapLayer" % [scene_index + 1, scene.map_number]
 	if run_enter_script:
 		_pending_location_toast = PalSceneCatalog.toast_name_for_transition(_loaded_scene_index, scene_index)
 	_loaded_scene_index = scene_index
@@ -688,112 +670,9 @@ func _apply_debug_event_overrides(overrides: Dictionary) -> void:
 
 
 func _refresh_world() -> void:
-	var render_viewport := _session.viewport_position + _script_camera_offset
-	if not _use_legacy_renderer:
-		_tile_world.set_walk_animation(_walk_phase, _showing_walk_frame)
-		if not _tile_world.sync_world(_session, _scene_events, _script_camera_offset):
-			_set_error("Godot 原生地图渲染失败：%s" % _tile_world.error_message)
-		return
-	var palette := _database.load_palette(_session.palette_index, _session.night_palette)
-	var scene_items := _build_scene_draw_items(render_viewport)
-	var rendered := PalSceneRenderer.render(
-		_map_data,
-		_tile_sprite,
-		Rect2i(render_viewport, Vector2i(320, 200)),
-		scene_items
-	)
-	if not rendered.is_valid() or palette.is_empty():
-		_set_error("地图渲染失败：%s" % rendered.error_message)
-		return
-	_map_view.texture = ImageTexture.create_from_image(rendered.to_rgba_image(palette))
-
-
-func _load_scene_sprites() -> bool:
-	var leader_role := _session.party_roles[0] if not _session.party_roles.is_empty() else 0
-	var leader_sprite_number := _database.player_roles.scene_sprite_for(leader_role)
-	var leader_sprite := _player_sprite_for_role(leader_role)
-	if not leader_sprite.is_valid():
-		_set_error("主角 MGO Sprite %d 加载失败：%s。请重新导入资源。" % [leader_sprite_number, leader_sprite.error_message])
-		return false
-	_event_sprites.clear()
-	for event in _scene_events:
-		if event.sprite_number <= 0 or _event_sprites.has(event.sprite_number):
-			continue
-		var sprite := _database.load_mgo_sprite(event.sprite_number)
-		if sprite.is_valid():
-			_event_sprites[event.sprite_number] = sprite
-	return true
-
-
-func _build_scene_draw_items(render_viewport: Vector2i) -> Array:
-	var result: Array = []
-	for party_index in range(mini(_session.party_roles.size(), 3)):
-		var role_index := _session.party_roles[party_index]
-		var player_sprite := _player_sprite_for_role(role_index)
-		var player_frame := _party_frame(player_sprite, role_index, party_index)
-		if not player_frame.is_valid():
-			continue
-		var member_world_position := _session.party_member_world_position(party_index)
-		if party_index > 0 and _is_blocked(member_world_position):
-			member_world_position = _session.party_member_fallback_world_position()
-		result.append(PalSceneRenderer.player_item(player_frame, member_world_position - render_viewport, _session.world_layer))
-	for follower_index in range(mini(2, _session.follower_sprite_numbers.size())):
-		var trail_index := 3 + follower_index
-		if trail_index >= _session.trail_positions.size() or trail_index >= _session.trail_directions.size():
-			continue
-		var sprite := _database.load_mgo_sprite(_session.follower_sprite_numbers[follower_index])
-		var frame := _decode_sprite_frame(sprite, PalSceneRenderer.follower_frame_index(_session.trail_directions[trail_index], sprite.frame_count()))
-		if frame.is_valid():
-			result.append(PalSceneRenderer.player_item(frame, _session.trail_positions[trail_index] - render_viewport, _session.world_layer))
-	for event in _scene_events:
-		if not event.is_visible() or not _event_sprites.has(event.sprite_number):
-			continue
-		var sprite: PalSprite = _event_sprites[event.sprite_number]
-		var frame_index := event.current_frame
-		if event.sprite_frames == 3:
-			if frame_index == 2:
-				frame_index = 0
-			elif frame_index == 3:
-				frame_index = 2
-		frame_index += event.direction * event.sprite_frames
-		var frame := _decode_sprite_frame(sprite, frame_index)
-		if not frame.is_valid():
-			continue
-		var screen_position := event.position - render_viewport
-		if screen_position.x < -frame.width or screen_position.x > 320 + frame.width or screen_position.y < -frame.height or screen_position.y > 200 + frame.height:
-			continue
-		result.append(PalSceneRenderer.event_item(frame, screen_position, event.layer))
-	return result
-
-
-func _player_sprite_for_role(role_index: int) -> PalSprite:
-	# CPU 对照路径与正式 TileMap 路径共用内容数据库的当前形象解析，避免读档后分叉。
-	return _database.load_player_scene_sprite(role_index)
-
-
-func _party_frame(sprite: PalSprite, role_index: int, party_index: int) -> PalIndexedImage:
-	if sprite == null or not sprite.is_valid():
-		return PalIndexedImage.new()
-	var scripted_frame := _session.scripted_party_frame(party_index)
-	# record_party_step() 会在真正移动时清除旧剧情动作；若脚本随后再次执行 0015，
-	# 新动作必须覆盖残留的步态标志。仙灵岛剧情依赖这一顺序显示李逍遥倒地帧。
-	if scripted_frame >= 0:
-		return _decode_sprite_frame(sprite, scripted_frame)
-	var walk_frames := _database.player_roles.walk_frame_count_for(role_index)
-	var direction := _session.party_member_direction(party_index)
-	var frame_index := direction * walk_frames
-	if _showing_walk_frame:
-		if walk_frames == 4:
-			frame_index += _walk_phase
-		elif (_walk_phase & 1) != 0:
-			frame_index += int((_walk_phase + 1) / 2.0)
-	return _decode_sprite_frame(sprite, frame_index)
-
-
-func _decode_sprite_frame(sprite: PalSprite, frame_index: int) -> PalIndexedImage:
-	if sprite == null or not sprite.is_valid() or frame_index < 0 or frame_index >= sprite.frame_count():
-		return PalIndexedImage.new()
-	return RleDecoder.decode(sprite.get_frame(frame_index))
+	_tile_world.set_walk_animation(_walk_phase, _showing_walk_frame)
+	if not _tile_world.sync_world(_session, _scene_events, _script_camera_offset):
+		_set_error("Godot 原生地图渲染失败：%s" % _tile_world.error_message)
 
 
 func _on_unsupported_instruction(index: int, operation: int) -> void:
@@ -971,14 +850,10 @@ func _play_screen_shake(frame_count: int, level: int, serial: int) -> void:
 		var offset := Vector2(0, -level if (frame & 1) == 0 else level)
 		if _tile_world != null:
 			_tile_world.set_screen_effect_offset(offset)
-		if _use_legacy_renderer and _map_view != null:
-			_map_view.position = offset
 		await get_tree().create_timer(0.04).timeout
 	if serial == _screen_shake_serial:
 		if _tile_world != null:
 			_tile_world.set_screen_effect_offset(Vector2.ZERO)
-		if _map_view != null:
-			_map_view.position = Vector2.ZERO
 
 
 func _on_screen_wave_requested(amplitude: int, progression: int) -> void:
@@ -1196,7 +1071,6 @@ func _reset_transient_state_for_load() -> void:
 	if _location_toast != null:
 		_location_toast.hide()
 	_reset_touch_scan()
-	_event_sprites.clear()
 	_move_cooldown = 0.0
 	_showing_walk_frame = false
 	if _audio_player != null:

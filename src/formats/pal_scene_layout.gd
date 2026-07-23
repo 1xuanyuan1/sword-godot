@@ -1,16 +1,16 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal scene.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
-## SDLPal `PAL_MakeScene` 的 CPU 参考渲染器，把地图、人物、事件和覆盖块合成。
-## Godot 原生渲染必须与这里的基准 Y 和逻辑层公式保持像素一致。
-class_name PalSceneRenderer
+## 地图人物、事件和特殊覆盖块共用的场景布局规则。
+## 正式 TileMap 世界与测试用 CPU 像素基准都依赖这里的基准 Y、逻辑层和覆盖候选。
+class_name PalSceneLayout
 extends RefCounted
 
 const DRAW_KIND_SCENE := 0
 const DRAW_KIND_COLLECTIBLE_MARKER := 1
 
 
-## CPU 队列中的一个基准 Y 绘制项。
+## 场景中的一个基准 Y 绘制项；渲染后端决定把它变成 Sprite2D 还是写入 CPU 画布。
 class DrawItem:
 	var frame: PalIndexedImage
 	var x: int
@@ -31,7 +31,7 @@ class DrawItem:
 		source_object_id = source_id
 
 
-## 按 SDLPal 队伍锚点把一帧角色图像转换为 CPU 绘制项。
+## 按 SDLPal 队伍锚点把一帧角色图像转换为布局项。
 static func player_item(frame: PalIndexedImage, screen_position: Vector2i, world_layer: int = 0) -> DrawItem:
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + world_layer + 10, world_layer + 6)
 
@@ -43,7 +43,7 @@ static func follower_frame_index(direction: int, frame_count: int) -> int:
 	return clampi(posmod(direction, 4) * 3, 0, frame_count - 1)
 
 
-## 按 EVENTOBJECT 逻辑层把一帧事件图像转换为 CPU 绘制项。
+## 按 EVENTOBJECT 逻辑层把一帧事件图像转换为布局项。
 static func event_item(frame: PalIndexedImage, screen_position: Vector2i, event_layer: int) -> DrawItem:
 	return DrawItem.new(frame, screen_position.x - int(frame.width / 2.0), screen_position.y + event_layer * 8 + 9, event_layer * 8 + 2)
 
@@ -63,7 +63,6 @@ static func collectible_marker_item(marker_frame: PalIndexedImage, screen_positi
 
 
 ## 按 SDLPal 顺序展开人物及其候选覆盖块，但不排序也不绘制。
-## Godot 原生世界使用该列表创建 Y 排序 Sprite2D，从而和 CPU 基准共享遮挡规则。
 static func expanded_draw_items(map_data: PalMapData, tile_sprite: PalSprite, viewport_position: Vector2i, scene_items: Array) -> Array:
 	var draw_items: Array = []
 	for item in scene_items:
@@ -71,22 +70,6 @@ static func expanded_draw_items(map_data: PalMapData, tile_sprite: PalSprite, vi
 			draw_items.append(item)
 			_append_cover_tiles(draw_items, item, map_data, tile_sprite, viewport_position)
 	return draw_items
-
-
-## 先绘制完整地图，再加入角色及可能盖住角色的地图块并按基准 Y 排序。
-static func render(map_data: PalMapData, tile_sprite: PalSprite, viewport: Rect2i, scene_items: Array) -> PalIndexedImage:
-	var canvas := PalMapRenderer.render(map_data, tile_sprite, viewport, true)
-	if not canvas.is_valid():
-		return canvas
-	var draw_items := expanded_draw_items(map_data, tile_sprite, viewport.position, scene_items)
-	for index in range(draw_items.size()):
-		draw_items[index].insertion_order = index
-	draw_items.sort_custom(func(left: DrawItem, right: DrawItem) -> bool:
-		return left.baseline_y < right.baseline_y or (left.baseline_y == right.baseline_y and left.insertion_order < right.insertion_order)
-	)
-	for item: DrawItem in draw_items:
-		_blit(item.frame, canvas, item.x, item.baseline_y - item.frame.height - item.logical_layer + item.draw_offset_y)
-	return canvas
 
 
 static func _append_cover_tiles(draw_items: Array, source_item: DrawItem, map_data: PalMapData, tile_sprite: PalSprite, viewport_position: Vector2i) -> void:
@@ -145,23 +128,6 @@ static func _append_cover_tiles(draw_items: Array, source_item: DrawItem, map_da
 						tile_y * 16 + tile_half * 8 + 7 + layer + tile_height * 8 - viewport_position.y,
 						tile_height * 8 + layer
 					))
-
-
-static func _blit(source: PalIndexedImage, destination: PalIndexedImage, x_offset: int, y_offset: int) -> void:
-	for source_y in range(source.height):
-		var destination_y := y_offset + source_y
-		if destination_y < 0 or destination_y >= destination.height:
-			continue
-		for source_x in range(source.width):
-			var destination_x := x_offset + source_x
-			if destination_x < 0 or destination_x >= destination.width:
-				continue
-			var source_index := source_y * source.width + source_x
-			if source.opacity[source_index] == 0:
-				continue
-			var destination_index := destination_y * destination.width + destination_x
-			destination.indices[destination_index] = source.indices[source_index]
-			destination.opacity[destination_index] = source.opacity[source_index]
 
 
 static func _trunc_div(numerator: int, denominator: int) -> int:

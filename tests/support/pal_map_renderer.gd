@@ -1,8 +1,8 @@
 # Copyright (C) 2026 sword-godot contributors
 # Adapted from SDLPal map.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
-## SDLPal `PAL_MapBlitToSurface` 的 CPU 索引画布实现。
-## TileMapLayer 迁移期间保留为导入预览和逐像素参考，不持有运行时状态。
+## SDLPal `PAL_MapBlitToSurface` 的测试用 CPU 索引画布实现。
+## 只供合成与本地像素对照，不属于正式游戏或资源导入能力。
 class_name PalMapRenderer
 extends RefCounted
 

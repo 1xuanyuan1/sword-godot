@@ -13,6 +13,35 @@ keywords:
 
 ## 变更记录
 
+## 2026-07-23
+
+### [FT-079] [refactor] 退役正式运行中的 CPU 地图渲染器
+
+- **关联需求**: M2 TileMap 原生地图、M5 完整通关与发布质量
+- **关联 TODO**: TD-015
+- **功能描述**: 删除 `MapExplorer` 的 `_map_view`、`_use_legacy_renderer`、`--pal-map-backend=legacy`、隐藏整屏 CPU 合成／RGBA 纹理上传和重复人物选帧代码，正式探索只保留 `TileMapLayer + PalTileMapWorld`。新增 `PalSceneLayout` 统一人物／事件基准 Y、跟随者选帧、逻辑层和特殊覆盖块扫描；正式世界把布局项转成 Sprite2D，CPU 地图／场景渲染器移入 `tests/support/` 并停止导入期地图预览。新增全地图结构门禁，防止未生成或损坏的 TileMap 重新依赖回退路径。
+- **验证情况**: 382 项合成检查通过，源码门禁确认正式 `MapExplorer` 不再包含 CPU 后端标记。Headless 完整遍历 223 份有效 MAP/GOP 和 221 个场景引用，全部由 `PalTileMapWorld` 成功载入；149 个固定视口使用独立 Godot 4.7 Metal 进程逐项与 CPU 测试基准达到 320×200 零差异，并实际检查五灵祭坛与最终对质画面。客栈／仙灵岛场景转场、倒地动作、屏幕震动／波纹、启动读档和最终章完整结局相邻回归均通过。
+- **涉及文件**:
+  - `src/formats/pal_scene_layout.gd`
+  - `src/world/pal_tilemap_world.gd`
+  - `src/world/map_explorer.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/ui/import_lab.gd`
+  - `tests/run_tests.gd`
+  - `tests/support/pal_map_renderer.gd`
+  - `tests/support/pal_scene_renderer.gd`
+  - `tests/run_local_tilemap_inventory_test.gd`
+  - `tests/run_local_tilemap_visual_test.gd`
+  - `tests/run_local_scene_transition_test.gd`
+  - `README.md`
+  - `docs/ARCHITECTURE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `docs/GAME_WALKTHROUGH.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `docs/SCENE_RENDERING.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-22
 
 ### [FT-070] [feat] 补齐正式片头与标题菜单

@@ -38,7 +38,7 @@ sword/
 
 ### `src/formats`
 
-纯格式层，不持有游戏进度。输入通常是 `PackedByteArray`，输出是解析后的数据对象或索引图像。这里实现 MKF 分块、YJ1 解压、RLE、PAL Sprite、地图位字段、调色板、RNG 和 VOC；`RngPlaybackStream` 只常驻外层偏移表，按动画分块读取并维护单张 320×200 索引画布。
+纯格式层，不持有游戏进度。输入通常是 `PackedByteArray`，输出是解析后的数据对象或索引图像。这里实现 MKF 分块、YJ1 解压、RLE、PAL Sprite、地图位字段、调色板、RNG 和 VOC；`PalSceneLayout` 是 TileMap 与 CPU 测试共用的 Y 排序／遮挡规则；`RngPlaybackStream` 只常驻外层偏移表，按动画分块读取并维护单张 320×200 索引画布。
 
 ### `src/audio`
 
@@ -62,7 +62,7 @@ sword/
 
 ### `src/world`
 
-`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排，也负责把场外仙术的使用/成功脚本按顺序交给 ScriptVM、成功后扣除 MP，以及在 ScriptVM 等待时覆盖打开剧情战斗、切换 BGM 并回传胜负。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
+`map_explorer.gd` 负责输入、移动、事件触发和各子系统编排，也负责把场外仙术的使用/成功脚本按顺序交给 ScriptVM、成功后扣除 MP，以及在 ScriptVM 等待时覆盖打开剧情战斗、切换 BGM 并回传胜负。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 是唯一正式地图渲染路径，负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
 
 ### `src/ui`
 
@@ -79,6 +79,8 @@ sword/
 - `tests/run_equipment_tests.gd`：CI 使用合成物品和脚本验证六槽装备、属性效果与背包交换。
 - `tests/run_save_system_tests.gd`：CI 使用合成内容验证版本、校验、损坏诊断和完整会话往返。
 - `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
+- `tests/run_local_tilemap_inventory_test.gd`：Headless 遍历全部本机有效地图和场景引用，验证正式 TileMapLayer 资源结构。
+- `tests/support/`：只供测试使用的 CPU 地图／场景像素基准，不被正式游戏或导入器引用。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。
 - `generated/pal/content/archives/rng.mkf`：正式运行时按需读取的压缩 RNG 归档；默认不生成逐帧 PNG。

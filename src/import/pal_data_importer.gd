@@ -83,12 +83,12 @@ static func import_from(source_dir: String, output_dir: String = "res://generate
 	_convert_battle_backgrounds(files_by_lowercase["fbp.mkf"], absolute_output, report)
 	_convert_rgm_portraits(files_by_lowercase["rgm.mkf"], absolute_output, report)
 	_convert_text_and_font(files_by_lowercase, absolute_output, report)
+	_clear_generated_resources(absolute_output, "_preview.png")
 	_generate_fbp_preview(files_by_lowercase["fbp.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_clear_directory_contents(absolute_output.path_join("rng"))
 	if generate_rng_previews:
 		_generate_rng_preview(files_by_lowercase["rng.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_generate_sprite_preview(files_by_lowercase["ball.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
-	_generate_map_preview(files_by_lowercase["map.mkf"], files_by_lowercase["gop.mkf"], files_by_lowercase["pat.mkf"], absolute_output, report)
 	_convert_voc_audio(files_by_lowercase["voc.mkf"], absolute_output, report)
 	_convert_rix_audio(files_by_lowercase["mus.mkf"], absolute_output, report)
 	_write_manifest(absolute_output, report)
@@ -614,32 +614,6 @@ static func _generate_sprite_preview(sprite_path: String, palette_path: String, 
 			report.files["sprite_preview"] = {"chunk": chunk_index, "kind": "item_rle", "path": preview_path}
 			return
 	report.warnings.append("未能从 ball.mkf 生成 Sprite/RLE 预览")
-
-
-static func _generate_map_preview(map_path: String, gop_path: String, palette_path: String, absolute_output: String, report: PalImportReport) -> void:
-	var map_archive := MkfArchive.load_file(map_path)
-	var gop_archive := MkfArchive.load_file(gop_path)
-	var palette_archive := MkfArchive.load_file(palette_path)
-	if not map_archive.is_valid() or not gop_archive.is_valid() or not palette_archive.is_valid():
-		return
-	var palette_rgb := PaletteDecoder.decode_rgb(palette_archive.get_chunk(0), false)
-	for map_index in range(1, mini(map_archive.chunk_count(), gop_archive.chunk_count())):
-		var decoder := Yj1Decoder.new()
-		var unpacked := decoder.decompress(map_archive.get_chunk(map_index), PalMapData.BYTE_SIZE)
-		if unpacked.size() != PalMapData.BYTE_SIZE:
-			continue
-		var map_data := PalMapData.from_bytes(unpacked)
-		var tile_sprite := PalSprite.from_bytes(gop_archive.get_chunk(map_index))
-		if not map_data.is_valid() or not tile_sprite.is_valid():
-			continue
-		var rendered := PalMapRenderer.render(map_data, tile_sprite, Rect2i(0, 0, 320, 200), true)
-		if not rendered.is_valid():
-			continue
-		var preview_path := absolute_output.path_join("map_%03d_preview.png" % map_index)
-		if rendered.to_rgba_image(palette_rgb).save_png(preview_path) == OK:
-			report.files["map_preview"] = {"map": map_index, "tile_frames": tile_sprite.frame_count(), "path": preview_path}
-			return
-	report.warnings.append("未能从 map.mkf/gop.mkf 生成地图预览")
 
 
 static func _convert_voc_audio(voc_path: String, absolute_output: String, report: PalImportReport) -> void:

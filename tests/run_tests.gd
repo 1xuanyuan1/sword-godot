@@ -27,6 +27,7 @@ func _init() -> void:
 	_test_rng_rejects_malformed_delta()
 	_test_rng_playback_stream()
 	_test_map_helpers()
+	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
 	_test_voc_decoder()
 	_test_music_reference_collection()
@@ -45,7 +46,7 @@ func _init() -> void:
 	_test_scene_y_sorting()
 	_test_pal_direction_mapping()
 	_test_party_trail()
-	_test_explorer_scripted_pose_priority()
+	_test_tilemap_scripted_pose_priority()
 	_test_player_scene_sprite_refresh()
 	_test_explorer_blocker_displacement()
 	_test_audio_settings()
@@ -352,6 +353,24 @@ func _test_map_helpers() -> void:
 	_expect(PalMapCoordinates.weighted_distance(Vector2i.ZERO, Vector2i(7, 4)) == 15, "PAL weighted distance doubles the vertical offset")
 	_expect(PalMapCoordinates.positions_collide(Vector2i.ZERO, Vector2i(7, 4)), "EventObject collision accepts weighted distance 15")
 	_expect(not PalMapCoordinates.positions_collide(Vector2i.ZERO, Vector2i(8, 4)), "EventObject collision rejects strict boundary 16")
+
+
+func _test_tilemap_runtime_retirement() -> void:
+	var file := FileAccess.open("res://src/world/map_explorer.gd", FileAccess.READ)
+	var source := file.get_as_text() if file != null else ""
+	var importer_file := FileAccess.open("res://src/import/pal_data_importer.gd", FileAccess.READ)
+	var importer_source := importer_file.get_as_text() if importer_file != null else ""
+	var retired := (
+		file != null and importer_file != null
+		and source.find("_map_view") < 0
+		and source.find("_use_legacy_renderer") < 0
+		and source.find("--pal-map-backend=legacy") < 0
+		and source.find("PalSceneRenderer") < 0
+		and importer_source.find("PalMapRenderer") < 0
+		and not FileAccess.file_exists("res://src/formats/pal_map_renderer.gd")
+		and not FileAccess.file_exists("res://src/formats/pal_scene_renderer.gd")
+	)
+	_expect(retired, "formal runtime and importer contain only the TileMapLayer map renderer path")
 
 
 func _test_tileset_builder() -> void:
@@ -691,7 +710,6 @@ func _test_explorer_blocker_displacement() -> void:
 	var map_bytes := PackedByteArray()
 	map_bytes.resize(PalMapData.BYTE_SIZE)
 	explorer._map_data = PalMapData.from_bytes(map_bytes)
-	explorer._use_legacy_renderer = true
 	var party := Vector2i(320, 160)
 	explorer._session.set_party_world_position(party)
 	var original_trail: Array[Vector2i] = []
@@ -886,9 +904,9 @@ func _test_scene_draw_item_anchors() -> void:
 	frame.indices.resize(200)
 	frame.opacity.resize(200)
 	frame.opacity.fill(255)
-	var player := PalSceneRenderer.player_item(frame, Vector2i(160, 112))
+	var player := PalSceneLayout.player_item(frame, Vector2i(160, 112))
 	_expect(player.x == 155 and player.baseline_y == 122 and player.logical_layer == 6, "scene player anchor")
-	var event := PalSceneRenderer.event_item(frame, Vector2i(40, 50), 2)
+	var event := PalSceneLayout.event_item(frame, Vector2i(40, 50), 2)
 	_expect(event.x == 35 and event.baseline_y == 75 and event.logical_layer == 18, "scene event layer anchor")
 
 
@@ -908,8 +926,8 @@ func _test_scene_y_sorting() -> void:
 	second.indices = PackedByteArray([8])
 	second.opacity = PackedByteArray([255])
 	var items: Array = [
-		PalSceneRenderer.DrawItem.new(second, 0, 2, 1),
-		PalSceneRenderer.DrawItem.new(first, 0, 1, 0),
+		PalSceneLayout.DrawItem.new(second, 0, 2, 1),
+		PalSceneLayout.DrawItem.new(first, 0, 1, 0),
 	]
 	var rendered := PalSceneRenderer.render(map_data, tile_sprite, Rect2i(0, 0, 4, 4), items)
 	_expect(rendered.is_valid(), "scene synthetic render")
@@ -937,27 +955,21 @@ func _test_party_trail() -> void:
 	_expect(not session.party_formation_collapsed, "normal movement restores the trail formation after collapse")
 
 
-func _test_explorer_scripted_pose_priority() -> void:
+func _test_tilemap_scripted_pose_priority() -> void:
 	var database := PalContentDatabase.new()
 	var roles := PalPlayerRoles.new()
 	roles.walk_frames = PackedInt32Array([3])
 	database.player_roles = roles
-	var explorer = load("res://src/world/map_explorer.gd").new()
-	explorer._database = database
-	explorer._session = GameSession.new()
-	explorer._session.reset_new_game()
-	explorer._session.set_party_gesture(GameSession.DIR_SOUTH, 1, 0)
+	var session := GameSession.new()
+	session.reset_new_game()
+	session.set_party_gesture(GameSession.DIR_SOUTH, 1, 0)
 	# 剧情移动会短暂打开步态标志；紧随其后的 0015 必须重新取得优先级。
-	explorer._showing_walk_frame = true
-	var frame: PalIndexedImage = explorer._party_frame(_synthetic_map_tile_sprite(), 0, 0)
-	_expect(frame.is_valid() and frame.indices[0] == 9, "CPU renderer prioritizes a scripted party pose over a stale walk-frame flag")
 	var tile_world := PalTileMapWorld.new()
 	tile_world._database = database
 	tile_world._showing_walk_frame = true
-	var native_frame: PalIndexedImage = tile_world._party_frame(_synthetic_map_tile_sprite(), 0, 0, explorer._session)
-	_expect(native_frame.is_valid() and native_frame.indices[0] == 9, "TileMap renderer prioritizes the same scripted party pose as the CPU reference")
+	var native_frame: PalIndexedImage = tile_world._party_frame(_synthetic_map_tile_sprite(), 0, 0, session)
+	_expect(native_frame.is_valid() and native_frame.indices[0] == 9, "TileMap renderer prioritizes a scripted party pose over a stale walk-frame flag")
 	tile_world.free()
-	explorer.free()
 
 
 func _test_player_scene_sprite_refresh() -> void:
@@ -969,16 +981,13 @@ func _test_player_scene_sprite_refresh() -> void:
 	var regular_sprite := _synthetic_map_tile_sprite()
 	database._mgo_sprites[193] = special_sprite
 	database._mgo_sprites[2] = regular_sprite
-	var explorer = load("res://src/world/map_explorer.gd").new()
-	explorer._database = database
 	var tile_world := PalTileMapWorld.new()
 	tile_world._database = database
-	_expect(explorer._player_sprite_for_role(0) == special_sprite and tile_world._player_sprite_for_role(0) == special_sprite, "both render paths resolve the current scripted player sprite")
+	_expect(tile_world._player_sprite_for_role(0) == special_sprite, "TileMap renderer resolves the current scripted player sprite")
 	# 存档恢复会直接替换 PLAYERROLES 数组，不会经过 0065 的换装信号。
 	roles.scene_sprite_numbers[0] = 2
-	_expect(explorer._player_sprite_for_role(0) == regular_sprite and tile_world._player_sprite_for_role(0) == regular_sprite, "save-style scene sprite restore invalidates role-based rendering without an external cache signal")
+	_expect(tile_world._player_sprite_for_role(0) == regular_sprite, "save-style scene sprite restore invalidates role-based TileMap rendering without an external cache signal")
 	tile_world.free()
-	explorer.free()
 
 
 func _test_audio_settings() -> void:

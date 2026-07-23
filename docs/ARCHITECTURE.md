@@ -66,7 +66,7 @@ flowchart LR
 
 系统菜单保存时，`PalSaveManager` 从 `GameSession` 和运行时内容数据库复制队伍、背包、装备、Scene、EventObject 与脚本游标，再写入 `user://saves/`。读档先验证格式、内容指纹和 SHA-256，随后恢复会话与可变剧情数据，由装备管理器重建派生属性、地图层重载场景但不重跑进入脚本。完整边界见[Godot 版本化存档系统](SAVE_SYSTEM.md)。
 
-`PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 默认走该路径，命令行用户参数 `--pal-map-backend=legacy` 可临时启用 CPU 基准。
+`PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 只走该路径，不再创建隐藏 CPU 画布、整屏 RGBA 纹理或运行时后端开关。
 
 `Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast、经典菜单和 RNG 过场播放器统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。`RngPlaybackStream` 配置时只读外层 MKF 偏移表，播放时才载入当前动画分块，把 YJ1 增量顺序应用到单张 320×200 索引画布；`PalRngPlayer` 复用一个 RG8 纹理和调色板 Shader。RNG 层覆盖普通 HUD 但位于对话层下方，开始播放时会收起上一段正文，仍允许后续字幕叠加；屏幕渐变层位于 RNG 之上。RNG 首帧负责消费前置 `0050` 的待渐显状态，播放器在遮罩变透明前暂停帧计时，避免整段电影被黑层覆盖或漏掉开头。RNG 播放期间 `ScriptVM.waiting_for_rng` 阻止地图输入和后续指令，播放完成后再恢复。
 
@@ -115,7 +115,7 @@ sequenceDiagram
 
 地图和人物纹理保存“颜色索引 + 透明度”，`indexed_palette.gdshader` 在 GPU 上映射到当前 PAL 调色板。这样日夜切换和后续淡入淡出只更新材质，不需要每次移动都重新生成 320×200 RGBA 图片。
 
-CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 继续作为像素参考。TileMapLayer 已成为默认路径；CPU 路径保留一个里程碑用于排错和本地截图对照。
+`PalSceneLayout` 统一基准 Y、逻辑层和特殊覆盖块扫描，正式 `PalTileMapWorld` 与测试基准共用这套布局。CPU 的 `PalMapRenderer` 和 `PalSceneRenderer` 位于 `tests/support/`，只由合成测试和本地像素对照调用，不随正式游戏运行或资源导入。
 
 ## 战斗资源与状态边界
 
