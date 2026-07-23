@@ -1,7 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 区分源码工程与桌面导出包的本地生成内容目录。
-## 编辑器继续使用被 Git 忽略的 `res://generated/pal`；导出包必须写入可写的 `user://`。
+## 区分源码工程、内置内容的 Web 包与桌面导出包的本地生成内容目录。
+## 编辑器／Web 使用 `res://generated/pal`；桌面包首次导入必须写入可写的 `user://`。
 class_name PalRuntimePaths
 extends RefCounted
 
@@ -11,12 +11,12 @@ const EXPORTED_GENERATED_ROOT := "user://generated/pal"
 
 ## 返回当前运行环境应使用的 PAL 生成内容根目录。
 static func generated_root() -> String:
-	return generated_root_for(OS.has_feature("editor"))
+	return generated_root_for(OS.has_feature("editor"), OS.has_feature("web"))
 
 
-## 按明确的编辑器标记返回根目录；该入口也供无平台依赖的发布路径测试使用。
-static func generated_root_for(editor_build: bool) -> String:
-	return EDITOR_GENERATED_ROOT if editor_build else EXPORTED_GENERATED_ROOT
+## 按明确的编辑器／Web 标记返回根目录；该入口也供无平台依赖的发布路径测试使用。
+static func generated_root_for(editor_build: bool, web_build: bool = false) -> String:
+	return EDITOR_GENERATED_ROOT if editor_build or web_build else EXPORTED_GENERATED_ROOT
 
 
 ## 返回当前运行环境的内容数据库目录。

@@ -358,6 +358,7 @@ func _test_map_helpers() -> void:
 
 func _test_runtime_paths() -> void:
 	_expect(PalRuntimePaths.generated_root_for(true) == "res://generated/pal", "editor build keeps generated PAL content in the ignored project directory")
+	_expect(PalRuntimePaths.generated_root_for(false, true) == "res://generated/pal", "web export reads the generated PAL content embedded in its PCK")
 	_expect(PalRuntimePaths.generated_root_for(false) == "user://generated/pal", "desktop export writes generated PAL content to the user directory")
 	_expect(PalRuntimePaths.content_root().ends_with("/generated/pal/content"), "runtime content root appends the database directory")
 

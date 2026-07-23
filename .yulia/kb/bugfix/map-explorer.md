@@ -12,6 +12,20 @@ keywords:
 
 ## 修复记录
 
+## 2026-07-23
+
+### [BF-049] 桌面运行时目录分流导致 Web 发布包找不到内置内容
+
+- **来源**: 发布自测
+- **关联需求**: M5 Web 发布质量
+- **问题描述**: `PalRuntimePaths` 最初只区分编辑器与非编辑器，把所有导出包都指向 `user://generated/pal`。桌面包需要该可写目录执行首次导入，但 EVA Web 包会把已生成内容内置在只读的 `res://generated/pal`，因此更新后的网页包会在启动时找错数据库。与此同时，Web 暂存工程只链接 `generated/scenes/shaders/src`，遗漏新加入的 `assets/ui/status_condition_icons.png`；Godot 报 `ICON_ATLAS` 解析错误却仍以退出码 0 产出损坏包。
+- **涉及文件**:
+  - `src/game/pal_runtime_paths.gd`
+  - `tests/run_tests.gd`
+  - `tools/prepare_eva_web_project.mjs`
+- **修复内容**: 运行时目录现在明确区分编辑器、Web 与桌面：编辑器／Web 从 `res://generated/pal` 读取，只有桌面导出使用 `user://generated/pal`。Web 暂存工程同步链接 `assets/`，确保状态图集及后续代码资源依赖可参与导入。新增 Web 路径合成断言，387 项检查通过；EVA 工程重新构建为 12 个 gzip 分片，过滤日志无 Parse/Compile 错误，并在 Chromium WebGL 2 中完成全部分片下载解压、正式 TileMap 启动、中文对话和资源加载检查，控制台无脚本或资源错误。
+- **状态**: ✅ 已修复
+
 ## 2026-07-22
 
 ### [BF-043] 大理庆典场景入口因有限循环没有事件上下文而永久卡住

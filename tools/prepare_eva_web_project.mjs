@@ -15,7 +15,7 @@ await rm(stagingDir, { recursive: true, force: true })
 await mkdir(buildResourceDir, { recursive: true })
 await mkdir(exportPluginDir, { recursive: true })
 
-for (const directory of ['generated', 'scenes', 'shaders', 'src']) {
+for (const directory of ['assets', 'generated', 'scenes', 'shaders', 'src']) {
   await symlink(join(projectDir, directory), join(stagingDir, directory), 'dir')
 }
 
