@@ -105,6 +105,18 @@ tools\generate_resources.cmd "D:\games\PAL\Data" --godot "C:\Tools\Godot\Godot_v
 
 生成内容位于上述目录的 `generated/pal/`，存档位于 `saves/`。方向键、空格／回车、Esc、M、Tab、I 和 F10 与源码工程使用相同输入映射。当前 macOS 验收包未签名、未公证；面向外部分发时仍需使用发布者自己的证书完成签名和公证。
 
+### Android 本地验收包
+
+安装 Godot 4.7 Android 模板并配置 Android SDK 与 JDK 17 后，可生成仅包含 arm64-v8a 的 debug 签名 APK：
+
+```bash
+mkdir -p builds/android
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --export-debug "Android APK (Local)" builds/android/SwordGodotStudyPort-Android-arm64-debug.apk
+```
+
+Android 不能调用桌面导入流程依赖的 Python 和 C++ 编译器，因此该本地验收包与 Web 版一样从 `res://generated/pal/` 读取构建时内置的生成内容。APK、原版资源和生成内容只允许留在本机，不提交仓库，也不应在没有相应授权时对外分发。当前移动端尚未提供触屏方向键和动作按钮，实际操作需要连接实体或蓝牙键盘；应用商店发布还需另外配置正式 keystore、版本策略和移动端交互。
+
 运行项目：
 
 ```bash

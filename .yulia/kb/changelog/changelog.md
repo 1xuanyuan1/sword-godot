@@ -66,6 +66,21 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-081] [feat] 增加 Android arm64 本地验收包
+
+- **关联需求**: M5 多平台发布质量
+- **关联 TODO**: 无
+- **功能描述**: 新增 Godot 4.7 Android APK 导出预设，使用 `org.swordgodot.studyport` 包名、版本 `0.1.0(1)`、arm64-v8a 单架构和本机 debug 签名。Android 无法执行桌面首次导入所需的 Python／C++ 工具，因此与 Web 包统一从 `res://generated/pal` 读取构建时内置内容；桌面发布仍保持 `user://generated/pal`。预设排除原版 Data 目录、测试、存档、截图和其他开发产物，README 明确本地验收、授权边界、正式 keystore 与当前需要实体键盘的限制。
+- **验证情况**: 387 项合成检查通过；Godot 4.7 使用 Android SDK 36、Build Tools 37 和 JDK 17 成功生成 187 MiB APK并完成 zipalign、签名与自校验。`aapt` 确认包名、版本、最低 API 24 和目标 API 36，APK 仅包含 arm64-v8a，`apksigner` 确认 v2／v3 签名有效；内容审计确认 223 个 TileMap、290 个音频样本和 RNG 归档均已内置，零原版根目录、测试、存档或 `.rpg`。当前没有连接 Android 设备或可用 AVD，未执行真机启动验收。
+- **涉及文件**:
+  - `export_presets.cfg`
+  - `src/game/pal_runtime_paths.gd`
+  - `tests/run_tests.gd`
+  - `README.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-22
 
 ### [FT-070] [feat] 补齐正式片头与标题菜单
