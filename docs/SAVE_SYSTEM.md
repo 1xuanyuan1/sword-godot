@@ -10,7 +10,7 @@
 - 槽位摘要显示中文地点名、保存时间、队伍头像、姓名和等级；右侧小数字是该槽累计保存次数。
 - 保存和读取只允许在探索地图的空闲状态执行，不保存半句对话、战斗中间帧、渐变或菜单内部选择。
 
-存档位于 `user://saves/slot_001.json` 至 `slot_100.json`。在 macOS 默认对应 `~/Library/Application Support/Godot/app_userdata/Sword Godot Study Port/saves/`；实际路径以 Godot 的 `user://` 为准。
+存档位于 `user://saves/slot_001.json` 至 `slot_100.json`。macOS 默认对应 `~/Library/Application Support/Godot/app_userdata/Sword Godot Study Port/saves/`，Windows 默认对应 `%APPDATA%\Godot\app_userdata\Sword Godot Study Port\saves\`；实际路径以 Godot 的 `user://` 为准。
 
 ## 保存范围
 

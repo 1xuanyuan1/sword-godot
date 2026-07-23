@@ -188,13 +188,14 @@ func _build_interface() -> void:
 
 
 func _show_idle_state() -> void:
-	var has_core_content := FileAccess.file_exists("res://generated/pal/content/core/scenes.bin")
-	var has_generated_content := has_core_content and FileAccess.file_exists("res://generated/pal/content/world/tilemaps/012.tscn")
+	var content_root := PalRuntimePaths.content_root()
+	var has_core_content := FileAccess.file_exists(content_root.path_join("core/scenes.bin"))
+	var has_generated_content := has_core_content and FileAccess.file_exists(content_root.path_join("world/tilemaps/012.tscn"))
 	_explore_button.disabled = not has_generated_content
 	var readable_save_count := _configure_save_launcher(has_generated_content)
 	_story_test_button.disabled = not has_generated_content
-	_rng_button.disabled = not FileAccess.file_exists("res://generated/pal/content/archives/rng.mkf")
-	_battle_button.disabled = not FileAccess.file_exists("res://generated/pal/content/battle/backgrounds/021.idx")
+	_rng_button.disabled = not FileAccess.file_exists(content_root.path_join("archives/rng.mkf"))
+	_battle_button.disabled = not FileAccess.file_exists(content_root.path_join("battle/backgrounds/021.idx"))
 	var state_text := "已发现本地生成内容，可以开始游戏。" if has_generated_content else ("生成内容版本较旧，请重新导入 Data。" if has_core_content else "等待资源目录。")
 	if _save_system_available:
 		state_text += " 可读取存档 %d 个。" % readable_save_count

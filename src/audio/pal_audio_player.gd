@@ -188,9 +188,14 @@ func _stop_music(fade_seconds: float) -> void:
 
 
 func _load_wav(path: String) -> AudioStreamWAV:
-	if not ResourceLoader.exists(path):
+	if ResourceLoader.exists(path):
+		return ResourceLoader.load(path, "AudioStreamWAV", ResourceLoader.CACHE_MODE_REUSE) as AudioStreamWAV
+	# 桌面发布包会在 user:// 运行时生成 WAV，没有编辑器创建的 .import 元数据。
+	# AudioStreamWAV 可直接解析原始文件，避免把本地原版派生音频塞回发布 PCK。
+	var absolute_path := ProjectSettings.globalize_path(path)
+	if not FileAccess.file_exists(absolute_path):
 		return null
-	return ResourceLoader.load(path, "AudioStreamWAV", ResourceLoader.CACHE_MODE_REUSE) as AudioStreamWAV
+	return AudioStreamWAV.load_from_file(absolute_path)
 
 
 func _music_path(number: int) -> String:
@@ -203,7 +208,7 @@ func _sound_path(number: int) -> String:
 
 func _audio_root() -> String:
 	if _database == null:
-		return "res://generated/pal/audio"
+		return PalRuntimePaths.generated_path("audio")
 	return _database.root_path.get_base_dir().path_join("audio")
 
 

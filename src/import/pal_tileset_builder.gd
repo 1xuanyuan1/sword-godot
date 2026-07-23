@@ -297,8 +297,10 @@ static func _absolute_path(path: String) -> String:
 static func _resource_path(absolute_path: String) -> String:
 	var project_root := ProjectSettings.globalize_path("res://").trim_suffix("/")
 	var user_root := ProjectSettings.globalize_path("user://").trim_suffix("/")
-	if absolute_path.begins_with(project_root + "/"):
-		return "res://" + absolute_path.trim_prefix(project_root + "/")
 	if absolute_path.begins_with(user_root + "/"):
 		return "user://" + absolute_path.trim_prefix(user_root + "/")
+	# 打包运行时 res:// 位于 PCK，globalize_path 可能返回空根或 `/`；不能因此
+	# 把任意绝对用户路径误标成 res://Users/...。
+	if not project_root.is_empty() and project_root != "/" and absolute_path.begins_with(project_root + "/"):
+		return "res://" + absolute_path.trim_prefix(project_root + "/")
 	return absolute_path

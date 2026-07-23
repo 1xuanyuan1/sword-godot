@@ -20,8 +20,8 @@ const MESSAGE_SPEAKER_ROLE_OVERRIDES: Dictionary = {
 	2526: 0, # 少女现身后，李逍遥求饶。
 }
 
-## 当前内容根目录，默认指向被 Git 忽略的本地导入产物。
-var root_path: String = "res://generated/pal/content"
+## 当前内容根目录；源码工程使用 `res://generated`，桌面导出包使用可写的 `user://generated`。
+var root_path: String = PalRuntimePaths.content_root()
 ## 最近一次读取或结构校验失败原因。
 var error_message: String = ""
 ## `SSS.MKF` 解析得到的全部剧情场景。
@@ -79,8 +79,8 @@ var _initial_event_auto_scripts: PackedInt32Array = PackedInt32Array()
 
 ## 从生成目录加载核心结构和文字数据库，并清空旧缓存。
 ## 任一必需文件缺失或结构长度错误时返回 `false`，原因写入 `error_message`。
-func load_generated(path: String = "res://generated/pal/content") -> bool:
-	root_path = path
+func load_generated(path: String = "") -> bool:
+	root_path = PalRuntimePaths.content_root() if path.is_empty() else path
 	error_message = ""
 	scenes.clear()
 	event_objects.clear()

@@ -33,14 +33,14 @@ const COLOR_NORMAL := 0x4f
 const COLOR_SELECTED_FIRST := 0xf9
 const MENU_POSITIONS := [Vector2i(125, 95), Vector2i(125, 112)]
 const REQUIRED_STARTUP_FILES := [
-	"res://generated/pal/content/battle/backgrounds/038.idx",
-	"res://generated/pal/content/battle/backgrounds/039.idx",
-	"res://generated/pal/content/battle/backgrounds/060.idx",
-	"res://generated/pal/content/sprites/mgo/071.spr",
-	"res://generated/pal/content/sprites/mgo/073.spr",
-	"res://generated/pal/content/archives/rng.mkf",
-	"res://generated/pal/audio/rix/004.wav",
-	"res://generated/pal/audio/rix/005.wav",
+	"content/battle/backgrounds/038.idx",
+	"content/battle/backgrounds/039.idx",
+	"content/battle/backgrounds/060.idx",
+	"content/sprites/mgo/071.spr",
+	"content/sprites/mgo/073.spr",
+	"content/archives/rng.mkf",
+	"audio/rix/004.wav",
+	"audio/rix/005.wav",
 ]
 
 var phase: Phase = Phase.TRADEMARK
@@ -83,6 +83,8 @@ var _font_glyphs: Dictionary = {}
 
 
 func _ready() -> void:
+	if _run_desktop_export_smoke():
+		return
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(true)
 	_build_save_menu()
@@ -106,6 +108,61 @@ func _ready() -> void:
 		skip_to_opening_menu()
 	else:
 		_begin_trademark()
+
+
+## 发布包门禁使用的隐藏启动检查：验证 user:// 可写且 PCK 内的导入辅助文件可释放。
+## 只在显式传入 `--pal-desktop-smoke` 时运行，不改变普通玩家启动流程。
+func _run_desktop_export_smoke() -> bool:
+	var arguments := OS.get_cmdline_user_args()
+	if not "--pal-desktop-smoke" in arguments:
+		return false
+	var report := PalImportReport.new()
+	var tool_paths: Array[String] = []
+	for relative_path in ["pal_text_convert.py", "rix_renderer/build.py", "rix_renderer/main.cpp", "rix_renderer/compat.h"]:
+		var tool_path := PalDataImporter._materialize_import_tool(relative_path, report)
+		if not tool_path.is_empty():
+			tool_paths.append(tool_path)
+	var generated_root := PalRuntimePaths.generated_root()
+	var absolute_root := ProjectSettings.globalize_path(generated_root)
+	var directory_error := DirAccess.make_dir_recursive_absolute(absolute_root)
+	var probe_path := generated_root.path_join(".desktop_write_test")
+	var probe := FileAccess.open(probe_path, FileAccess.WRITE) if directory_error == OK else null
+	if probe != null:
+		probe.store_string("ok")
+		probe = null
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(probe_path))
+	var success := (
+		not OS.has_feature("editor")
+		and generated_root == PalRuntimePaths.EXPORTED_GENERATED_ROOT
+		and tool_paths.size() == 4
+		and report.warnings.is_empty()
+		and directory_error == OK
+	)
+	var import_source := ""
+	for argument in arguments:
+		if argument.begins_with("--pal-desktop-import="):
+			import_source = argument.trim_prefix("--pal-desktop-import=").strip_edges()
+			break
+	var imported := false
+	var database_loaded := false
+	if success and not import_source.is_empty():
+		report = PalDataImporter.import_from(import_source)
+		imported = report.success
+		var database := PalContentDatabase.new()
+		database_loaded = imported and database.load_generated()
+		success = imported and database_loaded
+	print("DESKTOP_EXPORT_SMOKE " + JSON.stringify({
+		"success": success,
+		"platform": OS.get_name(),
+		"generated_root": generated_root,
+		"tool_count": tool_paths.size(),
+		"imported": imported,
+		"database_loaded": database_loaded,
+		"import_errors": report.errors.size(),
+		"warnings": report.warnings,
+	}))
+	get_tree().quit(0 if success else 1)
+	return true
 
 
 func _build_save_menu() -> void:
@@ -143,14 +200,15 @@ func _build_trademark_layer() -> void:
 
 
 func _has_startup_content() -> bool:
-	if not FileAccess.file_exists("res://generated/pal/content/core/scenes.bin"):
+	var generated_root := PalRuntimePaths.generated_root()
+	if not FileAccess.file_exists(generated_root.path_join("content/core/scenes.bin")):
 		return false
-	var manifest_file := FileAccess.open("res://generated/pal/manifest.json", FileAccess.READ)
+	var manifest_file := FileAccess.open(generated_root.path_join("manifest.json"), FileAccess.READ)
 	var manifest = JSON.parse_string(manifest_file.get_as_text()) if manifest_file != null else null
 	if not manifest is Dictionary or int(manifest.get("format_version", 0)) < PalImportReport.FORMAT_VERSION:
 		return false
-	for path in REQUIRED_STARTUP_FILES:
-		if not FileAccess.file_exists(path):
+	for relative_path in REQUIRED_STARTUP_FILES:
+		if not FileAccess.file_exists(generated_root.path_join(relative_path)):
 			return false
 	return true
 

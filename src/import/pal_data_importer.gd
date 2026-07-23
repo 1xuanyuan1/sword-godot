@@ -25,8 +25,10 @@ const ARCHIVE_FILES: PackedStringArray = [
 
 ## 校验必需文件并生成内容数据库、可选预览、音频和地图资源。
 ## 返回报告包含全部错误和警告；原始目录不会被修改。
-static func import_from(source_dir: String, output_dir: String = "res://generated/pal", generate_rng_previews: bool = false) -> PalImportReport:
+static func import_from(source_dir: String, output_dir: String = "", generate_rng_previews: bool = false) -> PalImportReport:
 	var report := PalImportReport.new()
+	if output_dir.is_empty():
+		output_dir = PalRuntimePaths.generated_root()
 	report.source_directory = source_dir.simplify_path()
 	report.output_directory = output_dir
 	var files_by_lowercase := _index_directory(report.source_directory, report)
@@ -469,7 +471,9 @@ static func _convert_rgm_portraits(rgm_path: String, absolute_output: String, re
 static func _convert_text_and_font(files_by_lowercase: Dictionary, absolute_output: String, report: PalImportReport) -> void:
 	var output_dir := absolute_output.path_join("content/text")
 	DirAccess.make_dir_recursive_absolute(output_dir)
-	var helper := ProjectSettings.globalize_path("res://tools/pal_text_convert.py")
+	var helper := _materialize_import_tool("pal_text_convert.py", report)
+	if helper.is_empty():
+		return
 	var offsets := absolute_output.path_join("content/core/message_offsets.bin")
 	var arguments := [
 		helper,
@@ -657,11 +661,17 @@ static func _convert_rix_audio(mus_path: String, absolute_output: String, report
 	if upstream.is_empty():
 		report.warnings.append("未找到 SDLPal 源码，跳过 RIX 离线转换；可设置 SDLPAL_DIR")
 		return
+	var tool_root := _import_tool_root().path_join("rix_renderer")
 	var executable_name := "rix_renderer.exe" if OS.get_name() == "Windows" else "rix_renderer"
-	var executable := project_root.path_join("tools/rix_renderer/build").path_join(executable_name)
+	var executable := tool_root.path_join("build").path_join(executable_name)
 	if not FileAccess.file_exists(executable):
+		var build_script := _materialize_import_tool("rix_renderer/build.py", report)
+		for relative_path in ["rix_renderer/main.cpp", "rix_renderer/compat.h"]:
+			if _materialize_import_tool(relative_path, report).is_empty():
+				return
+		if build_script.is_empty():
+			return
 		var build_output: Array = []
-		var build_script := project_root.path_join("tools/rix_renderer/build.py")
 		var build_arguments := [build_script, "--upstream", upstream, "--output", executable]
 		var build_exit := -1
 		for python_command in _python_commands():
@@ -714,10 +724,48 @@ static func _find_sdlpal_upstream(project_root: String) -> String:
 		candidates.append(configured.simplify_path())
 	candidates.append(project_root.get_base_dir().path_join("sdlpal-official"))
 	candidates.append(project_root.get_base_dir().path_join("sdlpal"))
+	var executable_parent := OS.get_executable_path().get_base_dir()
+	for _level in range(5):
+		candidates.append(executable_parent.path_join("sdlpal-official"))
+		candidates.append(executable_parent.path_join("sdlpal"))
+		executable_parent = executable_parent.get_base_dir()
 	for candidate in candidates:
 		if FileAccess.file_exists(candidate.path_join("adplug/rix.cpp")):
 			return candidate
 	return ""
+
+
+static func _import_tool_root() -> String:
+	if OS.has_feature("editor"):
+		return ProjectSettings.globalize_path("res://tools")
+	return ProjectSettings.globalize_path("user://pal_import_tools")
+
+
+## 导出包中的脚本／C++ 辅助源码位于 PCK，外部 Python 和编译器无法直接执行。
+## 首次使用时复制到用户目录；源码工程则直接返回仓库中的绝对路径。
+static func _materialize_import_tool(relative_path: String, report: PalImportReport) -> String:
+	var destination := _import_tool_root().path_join(relative_path)
+	if OS.has_feature("editor"):
+		if FileAccess.file_exists(destination):
+			return destination
+		report.warnings.append("导入辅助文件缺失：%s" % destination)
+		return ""
+	var source := "res://tools/" + relative_path
+	var source_file := FileAccess.open(source, FileAccess.READ)
+	if source_file == null:
+		report.warnings.append("发布包缺少导入辅助文件：%s" % source)
+		return ""
+	var directory_error := DirAccess.make_dir_recursive_absolute(destination.get_base_dir())
+	if directory_error != OK:
+		report.warnings.append("无法创建用户导入工具目录：%s" % error_string(directory_error))
+		return ""
+	var destination_file := FileAccess.open(destination, FileAccess.WRITE)
+	if destination_file == null:
+		report.warnings.append("无法释放导入辅助文件：%s" % destination)
+		return ""
+	destination_file.store_buffer(source_file.get_buffer(source_file.get_length()))
+	destination_file.flush()
+	return destination
 
 
 static func _python_commands() -> Array[Dictionary]:

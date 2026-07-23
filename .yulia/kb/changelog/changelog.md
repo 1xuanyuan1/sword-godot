@@ -42,6 +42,30 @@ keywords:
   - `.yulia/kb/changelog/todo.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-080] [feat] 完成 macOS 与 Windows 桌面导出
+
+- **关联需求**: M5 发布质量
+- **关联 TODO**: TD-009
+- **功能描述**: 新增 macOS Universal 与 Windows x86_64 发布预设，明确排除原版 `Data`、本地生成内容、测试、存档和其他原版派生资源。新增 `PalRuntimePaths` 统一运行时目录：源码工程继续使用被 Git 忽略的 `res://generated/pal`，桌面发布包首次导入改写入可写的 `user://generated/pal`。发布包内只携带文本／RIX 转换所需的 4 个辅助源码，使用时释放到 `user://pal_import_tools`；同时修复 `user://` TileSet 资源路径误映射和运行时生成 WAV 缺少编辑器导入元数据时无法播放的问题。README 补充桌面构建、Python／C++17／SDLPal 依赖、双平台用户数据与存档目录、输入映射和未签名 macOS 包的发布边界。
+- **验证情况**: 386 项合成检查、223 份有效地图／221 个场景引用的正式 TileMapLayer 清单以及中文文档检查通过。macOS Universal 发布包在隔离用户目录完成 223 个 TileMap、79 首 RIX、211 个 VOC 的真实全量首次导入和数据库加载，正常启动未出现资源或音频加载错误；受控发布 smoke 确认 `user://generated/pal` 可写且 4 个辅助文件均可释放。Windows x86_64 release 已成功交叉导出并确认为 PE32+ GUI 可执行文件；最终内容包共 143 个资源、4 个辅助文件，原版／生成资源／测试／存档审计为零。macOS ZIP 与内容 ZIP 完整性、Universal x86_64／arm64 架构及 `git diff --check` 均通过。
+- **涉及文件**:
+  - `export_presets.cfg`
+  - `project.godot`
+  - `src/game/pal_runtime_paths.gd`
+  - `src/audio/pal_audio_player.gd`
+  - `src/content/pal_content_database.gd`
+  - `src/import/pal_data_importer.gd`
+  - `src/import/pal_tileset_builder.gd`
+  - `src/ui/import_lab.gd`
+  - `src/ui/pal_startup.gd`
+  - `tests/run_tests.gd`
+  - `README.md`
+  - `docs/SAVE_SYSTEM.md`
+  - `.yulia/kb/changelog/todo.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-22
 
 ### [FT-070] [feat] 补齐正式片头与标题菜单

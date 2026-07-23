@@ -27,6 +27,7 @@ func _init() -> void:
 	_test_rng_rejects_malformed_delta()
 	_test_rng_playback_stream()
 	_test_map_helpers()
+	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
 	_test_voc_decoder()
@@ -355,6 +356,12 @@ func _test_map_helpers() -> void:
 	_expect(not PalMapCoordinates.positions_collide(Vector2i.ZERO, Vector2i(8, 4)), "EventObject collision rejects strict boundary 16")
 
 
+func _test_runtime_paths() -> void:
+	_expect(PalRuntimePaths.generated_root_for(true) == "res://generated/pal", "editor build keeps generated PAL content in the ignored project directory")
+	_expect(PalRuntimePaths.generated_root_for(false) == "user://generated/pal", "desktop export writes generated PAL content to the user directory")
+	_expect(PalRuntimePaths.content_root().ends_with("/generated/pal/content"), "runtime content root appends the database directory")
+
+
 func _test_tilemap_runtime_retirement() -> void:
 	var file := FileAccess.open("res://src/world/map_explorer.gd", FileAccess.READ)
 	var source := file.get_as_text() if file != null else ""
@@ -469,6 +476,17 @@ func _test_voc_decoder() -> void:
 	var wav := decoder.to_wav()
 	_expect(wav.slice(0, 4).get_string_from_ascii() == "RIFF", "VOC WAV RIFF header")
 	_expect(wav.size() == 48, "VOC WAV padded length")
+	var raw_wav_path := "user://pal_audio_raw_test.wav"
+	var raw_wav := FileAccess.open(raw_wav_path, FileAccess.WRITE)
+	if raw_wav != null:
+		raw_wav.store_buffer(wav)
+		raw_wav = null
+	var audio_player := PalAudioPlayer.new()
+	var loaded_wav := audio_player._load_wav(raw_wav_path)
+	_expect(loaded_wav != null, "runtime-generated user WAV loads without editor import metadata")
+	loaded_wav = null
+	audio_player.free()
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(raw_wav_path))
 
 
 func _test_music_reference_collection() -> void:
