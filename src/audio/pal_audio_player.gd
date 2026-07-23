@@ -120,12 +120,18 @@ func stop_all() -> void:
 
 ## 返回指定曲目的本地生成资源是否可由 Godot 加载。
 func has_music_resource(number: int) -> bool:
-	return number > 0 and ResourceLoader.exists(_music_path(number))
+	return number > 0 and wav_resource_exists(_music_path(number))
 
 
 ## 返回指定音效的本地生成资源是否可由 Godot 加载。
 func has_sound_resource(number: int) -> bool:
-	return number != 0 and ResourceLoader.exists(_sound_path(absi(number)))
+	return number != 0 and wav_resource_exists(_sound_path(absi(number)))
+
+
+## 同时兼容导出包内的 Godot 导入资源与桌面包运行时生成的原始 WAV。
+## 导出后原始 `.wav` 会被 `.wav.import` 指向的 `.sample` 替代，不能只用 FileAccess 判断。
+static func wav_resource_exists(path: String) -> bool:
+	return ResourceLoader.exists(path) or FileAccess.file_exists(ProjectSettings.globalize_path(path))
 
 
 ## 将 0–100 线性音量换算为 Godot 分贝；0 使用稳定静音下限而不是负无穷。
@@ -193,7 +199,7 @@ func _load_wav(path: String) -> AudioStreamWAV:
 	# 桌面发布包会在 user:// 运行时生成 WAV，没有编辑器创建的 .import 元数据。
 	# AudioStreamWAV 可直接解析原始文件，避免把本地原版派生音频塞回发布 PCK。
 	var absolute_path := ProjectSettings.globalize_path(path)
-	if not FileAccess.file_exists(absolute_path):
+	if not wav_resource_exists(path):
 		return null
 	return AudioStreamWAV.load_from_file(absolute_path)
 

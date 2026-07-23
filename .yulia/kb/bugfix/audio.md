@@ -12,6 +12,22 @@ keywords:
 
 ## 修复记录
 
+## 2026-07-23
+
+### [BF-050] Android 内置音频被启动门禁误判缺失并跳转资源实验室
+
+- **来源**: 用户试玩反馈
+- **关联需求**: Android 本地验收包
+- **问题描述**: Android APK 启动后直接进入资源实验室。Godot 导出时会把原始 WAV 替换为 `.wav.import` 映射和 `.sample` 导入产物，APK 中因此没有 `audio/rix/004.wav` 与 `005.wav` 原文件；正式启动门禁仍只用 `FileAccess.file_exists()` 检查这两个原始路径，误判内置内容不完整。实际音频导入产物、核心数据库、地图与其他启动资源均已正确打入 APK。
+- **涉及文件**:
+  - `src/audio/pal_audio_player.gd`
+  - `src/ui/pal_startup.gd`
+  - `tests/run_tests.gd`
+  - `export_presets.cfg`
+  - `README.md`
+- **修复内容**: 把导入资源与桌面运行时原始 WAV 的可用性判断统一到 `PalAudioPlayer.wav_resource_exists()`：先走 `ResourceLoader` 解析导出包重映射，再兼容 `user://` 原始文件。正式启动门禁复用该规则并输出具体缺失项；新增内置内容导出 smoke，可挂载 Android 同款 PCK，真实加载核心数据库和标题音乐 004/005。Android 验收包版本提升到 `0.1.2(3)`，导出后已确认 `.wav.import` 与对应 `.sample` 均存在且 smoke 加载成功。
+- **状态**: ✅ 已修复
+
 ## 2026-07-17
 
 ### [BF-019] 循环 WAV 的零循环终点导致场景与战斗 BGM 立即停止

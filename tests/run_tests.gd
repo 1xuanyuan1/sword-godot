@@ -484,11 +484,13 @@ func _test_voc_decoder() -> void:
 		raw_wav.store_buffer(wav)
 		raw_wav = null
 	var audio_player := PalAudioPlayer.new()
+	_expect(PalAudioPlayer.wav_resource_exists(raw_wav_path), "runtime-generated user WAV passes shared availability check")
 	var loaded_wav := audio_player._load_wav(raw_wav_path)
 	_expect(loaded_wav != null, "runtime-generated user WAV loads without editor import metadata")
 	loaded_wav = null
 	audio_player.free()
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(raw_wav_path))
+	_expect(not PalAudioPlayer.wav_resource_exists(raw_wav_path), "missing WAV fails shared availability check")
 
 
 func _test_music_reference_collection() -> void:

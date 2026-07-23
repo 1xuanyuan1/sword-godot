@@ -55,6 +55,7 @@ var _save_menu: PalGameMenu
 var _audio_player: Node
 var _save_system_available: bool = false
 var _startup_ready: bool = false
+var _startup_error_message: String = ""
 
 var _trademark_stream := RngPlaybackStream.new()
 var _trademark_frame_count: int = 0
@@ -85,13 +86,20 @@ var _font_glyphs: Dictionary = {}
 
 
 func _ready() -> void:
+	if _run_bundled_export_smoke():
+		return
 	if _run_desktop_export_smoke():
 		return
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	set_process(true)
 	_build_save_menu()
 	_build_trademark_layer()
-	if not _has_startup_content() or not _database.load_generated():
+	var has_startup_content := _has_startup_content()
+	var database_loaded := has_startup_content and _database.load_generated()
+	if not has_startup_content or not database_loaded:
+		if _startup_error_message.is_empty():
+			_startup_error_message = _database.error_message
+		push_error("正式启动资源检查失败，将进入资源实验室：%s" % _startup_error_message)
 		call_deferred("_open_resource_lab")
 		return
 	_session.reset_new_game()
@@ -110,6 +118,31 @@ func _ready() -> void:
 		skip_to_opening_menu()
 	else:
 		_begin_trademark()
+
+
+## 内置内容发布包的隐藏启动检查。导出 Android/Web 数据包后可在桌面 Godot 中挂载该包，
+## 验证被替换成 `.sample` 的 WAV 仍可按原始 res:// 路径解析，而不依赖真机日志。
+func _run_bundled_export_smoke() -> bool:
+	if not "--pal-bundled-export-smoke" in OS.get_cmdline_user_args():
+		return false
+	var generated_root := PalRuntimePaths.EDITOR_GENERATED_ROOT
+	var content_ready := _has_startup_content(generated_root)
+	var database := PalContentDatabase.new()
+	var database_loaded := content_ready and database.load_generated(generated_root.path_join("content"))
+	var title_music := ResourceLoader.load(generated_root.path_join("audio/rix/005.wav"), "AudioStreamWAV", ResourceLoader.CACHE_MODE_REUSE) as AudioStreamWAV if content_ready else null
+	var menu_music := ResourceLoader.load(generated_root.path_join("audio/rix/004.wav"), "AudioStreamWAV", ResourceLoader.CACHE_MODE_REUSE) as AudioStreamWAV if content_ready else null
+	var audio_loaded := title_music != null and menu_music != null
+	var success := content_ready and database_loaded and audio_loaded
+	print("BUNDLED_EXPORT_SMOKE " + JSON.stringify({
+		"success": success,
+		"generated_root": generated_root,
+		"content_ready": content_ready,
+		"database_loaded": database_loaded,
+		"audio_loaded": audio_loaded,
+		"error": _startup_error_message if not _startup_error_message.is_empty() else database.error_message,
+	}))
+	get_tree().quit(0 if success else 1)
+	return true
 
 
 ## 发布包门禁使用的隐藏启动检查：验证 user:// 可写且 PCK 内的导入辅助文件可释放。
@@ -201,16 +234,22 @@ func _build_trademark_layer() -> void:
 	add_child(_trademark_layer)
 
 
-func _has_startup_content() -> bool:
-	var generated_root := PalRuntimePaths.generated_root()
+func _has_startup_content(root_override: String = "") -> bool:
+	_startup_error_message = ""
+	var generated_root := PalRuntimePaths.generated_root() if root_override.is_empty() else root_override
 	if not FileAccess.file_exists(generated_root.path_join("content/core/scenes.bin")):
+		_startup_error_message = "缺少 content/core/scenes.bin"
 		return false
 	var manifest_file := FileAccess.open(generated_root.path_join("manifest.json"), FileAccess.READ)
 	var manifest = JSON.parse_string(manifest_file.get_as_text()) if manifest_file != null else null
 	if not manifest is Dictionary or int(manifest.get("format_version", 0)) < PalImportReport.FORMAT_VERSION:
+		_startup_error_message = "manifest.json 缺失、损坏或版本过旧"
 		return false
 	for relative_path in REQUIRED_STARTUP_FILES:
-		if not FileAccess.file_exists(generated_root.path_join(relative_path)):
+		var resource_path := generated_root.path_join(relative_path)
+		var exists := AudioPlayer.wav_resource_exists(resource_path) if relative_path.get_extension() == "wav" else FileAccess.file_exists(resource_path)
+		if not exists:
+			_startup_error_message = "缺少 %s" % relative_path
 			return false
 	return true
 

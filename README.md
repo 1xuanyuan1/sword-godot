@@ -117,6 +117,16 @@ mkdir -p builds/android
   --export-debug "Android APK (Local)" builds/android/SwordGodotStudyPort-Android-arm64-debug.apk
 ```
 
+发布前可额外导出并挂载 Android 同款资源包，检查核心数据库及标题音乐的 Godot 导入重映射；输出中的 `success`、`database_loaded` 和 `audio_loaded` 都应为 `true`：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --export-pack "Android APK (Local)" builds/android/SwordGodotStudyPort-Android-smoke.pck
+/Applications/Godot.app/Contents/MacOS/Godot --headless \
+  --main-pack builds/android/SwordGodotStudyPort-Android-smoke.pck \
+  -- --pal-bundled-export-smoke
+```
+
 Android 不能调用桌面导入流程依赖的 Python 和 C++ 编译器，因此该本地验收包与 Web 版一样从 `res://generated/pal/` 读取构建时内置的生成内容。APK、原版资源和生成内容只允许留在本机，不提交仓库，也不应在没有相应授权时对外分发。当前包已支持浮动摇杆、互动／菜单键、对话点击、经典菜单和战斗直接点击；实体或蓝牙键盘仍可同时使用。应用商店发布还需另外配置正式 keystore、版本策略和真机兼容验收。
 
 运行项目：
