@@ -7,6 +7,7 @@ class_name PalBattleUI
 extends Control
 
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
+const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
 
 enum Mode {
 	WAITING,
@@ -71,6 +72,7 @@ const COLOR_MENU_SELECTED_INACTIVE := 0x1c
 const COLOR_MENU_SELECTED_FIRST := 0xf9
 const ENEMY_VITALS_RECT := Rect2(8, 8, 82, 40)
 const ENEMY_VITALS_BAR_RECT := Rect2(14, 38, 70, 5)
+const MOBILE_BACK_RECT := Rect2(272, 3, 44, 20)
 
 ## 战斗使用的只读内容数据库。
 var database: PalContentDatabase
@@ -272,6 +274,92 @@ func set_player_selection(party_index: int) -> void:
 	queue_redraw()
 
 
+## 根据四向指令图标的视觉中心返回最近动作，扩大命中范围以适配手指。
+static func action_index_at(point: Vector2) -> int:
+	var selected := -1
+	var nearest_distance := 24.0
+	for index in range(ACTION_POSITIONS.size()):
+		var distance := point.distance_to(Vector2(ACTION_POSITIONS[index]) + Vector2(8, 8))
+		if distance < nearest_distance:
+			selected = index
+			nearest_distance = distance
+	return selected
+
+
+## 返回触点所在的仙术网格索引，无命中时返回 -1。
+func magic_index_at(point: Vector2) -> int:
+	for index in range(mini(MAGIC_COLUMNS * MAGIC_ROWS, _magic_entries.size())):
+		var position := Vector2(32 + index % MAGIC_COLUMNS * MAGIC_COLUMN_WIDTH, 50 + index / MAGIC_COLUMNS * MAGIC_ROW_HEIGHT)
+		if Rect2(position, Vector2(MAGIC_COLUMN_WIDTH, MAGIC_ROW_HEIGHT)).has_point(point):
+			return index
+	return -1
+
+
+## 直接选择有效仙术索引并刷新经典光标。
+func select_magic_index(index: int) -> void:
+	if index >= 0 and index < _magic_entries.size():
+		selected_magic_index = index
+		queue_redraw()
+
+
+## 返回触点所在的“其他”菜单行。
+static func misc_index_at(point: Vector2) -> int:
+	for index in range(MISC_ITEM_POSITIONS.size()):
+		if Rect2(Vector2(MISC_ITEM_POSITIONS[index] - Vector2i(4, 3)), Vector2(68, 18)).has_point(point):
+			return index
+	return -1
+
+
+## 直接选择有效“其他”菜单项。
+func select_misc_index(index: int) -> void:
+	if index >= 0 and index < MISC_ITEM_POSITIONS.size():
+		selected_misc_index = index
+		queue_redraw()
+
+
+## 返回触点所在的“使用／投掷”菜单行。
+static func item_action_index_at(point: Vector2) -> int:
+	for index in range(ITEM_ACTION_POSITIONS.size()):
+		if Rect2(Vector2(ITEM_ACTION_POSITIONS[index] - Vector2i(4, 3)), Vector2(68, 18)).has_point(point):
+			return index
+	return -1
+
+
+## 直接选择“使用／投掷”菜单项。
+func select_item_action_index(index: int) -> void:
+	if index >= 0 and index < 2:
+		selected_item_action = index
+		queue_redraw()
+
+
+## 按当前物品页起点返回触点对应的完整背包索引。
+func item_index_at(point: Vector2) -> int:
+	var start := _item_page_start()
+	for slot in range(mini(ITEM_COLUMNS * ITEM_ROWS, _battle_item_ids.size() - start)):
+		var position := Vector2(12 + slot % ITEM_COLUMNS * ITEM_COLUMN_WIDTH, 8 + slot / ITEM_COLUMNS * ITEM_ROW_HEIGHT)
+		if Rect2(position, Vector2(96, ITEM_ROW_HEIGHT)).has_point(point):
+			return start + slot
+	return -1
+
+
+## 直接选择有效战斗物品索引。
+func select_item_index(index: int) -> void:
+	if index >= 0 and index < _battle_item_ids.size():
+		selected_item_index = index
+		queue_redraw()
+
+
+## 返回触点所在的队员状态框位置。
+func player_index_at(point: Vector2) -> int:
+	if controller == null:
+		return -1
+	for player in controller.players:
+		var position := PLAYER_INFO_POSITION + Vector2i(PLAYER_INFO_SPACING * player.party_index, 0)
+		if Rect2(Vector2(position + Vector2i(-4, -18)), Vector2(76, 53)).has_point(point):
+			return player.party_index
+	return -1
+
+
 ## 在指定 PAL 坐标显示一个上浮数字；`frame_start` 应为 19、29 或 56。
 func show_number(value: int, position: Vector2i, frame_start: int = UI_FRAME_NUMBER_BLUE) -> void:
 	if value <= 0:
@@ -362,6 +450,14 @@ func _draw() -> void:
 	_draw_floating_numbers()
 	if not _message.is_empty():
 		_draw_message_box(_message)
+	if MobileInput.touch_ui_enabled() and mode in [Mode.COMMAND, Mode.ENEMY_TARGET, Mode.PLAYER_TARGET, Mode.MAGIC_LIST, Mode.MISC_MENU, Mode.ITEM_ACTION, Mode.ITEM_LIST]:
+		_draw_mobile_back_button()
+
+
+func _draw_mobile_back_button() -> void:
+	draw_rect(MOBILE_BACK_RECT, Color(0.01, 0.02, 0.05, 0.9), true)
+	draw_rect(MOBILE_BACK_RECT, _palette_color(COLOR_MENU_NORMAL), false, 1.0)
+	_draw_pal_text("返回", Vector2i(278, 8), _palette_color(COLOR_MENU_NORMAL), true)
 
 
 func _draw_player_status_boxes() -> void:

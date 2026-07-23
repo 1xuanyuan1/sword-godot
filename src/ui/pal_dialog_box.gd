@@ -5,6 +5,11 @@
 class_name PalDialogBox
 extends Control
 
+const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
+
+## 本轮文字已经完整显示后，玩家点击对话区域请求控制器继续下一轮。
+signal advance_requested
+
 const TYPEWRITER_CHARACTERS_PER_SECOND := 28.0
 # SDLPal `text.c::TEXT_DisplayText` 把 `$NN` 换算为每字 `NN × 80 / 7` 毫秒。
 const PAL_DELAY_SECONDS_PER_UNIT := 0.08 / 7.0
@@ -35,7 +40,7 @@ var _typing: bool = false
 
 
 func _ready() -> void:
-	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	_build_interface()
 	hide_dialog()
 	set_process(false)
@@ -64,6 +69,26 @@ func _process(delta: float) -> void:
 		_typing = false
 		set_process(false)
 		_hint.text = "▼"
+
+
+func _input(event: InputEvent) -> void:
+	if not visible or not MobileInput.is_primary_press(event):
+		return
+	handle_primary_press()
+	var input_viewport := get_viewport()
+	if input_viewport != null:
+		input_viewport.set_input_as_handled()
+
+
+## 第一次点击补完逐字文字；文字完整时发出继续请求。
+func handle_primary_press() -> bool:
+	if not visible:
+		return false
+	if is_typing():
+		reveal_all()
+	else:
+		advance_requested.emit()
+	return true
 
 
 ## 开始新的对话上下文并清空旧页面；位置模式与 SDLPal 对话操作码一致。

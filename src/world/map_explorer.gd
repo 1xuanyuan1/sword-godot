@@ -11,6 +11,7 @@ const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
+const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
 const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
 const RETURN_TO_LAB_KEYCODE := KEY_F10
 const FIELD_MAGIC_STAGE_USE := 0
@@ -31,6 +32,7 @@ var _fbp_layer: ColorRect
 var _fbp_view: TextureRect
 var _dialog_box: PalDialogBox
 var _game_menu: PalGameMenu
+var _mobile_controls: PalMobileControls
 var _equipment_manager := PalEquipmentManager.new()
 var _rng_player: PalRngPlayer
 var _battle_view: PalBattlePreview
@@ -223,9 +225,17 @@ func _build_interface() -> void:
 	_rng_player.playback_finished.connect(_on_rng_playback_finished)
 	_ui_layer.add_child(_rng_player)
 
+	_mobile_controls = PalMobileControls.new()
+	_mobile_controls.name = "MobileControls"
+	_mobile_controls.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_mobile_controls.menu_requested.connect(_on_mobile_menu_requested)
+	_mobile_controls.interact_requested.connect(_on_mobile_interact_requested)
+	_ui_layer.add_child(_mobile_controls)
+
 	_dialog_box = PalDialogBox.new()
 	_dialog_box.name = "DialogBox"
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_dialog_box.advance_requested.connect(_on_dialog_advance_requested)
 	_ui_layer.add_child(_dialog_box)
 
 	_game_menu = PalGameMenu.new()
@@ -260,6 +270,7 @@ func _build_interface() -> void:
 
 
 func _process(delta: float) -> void:
+	_sync_mobile_controls()
 	if _map_data == null or not _map_data.is_valid():
 		return
 	if _battle_view != null and _battle_view.visible:
@@ -304,6 +315,14 @@ func _process(delta: float) -> void:
 	elif Input.is_key_pressed(KEY_RIGHT):
 		direction = GameSession.DIR_EAST
 		has_direction_input = true
+	if not has_direction_input and _mobile_controls != null:
+		var mobile_movement := _mobile_controls.movement_vector()
+		if mobile_movement.length_squared() > 0.01:
+			if absf(mobile_movement.x) > absf(mobile_movement.y):
+				direction = GameSession.DIR_WEST if mobile_movement.x < 0.0 else GameSession.DIR_EAST
+			else:
+				direction = GameSession.DIR_NORTH if mobile_movement.y < 0.0 else GameSession.DIR_SOUTH
+			has_direction_input = true
 	if has_direction_input:
 		movement = GameSession.movement_for_direction(direction)
 	if movement != Vector2i.ZERO:
@@ -319,6 +338,22 @@ func _process(delta: float) -> void:
 	elif _showing_walk_frame and _move_cooldown <= 0.0:
 		_showing_walk_frame = false
 		_refresh_world()
+
+
+func _input(event: InputEvent) -> void:
+	if not MobileInput.touch_ui_enabled() or not MobileInput.is_primary_press(event):
+		return
+	if _battle_view != null and _battle_view.visible:
+		return
+	if _game_menu != null and _game_menu.visible:
+		return
+	if _dialog_box != null and _dialog_box.visible:
+		return
+	if _script_vm != null and _script_vm.waiting_for_key:
+		_script_vm.complete_key_wait()
+		var input_viewport := get_viewport()
+		if input_viewport != null:
+			input_viewport.set_input_as_handled()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -370,6 +405,42 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		return
 	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
 		_inspect_nearby_event()
+
+
+func _sync_mobile_controls() -> void:
+	if _mobile_controls == null:
+		return
+	var available := (
+		_map_data != null
+		and _map_data.is_valid()
+		and (_battle_view == null or not _battle_view.visible)
+		and (_game_menu == null or not _game_menu.visible)
+		and (_dialog_box == null or not _dialog_box.visible)
+		and not _screen_fade_active
+		and (_script_vm == null or not _script_vm.is_busy())
+		and not _touch_scan_active
+		and _pending_magic_object_id <= 0
+	)
+	_mobile_controls.set_exploration_available(available)
+
+
+func _on_mobile_menu_requested() -> void:
+	if _mobile_controls == null or not _mobile_controls.visible:
+		return
+	_refresh_save_slot_summaries()
+	_game_menu.open_main()
+	_sync_mobile_controls()
+
+
+func _on_mobile_interact_requested() -> void:
+	if _mobile_controls == null or not _mobile_controls.visible:
+		return
+	_inspect_nearby_event()
+
+
+func _on_dialog_advance_requested() -> void:
+	if _script_vm != null and _script_vm.waiting_for_dialog:
+		_script_vm.advance_dialog()
 
 
 func _try_move(delta: Vector2i) -> bool:

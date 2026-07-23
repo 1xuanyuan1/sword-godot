@@ -81,6 +81,36 @@ keywords:
   - `README.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-082] [feat] 增加移动端完整触屏操作
+
+- **关联需求**: M2 地图探索、M3 经典菜单与对话、M4 经典战斗、M5 Web/Android 发布质量
+- **关联 TODO**: 无
+- **功能描述**: 新增共享 `PalMobileInput` 与 `PalMobileControls`，Android、iOS 和检测到触屏的 Web/桌面环境自动启用移动 HUD；自由探索时左上角固定菜单、右下角固定互动，手指在其余地图区域按下才显示浮动摇杆，拖动按主轴复用现有 half 格移动，松手或进入剧情、菜单、战斗、转场时立即清空多指状态。标题、存档和全部经典菜单页直接接受触摸，移动菜单右上角提供统一返回；对话第一次点击补完逐字文字、第二次推进。战斗按官方 320×200 坐标命中四向指令、仙术／物品网格和敌我 Sprite／状态框，保留返回层级与全部键盘输入；关闭触摸到鼠标模拟，避免 Android 一次点击重复确认。Web 与 Android 统一升级到 `0.1.1`，Android 包版本为 `0.1.1(2)`。
+- **验证情况**: 402 项合成、25 项装备、28 项存档、151 项战斗逻辑和 10 项剧情战斗桥接检查通过；Godot 4.7 OpenGL/Metal 真窗口使用正式 `TileMapLayer + PalTileMapWorld` 生成浮动摇杆、菜单、对话和双敌人点击截图，真实 `InputEventScreenTouch` 打开系统页，点击攻击图标／敌人 Sprite 成功提交首名队员指令，客栈固定视口继续与 CPU 诊断基准 320×200 零像素差。Web PCK 225.21 MiB，压缩为 12 片／93.56 MiB 后发布，线上 HTML 与本地构建一致并引用内容哈希 `ce7c7b0d683b913d`，CDN Range 读取有效。Android arm64-v8a debug APK 为 187 MiB、SHA-256 `4fbfb973a72fce732f2b27e079e3e76e8cad48a820de41693e0055bc5ccbc0be`，最低 API 24／目标 API 36、v2/v3 签名与 zipalign 有效；包内含 223 个 TileMap、290 个音频导入、RNG 归档及触控脚本，零测试、截图、存档、原版根目录或 `.rpg`。当前仍无连接的 Android 设备，未执行真机启动验收。
+- **涉及文件**:
+  - `project.godot`
+  - `export_presets.cfg`
+  - `package.json`
+  - `package-lock.json`
+  - `src/ui/pal_mobile_input.gd`
+  - `src/ui/pal_mobile_controls.gd`
+  - `src/ui/pal_dialog_box.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/ui/pal_startup.gd`
+  - `src/world/map_explorer.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `src/battle/pal_battle_preview.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_mobile_visual_test.gd`
+  - `README.md`
+  - `docs/CLASSIC_UI.md`
+  - `docs/BATTLE.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/changelog/version-changelog-prod.md`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-22
 
 ### [FT-070] [feat] 补齐正式片头与标题菜单

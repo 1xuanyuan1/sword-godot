@@ -81,6 +81,7 @@ func _init() -> void:
 	_test_game_menu_inventory()
 	_test_explorer_field_magic_bridge()
 	_test_explorer_input_keys()
+	_test_mobile_touch_controls()
 	_test_dialog_box_typewriter()
 	_test_battle_script_dialog_input()
 	if _failures.is_empty():
@@ -1984,6 +1985,7 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._status.get_parent() == explorer._ui_layer, "status label stays outside the Camera2D world canvas")
 	_expect(explorer._location_toast.get_parent() == explorer._ui_layer and explorer._location_toast.position == Vector2(104, 28) and explorer._location_toast.size == Vector2(112, 24), "scene location toast stays centered below the HUD status line")
 	_expect(explorer._fbp_layer.get_parent() == explorer._ui_layer and explorer._fbp_layer.get_index() > explorer._location_toast.get_index() and explorer._fbp_layer.get_index() < explorer._dialog_box.get_index(), "FBP cutscene layer covers world HUD while keeping narrative dialog visible")
+	_expect(explorer._mobile_controls.get_parent() == explorer._ui_layer and explorer._mobile_controls.get_index() > explorer._rng_player.get_index() and explorer._mobile_controls.get_index() < explorer._dialog_box.get_index(), "mobile exploration controls use the HUD CanvasLayer below dialogue and modal menus")
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
@@ -2263,6 +2265,68 @@ func _test_explorer_input_keys() -> void:
 	var menu_keys: Array = constants.get("MENU_KEYCODES", [])
 	_expect(KEY_ESCAPE in menu_keys and KEY_M in menu_keys and KEY_I in menu_keys, "explorer Escape/M/I keys open the game menu")
 	_expect(constants.get("RETURN_TO_LAB_KEYCODE") == KEY_F10 and KEY_F10 not in menu_keys, "explorer F10 returns to the lab without overloading Escape")
+
+
+func _test_mobile_touch_controls() -> void:
+	var touch_press := InputEventScreenTouch.new()
+	touch_press.index = 7
+	touch_press.position = Vector2(120, 100)
+	touch_press.pressed = true
+	_expect(PalMobileInput.is_primary_press(touch_press) and PalMobileInput.pointer_index(touch_press) == 7 and PalMobileInput.pointer_position(touch_press) == Vector2(120, 100), "mobile input preserves touch pointer identity and 320x200 viewport coordinates")
+	var controls := PalMobileControls.new()
+	controls.force_touch_ui = true
+	controls._ready()
+	controls.set_exploration_available(true)
+	var menu_requests := [0]
+	var interact_requests := [0]
+	controls.menu_requested.connect(func() -> void: menu_requests[0] += 1)
+	controls.interact_requested.connect(func() -> void: interact_requests[0] += 1)
+	_expect(controls.handle_pointer_press(Vector2(10, 10), 1) and menu_requests[0] == 1 and not controls.joystick_active(), "mobile top-left menu button opens without also starting the floating joystick")
+	_expect(controls.handle_pointer_press(Vector2(290, 175), 2) and interact_requests[0] == 1 and not controls.joystick_active(), "mobile interaction button remains separate from movement input")
+	_expect(controls.handle_pointer_press(Vector2(100, 120), 3) and controls.joystick_active(), "floating joystick appears at the initial map touch point")
+	controls.handle_pointer_drag(Vector2(138, 124), 3)
+	_expect(controls.movement_vector().x > 0.9 and absf(controls.movement_vector().y) < 0.2, "floating joystick drag produces a normalized dominant movement direction")
+	_expect(not controls.handle_pointer_release(4) and controls.joystick_active(), "a second finger cannot release the active movement pointer")
+	_expect(controls.handle_pointer_release(3) and not controls.joystick_active() and controls.movement_vector() == Vector2.ZERO, "releasing the movement finger hides and clears the joystick")
+	controls.handle_pointer_press(Vector2(150, 120), 5)
+	controls.handle_pointer_drag(Vector2(150, 80), 5)
+	controls.set_exploration_available(false)
+	_expect(not controls.visible and not controls.joystick_active() and controls.movement_vector() == Vector2.ZERO, "opening a modal scene immediately releases mobile movement state")
+	controls.free()
+
+	var dialog := PalDialogBox.new()
+	dialog._ready()
+	var dialog_advances := [0]
+	dialog.advance_requested.connect(func() -> void: dialog_advances[0] += 1)
+	dialog.begin(1)
+	dialog.show_message("点击继续")
+	dialog.handle_primary_press()
+	_expect(not dialog.is_typing() and dialog_advances[0] == 0, "first dialogue tap reveals the current typewriter text without skipping it")
+	dialog.handle_primary_press()
+	_expect(dialog_advances[0] == 1, "second dialogue tap requests the next script round")
+	dialog.free()
+
+	var battle_ui := PalBattleUI.new()
+	battle_ui._magic_entries = [{"object_id": 1, "enabled": true}, {"object_id": 2, "enabled": true}]
+	battle_ui._battle_item_ids = [10, 11, 12, 13]
+	_expect(PalBattleUI.action_index_at(Vector2(35, 148)) == 0 and PalBattleUI.action_index_at(Vector2(8, 163)) == 1, "battle touch hit testing follows the classic four-direction command icons")
+	_expect(battle_ui.magic_index_at(Vector2(124, 58)) == 1 and PalBattleUI.misc_index_at(Vector2(20, 72)) == 2, "battle touch hit testing selects magic-grid and misc-menu entries from their drawn coordinates")
+	_expect(PalBattleUI.item_action_index_at(Vector2(48, 83)) == 1 and battle_ui.item_index_at(Vector2(115, 15)) == 1, "battle touch hit testing selects item actions and item-grid entries")
+	battle_ui.free()
+
+	var database := PalContentDatabase.new()
+	database.words.resize(64)
+	var session := GameSession.new()
+	var game_menu := PalGameMenu.new()
+	root.add_child(game_menu)
+	game_menu.configure(database, session)
+	game_menu.open_main()
+	var menu_touch := InputEventScreenTouch.new()
+	menu_touch.position = Vector2(PalGameMenu.MAIN_ITEM_POSITIONS[3])
+	menu_touch.pressed = true
+	game_menu._gui_input(menu_touch)
+	_expect(game_menu.current_page == PalGameMenu.Page.SYSTEM, "classic game menu accepts a direct screen touch without mouse emulation")
+	game_menu.queue_free()
 
 
 func _test_dialog_box_typewriter() -> void:

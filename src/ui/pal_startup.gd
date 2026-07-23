@@ -6,6 +6,8 @@
 class_name PalStartup
 extends Control
 
+const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
+
 const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const PALETTE_SHADER: Shader = preload("res://shaders/indexed_palette.gdshader")
@@ -383,10 +385,17 @@ func _input(event: InputEvent) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if phase != Phase.OPENING_MENU or _opening_menu_elapsed < OPENING_MENU_FADE_SECONDS or _save_menu.visible or event is not InputEventMouseButton or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+	if _save_menu.visible or not MobileInput.is_primary_press(event):
 		return
+	if phase == Phase.SPLASH:
+		_finish_splash()
+		accept_event()
+		return
+	if phase != Phase.OPENING_MENU or _opening_menu_elapsed < OPENING_MENU_FADE_SECONDS:
+		return
+	var point := Vector2i(MobileInput.pointer_position(event))
 	for index in range(MENU_POSITIONS.size()):
-		if Rect2i(MENU_POSITIONS[index] - Vector2i(3, 2), Vector2i(86, 18)).has_point(Vector2i(event.position)):
+		if Rect2i(MENU_POSITIONS[index] - Vector2i(3, 2), Vector2i(86, 18)).has_point(point):
 			menu_selection = index
 			_confirm_opening_menu()
 			accept_event()

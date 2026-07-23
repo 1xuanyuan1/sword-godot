@@ -6,6 +6,8 @@
 class_name PalBattlePreview
 extends Control
 
+const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
+
 ## 剧情模式下玩家确认胜负结果时发出；值使用 `PalBattleController.BattleResult`。
 signal battle_finished(result: int)
 
@@ -280,6 +282,125 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		input_viewport.set_input_as_handled()
 
 
+func _input(event: InputEvent) -> void:
+	if not visible or not MobileInput.is_primary_press(event):
+		return
+	# 对话框是位于战斗 UI 之上的完整触摸层；让它自行处理补全文字和继续信号。
+	if _script_dialog_box != null and _script_dialog_box.visible:
+		return
+	var input_viewport := get_viewport()
+	if _handle_pointer_press(MobileInput.pointer_position(event)) and input_viewport != null:
+		input_viewport.set_input_as_handled()
+
+
+func _handle_pointer_press(point: Vector2) -> bool:
+	if _controller == null or _animation_in_progress:
+		return false
+	if _input_mode in [InputMode.REWARD, InputMode.RESULT]:
+		_confirm_current_selection()
+		return true
+	if MobileInput.touch_ui_enabled() and PalBattleUI.MOBILE_BACK_RECT.has_point(point):
+		_cancel_or_leave()
+		return true
+	match _input_mode:
+		InputMode.COMMAND:
+			var action_index := PalBattleUI.action_index_at(point)
+			if action_index < 0:
+				return false
+			if action_index == 1 and not _pending_role_has_magics():
+				return true
+			if action_index == 2 and not _controller.can_pending_player_use_cooperative_magic():
+				return true
+			_set_action_selection(action_index)
+			_confirm_current_selection()
+			return true
+		InputMode.ENEMY_TARGET:
+			var enemy_index := _enemy_index_at(point)
+			if enemy_index < 0:
+				return false
+			_selected_enemy_index = enemy_index
+			_battle_ui.set_enemy_selection(enemy_index)
+			_confirm_current_selection()
+			return true
+		InputMode.PLAYER_TARGET:
+			var party_index := _player_index_at(point)
+			if party_index < 0:
+				return false
+			_selected_party_index = party_index
+			_battle_ui.set_player_selection(party_index)
+			_confirm_current_selection()
+			return true
+		InputMode.MAGIC_LIST:
+			var magic_index := _battle_ui.magic_index_at(point)
+			if magic_index < 0:
+				return false
+			_battle_ui.select_magic_index(magic_index)
+			_confirm_current_selection()
+			return true
+		InputMode.MISC_MENU:
+			var misc_index := PalBattleUI.misc_index_at(point)
+			if misc_index < 0:
+				return false
+			_battle_ui.select_misc_index(misc_index)
+			_confirm_current_selection()
+			return true
+		InputMode.ITEM_ACTION:
+			var item_action_index := PalBattleUI.item_action_index_at(point)
+			if item_action_index < 0:
+				return false
+			_battle_ui.select_item_action_index(item_action_index)
+			_confirm_current_selection()
+			return true
+		InputMode.ITEM_LIST:
+			var item_index := _battle_ui.item_index_at(point)
+			if item_index < 0:
+				return false
+			_battle_ui.select_item_index(item_index)
+			_confirm_current_selection()
+			return true
+	return false
+
+
+func _enemy_index_at(point: Vector2) -> int:
+	var living := _controller.living_enemy_indices()
+	var selected := -1
+	var nearest_distance := INF
+	for enemy_index in living:
+		if enemy_index < 0 or enemy_index >= _enemy_nodes.size():
+			continue
+		var node := _enemy_nodes[enemy_index]
+		if node == null or node.texture == null:
+			continue
+		var hitbox := Rect2(node.position - Vector2(6, 6), node.texture.get_size() + Vector2(12, 12))
+		if not hitbox.has_point(point):
+			continue
+		var distance := point.distance_squared_to(Vector2(_enemy_foot_positions[enemy_index]))
+		if distance < nearest_distance:
+			nearest_distance = distance
+			selected = enemy_index
+	return selected
+
+
+func _player_index_at(point: Vector2) -> int:
+	var ui_index := _battle_ui.player_index_at(point)
+	if ui_index >= 0:
+		return ui_index
+	var selected := -1
+	var nearest_distance := INF
+	for party_index in range(_player_nodes.size()):
+		var node := _player_nodes[party_index]
+		if node == null or node.texture == null:
+			continue
+		var hitbox := Rect2(node.position - Vector2(6, 6), node.texture.get_size() + Vector2(12, 12))
+		if not hitbox.has_point(point):
+			continue
+		var distance := point.distance_squared_to(Vector2(_player_foot_positions[party_index]))
+		if distance < nearest_distance:
+			nearest_distance = distance
+			selected = party_index
+	return selected
+
+
 func _build_interface() -> void:
 	_background = TextureRect.new()
 	_background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -306,6 +427,7 @@ func _build_interface() -> void:
 	_script_dialog_box.name = "BattleScriptDialog"
 	_script_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_script_dialog_box.z_index = 1100
+	_script_dialog_box.advance_requested.connect(_on_script_dialog_advance_requested)
 	add_child(_script_dialog_box)
 	_error_label = Label.new()
 	_error_label.position = Vector2(8, 82)
@@ -883,6 +1005,11 @@ func _wait_for_script_dialog() -> void:
 			break
 	_script_dialog_waiting = false
 	_script_dialog_advance_requested = false
+
+
+func _on_script_dialog_advance_requested() -> void:
+	if _script_dialog_waiting:
+		_script_dialog_advance_requested = true
 
 
 func _play_script_hits(result: PalBattleController.ActionResult) -> void:

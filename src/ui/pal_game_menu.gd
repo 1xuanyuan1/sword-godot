@@ -7,6 +7,7 @@ class_name PalGameMenu
 extends Control
 
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
+const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
 
 ## 玩家确认使用物品时发出；接收方负责运行脚本并决定是否消耗。
 signal item_use_requested(item_id: int)
@@ -46,6 +47,7 @@ enum Page {
 }
 
 const MAIN_MENU_POSITION := Vector2i(3, 37)
+const MOBILE_BACK_RECT := Rect2(272, 3, 44, 20)
 const MAIN_ITEM_POSITIONS := [Vector2i(16, 50), Vector2i(16, 68), Vector2i(16, 86), Vector2i(16, 104)]
 const INVENTORY_ACTION_POSITION := Vector2i(30, 60)
 const SYSTEM_MENU_POSITION := Vector2i(40, 60)
@@ -371,9 +373,13 @@ func _input(event: InputEvent) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if not visible or event is not InputEventMouseButton or not event.pressed or event.button_index != MOUSE_BUTTON_LEFT:
+	if not visible or not MobileInput.is_primary_press(event):
 		return
-	var point := Vector2i(event.position)
+	var point := Vector2i(MobileInput.pointer_position(event))
+	if MobileInput.touch_ui_enabled() and MOBILE_BACK_RECT.has_point(point):
+		go_back()
+		accept_event()
+		return
 	match current_page:
 		Page.MAIN:
 			for index in range(MAIN_ITEM_POSITIONS.size()):
@@ -493,6 +499,14 @@ func _draw() -> void:
 			_draw_confirmation()
 		Page.SHOP_BUY, Page.SHOP_SELL:
 			_draw_shop_page()
+	if MobileInput.touch_ui_enabled():
+		_draw_mobile_back_button()
+
+
+func _draw_mobile_back_button() -> void:
+	draw_rect(MOBILE_BACK_RECT, Color(0.01, 0.02, 0.05, 0.9), true)
+	draw_rect(MOBILE_BACK_RECT, _palette_color(COLOR_NORMAL), false, 1.0)
+	_draw_pal_text("返回", Vector2i(278, 8), _palette_color(COLOR_NORMAL), true)
 
 
 func _draw_main_menu() -> void:
