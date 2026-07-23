@@ -249,6 +249,7 @@ func _build_interface() -> void:
 	_game_menu.confirmation_completed.connect(_on_confirmation_completed)
 	_game_menu.shop_closed.connect(_on_shop_closed)
 	_game_menu.load_menu_cancelled.connect(_on_load_menu_cancelled)
+	_game_menu.quit_requested.connect(_on_quit_requested)
 	_ui_layer.add_child(_game_menu)
 
 	_battle_view = PalBattlePreview.new()
@@ -953,10 +954,10 @@ func _on_followers_changed() -> void:
 
 
 func _on_quit_requested() -> void:
-	call_deferred("_quit_from_script")
+	call_deferred("_quit_application")
 
 
-func _quit_from_script() -> void:
+func _quit_application() -> void:
 	if is_inside_tree():
 		get_tree().quit()
 

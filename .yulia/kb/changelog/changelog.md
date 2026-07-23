@@ -137,6 +137,21 @@ keywords:
   - `tests/run_local_mobile_visual_test.gd`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-084] [feat] 实现系统菜单结束游戏
+
+- **关联需求**: M3 经典菜单、M5 Android 发布质量
+- **关联 TODO**: 无
+- **功能描述**: 补齐系统菜单第 5 项“结束游戏”的确认逻辑；键盘确认或手机直接点击该行时，菜单先关闭并向探索控制器发出退出请求，再复用主线结局的延迟应用退出通道调用 `SceneTree.quit()`，避免在输入回调内部立即销毁场景。Android 包版本升级为 `0.1.5(6)`。
+- **验证情况**: 414 项合成检查通过，覆盖系统菜单退出信号、探索控制器连接以及真实 `InputEventScreenTouch` 点击“结束游戏”。Android arm64-v8a debug APK 成功导出为 203228412 字节，SHA-256 `d0404fd318c013b7da98f36b311e7a6f3f3cd1fac610cec4d51ee13b12df5634`；`aapt`／`apkanalyzer` 确认应用名“仙剑奇侠传”和版本 `0.1.5(6)`，v2／v3 签名有效，包内包含更新后的菜单与探索控制脚本。当前无连接 Android 设备，App 进程实际关闭仍需真机点击验收。
+- **涉及文件**:
+  - `export_presets.cfg`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-22
 
 ### [FT-070] [feat] 补齐正式片头与标题菜单

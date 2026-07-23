@@ -1999,6 +1999,7 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._mobile_controls.get_parent() == explorer._ui_layer and explorer._mobile_controls.get_index() > explorer._rng_player.get_index() and explorer._mobile_controls.get_index() < explorer._dialog_box.get_index(), "mobile exploration controls use the HUD CanvasLayer below dialogue and modal menus")
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
+	_expect(explorer._game_menu.quit_requested.is_connected(explorer._on_quit_requested), "system menu routes its quit request through the explorer application exit handler")
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
 	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index() and explorer._fade_overlay.get_index() > explorer._location_toast.get_index(), "screen fade covers the complete world, location toast and HUD during scene transitions")
 	explorer._fade_overlay.visible = true
@@ -2211,6 +2212,11 @@ func _test_game_menu_inventory() -> void:
 	_expect(session.music_volume == 90 and session.sound_volume == 90 and settings.back() == [90, 90], "system menu adjusts sound volume independently with left/right")
 	menu._confirm_selection()
 	_expect(session.sound_volume == 0 and settings.back() == [90, 0], "confirm on an audio row retains classic quick on/off behavior")
+	var quit_requests := [0]
+	menu.quit_requested.connect(func() -> void: quit_requests[0] += 1)
+	menu._system_selection = 4
+	menu._confirm_selection()
+	_expect(quit_requests[0] == 1 and not menu.visible, "system quit entry closes the menu and requests application exit")
 	menu.free()
 
 
@@ -2349,6 +2355,11 @@ func _test_mobile_touch_controls() -> void:
 	menu_touch.pressed = true
 	game_menu._gui_input(menu_touch)
 	_expect(game_menu.current_page == PalGameMenu.Page.SYSTEM, "classic game menu accepts a direct screen touch without mouse emulation")
+	var mobile_quit_requests := [0]
+	game_menu.quit_requested.connect(func() -> void: mobile_quit_requests[0] += 1)
+	menu_touch.position = Vector2(PalGameMenu.SYSTEM_ITEM_POSITIONS[4])
+	game_menu._gui_input(menu_touch)
+	_expect(mobile_quit_requests[0] == 1 and not game_menu.visible, "mobile system menu can tap the quit row to request application exit")
 	game_menu.queue_free()
 
 

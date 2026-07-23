@@ -29,6 +29,8 @@ signal confirmation_completed(accepted: bool)
 signal shop_closed
 ## 玩家在系统页调整音乐或音效音量时发出；播放层应立即应用两个百分比。
 signal audio_settings_changed(music_volume: int, sound_volume: int)
+## 玩家确认系统页“结束游戏”时发出；探索控制器在输入回调结束后关闭 App。
+signal quit_requested
 
 enum Page {
 	MAIN,
@@ -899,6 +901,9 @@ func _confirm_selection() -> void:
 			elif _system_selection == 3:
 				session.set_sound_volume(GameSession.AUDIO_VOLUME_MAX if session.sound_volume == 0 else 0)
 				audio_settings_changed.emit(session.music_volume, session.sound_volume)
+			elif _system_selection == 4:
+				close_menu()
+				quit_requested.emit()
 		Page.STATUS:
 			if not session.party_roles.is_empty():
 				_status_party_selection = posmod(_status_party_selection + 1, session.party_roles.size())
