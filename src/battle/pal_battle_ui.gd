@@ -754,15 +754,14 @@ func _load_classic_resources() -> void:
 	_palette = database.load_palette(session.palette_index, session.night_palette)
 	_ui_textures.clear()
 	_item_textures.clear()
+	_font_texture = null
 	_font_glyphs.clear()
 	var metadata_file := FileAccess.open(database.root_path.path_join("text/font_glyphs.json"), FileAccess.READ)
 	if metadata_file != null:
 		var parsed = JSON.parse_string(metadata_file.get_as_text())
 		if parsed is Dictionary:
 			_font_glyphs = PalClassicFont.with_compatibility_aliases(parsed.get("glyphs", {}))
-	var atlas_image := Image.load_from_file(ProjectSettings.globalize_path(database.root_path.path_join("text/font_atlas.png")))
-	if not atlas_image.is_empty():
-		_font_texture = ImageTexture.create_from_image(atlas_image)
+	_font_texture = PalClassicFont.load_atlas_texture(database.root_path.path_join("text/font_atlas.png"))
 
 
 func _draw_classic_box(position: Vector2i, rows: int, columns: int, style: int) -> void:

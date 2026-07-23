@@ -113,6 +113,14 @@ func _test_classic_font_aliases() -> void:
 	_expect(resolved.get("栈") == original["棧"] and resolved.get("间") == original["間"], "classic font maps simplified location labels without falling back to a system font")
 	_expect(resolved.get("败") == original["敗"], "classic font maps simplified battle failure text to the original Big5 bitmap glyph")
 	_expect(not original.has("戏") and not original.has("档"), "classic font compatibility does not mutate imported glyph metadata")
+	var atlas_path := "user://pal_classic_font_atlas_test.png"
+	var atlas_image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
+	atlas_image.fill(Color.WHITE)
+	_expect(atlas_image.save_png(ProjectSettings.globalize_path(atlas_path)) == OK, "classic font raw atlas fixture writes to user data")
+	var atlas_texture := PalClassicFont.load_atlas_texture(atlas_path)
+	_expect(atlas_texture != null and atlas_texture.get_size() == Vector2(2, 2), "classic font loads runtime-generated raw atlas without import metadata")
+	atlas_texture = null
+	DirAccess.remove_absolute(ProjectSettings.globalize_path(atlas_path))
 
 
 func _test_role_condition_display() -> void:

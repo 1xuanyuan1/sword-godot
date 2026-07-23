@@ -164,3 +164,11 @@ static func with_compatibility_aliases(glyphs: Dictionary) -> Dictionary:
 		if not resolved.has(simplified) and resolved.has(traditional):
 			resolved[simplified] = resolved[traditional]
 	return resolved
+
+
+## 加载经典字库图集，同时兼容包内导入纹理与桌面运行时生成的原始 PNG。
+static func load_atlas_texture(path: String) -> Texture2D:
+	if ResourceLoader.exists(path, "Texture2D"):
+		return ResourceLoader.load(path, "Texture2D", ResourceLoader.CACHE_MODE_REUSE) as Texture2D
+	var image := Image.load_from_file(ProjectSettings.globalize_path(path))
+	return null if image.is_empty() else ImageTexture.create_from_image(image)

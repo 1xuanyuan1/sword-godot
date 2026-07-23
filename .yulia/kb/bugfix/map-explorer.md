@@ -26,6 +26,27 @@ keywords:
 - **修复内容**: 运行时目录现在明确区分编辑器、Web 与桌面：编辑器／Web 从 `res://generated/pal` 读取，只有桌面导出使用 `user://generated/pal`。Web 暂存工程同步链接 `assets/`，确保状态图集及后续代码资源依赖可参与导入。新增 Web 路径合成断言，387 项检查通过；EVA 工程重新构建为 12 个 gzip 分片，过滤日志无 Parse/Compile 错误，并在 Chromium WebGL 2 中完成全部分片下载解压、正式 TileMap 启动、中文对话和资源加载检查，控制台无脚本或资源错误。
 - **状态**: ✅ 已修复
 
+---
+
+### [BF-051] Android 开始新游戏被导出重映射检查禁用
+
+- **来源**: 用户试玩反馈
+- **关联需求**: Android 本地验收包与移动端触控
+- **问题描述**: Android 资源实验室中的“开始新游戏”不可点击；即使从正式标题菜单进入，地图也可能加载失败。根因是 Godot 导出后只保留 TileMap 场景的 `.tscn.remap` 和字库 PNG 的导入纹理，资源实验室与 `PalContentDatabase` 却用 `FileAccess` 检查原始 `.tscn`，启动、菜单和战斗 UI 也从文件系统直接读取原始字库 PNG。源码工程因原文件存在而无法暴露该问题；标题菜单同时缺少通过 `_input` 接收 Android `InputEventScreenTouch` 的兜底路径。
+- **涉及文件**:
+  - `src/content/pal_content_database.gd`
+  - `src/ui/import_lab.gd`
+  - `src/ui/pal_classic_font.gd`
+  - `src/ui/pal_startup.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_startup_load_test.gd`
+  - `export_presets.cfg`
+  - `README.md`
+- **修复内容**: TileMap 场景存在性与加载统一改走 `ResourceLoader`，使 `.tscn.remap` 能按原始 `res://` 路径解析；经典字库增加共享加载入口，优先读取包内导入纹理并兼容桌面 `user://` 原始 PNG，启动、菜单和战斗复用同一规则。标题菜单在 `_input` 层直接消费真实 `InputEventScreenTouch`，不依赖触摸转鼠标。启动回归通过 Viewport 派发真实触摸验证“新的故事／旧的回忆”和实验室按钮；Android 同款 PCK smoke 真实加载数据库、音乐、字库与地图 12，全部成功。验收包提升到 `0.1.3(4)`。
+- **状态**: ✅ 已修复
+
 ## 2026-07-22
 
 ### [BF-043] 大理庆典场景入口因有限循环没有事件上下文而永久卡住

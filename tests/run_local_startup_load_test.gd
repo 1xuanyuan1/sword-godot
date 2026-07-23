@@ -73,12 +73,14 @@ func _run() -> void:
 	if opening_image == null or opening_image.get_size() != Vector2i(320, 200) or opening_image.save_png(output_directory.path_join("startup_opening_menu.png")) != OK:
 		_fail("无法保存 320×200 正式标题菜单截图")
 		return
-	startup.menu_selection = 1
-	startup._confirm_opening_menu()
+	var load_touch := InputEventScreenTouch.new()
+	load_touch.position = Vector2(PalStartup.MENU_POSITIONS[1] + Vector2i(10, 6))
+	load_touch.pressed = true
+	viewport.push_input(load_touch, true)
 	await process_frame
 	await process_frame
 	if not startup._save_menu.visible or startup._save_menu.current_page != PalGameMenu.Page.LOAD_SLOTS:
-		_fail("标题菜单的“旧的回忆”没有打开经典 100 槽读取界面")
+		_fail("标题菜单没有通过真实 InputEventScreenTouch 打开“旧的回忆”读取界面")
 		return
 	var opening_load_image := viewport.get_texture().get_image()
 	if opening_load_image == null or opening_load_image.get_size() != Vector2i(320, 200) or opening_load_image.save_png(output_directory.path_join("startup_opening_load.png")) != OK:
@@ -88,10 +90,13 @@ func _run() -> void:
 	if startup._save_menu.visible or startup.phase != PalStartup.Phase.OPENING_MENU:
 		_fail("标题读档界面取消后没有返回标题菜单")
 		return
-	startup.menu_selection = 0
-	startup._confirm_opening_menu()
+	var new_game_touch := InputEventScreenTouch.new()
+	new_game_touch.position = Vector2(PalStartup.MENU_POSITIONS[0] + Vector2i(10, 6))
+	new_game_touch.pressed = true
+	viewport.push_input(new_game_touch, true)
+	await process_frame
 	if startup.phase != PalStartup.Phase.FADE_TO_GAME:
-		_fail("标题菜单的“新的故事”没有进入新游戏转场")
+		_fail("标题菜单没有通过真实 InputEventScreenTouch 进入“新的故事”转场")
 		return
 	startup.free()
 	await process_frame
@@ -109,6 +114,16 @@ func _run() -> void:
 		return
 	if lab._explore_button.disabled or lab._load_save_button.disabled or not lab._save_system_available:
 		_fail("本地生成内容存在时开始游戏或读取存档入口不可用")
+		return
+	var lab_button_down := [false]
+	lab._explore_button.button_down.connect(func() -> void: lab_button_down[0] = true)
+	var lab_touch := InputEventScreenTouch.new()
+	lab_touch.position = lab._explore_button.get_global_rect().get_center()
+	lab_touch.pressed = true
+	viewport.push_input(lab_touch, true)
+	await process_frame
+	if not bool(lab_button_down[0]):
+		_fail("资源实验室的“开始新游戏”按钮没有接收真实 InputEventScreenTouch")
 		return
 	if lab._rng_button.disabled:
 		_fail("资源实验室没有从压缩 RNG.MKF 启用运行时预览入口")

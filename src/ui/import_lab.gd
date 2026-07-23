@@ -190,7 +190,8 @@ func _build_interface() -> void:
 func _show_idle_state() -> void:
 	var content_root := PalRuntimePaths.content_root()
 	var has_core_content := FileAccess.file_exists(content_root.path_join("core/scenes.bin"))
-	var has_generated_content := has_core_content and FileAccess.file_exists(content_root.path_join("world/tilemaps/012.tscn"))
+	# Godot 导出后通过 `.tscn.remap` 暴露 PackedScene，不能用 FileAccess 检查原始文件。
+	var has_generated_content := has_core_content and ResourceLoader.exists(content_root.path_join("world/tilemaps/012.tscn"), "PackedScene")
 	_explore_button.disabled = not has_generated_content
 	var readable_save_count := _configure_save_launcher(has_generated_content)
 	_story_test_button.disabled = not has_generated_content

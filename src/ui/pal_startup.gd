@@ -132,14 +132,22 @@ func _run_bundled_export_smoke() -> bool:
 	var title_music := ResourceLoader.load(generated_root.path_join("audio/rix/005.wav"), "AudioStreamWAV", ResourceLoader.CACHE_MODE_REUSE) as AudioStreamWAV if content_ready else null
 	var menu_music := ResourceLoader.load(generated_root.path_join("audio/rix/004.wav"), "AudioStreamWAV", ResourceLoader.CACHE_MODE_REUSE) as AudioStreamWAV if content_ready else null
 	var audio_loaded := title_music != null and menu_music != null
-	var success := content_ready and database_loaded and audio_loaded
+	var font_loaded := PalClassicFont.load_atlas_texture(generated_root.path_join("content/text/font_atlas.png")) != null if content_ready else false
+	var tile_world := PalTileMapWorld.new()
+	add_child(tile_world)
+	var tilemap_loaded := tile_world.load_map(database, 12) if database_loaded else false
+	var tilemap_error := tile_world.error_message
+	tile_world.queue_free()
+	var success := content_ready and database_loaded and audio_loaded and font_loaded and tilemap_loaded
 	print("BUNDLED_EXPORT_SMOKE " + JSON.stringify({
 		"success": success,
 		"generated_root": generated_root,
 		"content_ready": content_ready,
 		"database_loaded": database_loaded,
 		"audio_loaded": audio_loaded,
-		"error": _startup_error_message if not _startup_error_message.is_empty() else database.error_message,
+		"font_loaded": font_loaded,
+		"tilemap_loaded": tilemap_loaded,
+		"error": _startup_error_message if not _startup_error_message.is_empty() else (database.error_message if not database.error_message.is_empty() else tilemap_error),
 	}))
 	get_tree().quit(0 if success else 1)
 	return true
@@ -270,9 +278,7 @@ func _load_classic_resources() -> void:
 		var parsed = JSON.parse_string(metadata_file.get_as_text())
 		if parsed is Dictionary:
 			_font_glyphs = PalClassicFont.with_compatibility_aliases(parsed.get("glyphs", {}))
-	var atlas_image := Image.load_from_file(ProjectSettings.globalize_path(_database.root_path.path_join("text/font_atlas.png")))
-	if not atlas_image.is_empty():
-		_font_texture = ImageTexture.create_from_image(atlas_image)
+	_font_texture = PalClassicFont.load_atlas_texture(_database.root_path.path_join("text/font_atlas.png"))
 	_load_trademark_stream()
 
 
@@ -393,6 +399,12 @@ func _advance_splash_tick() -> void:
 
 
 func _input(event: InputEvent) -> void:
+	if MobileInput.is_primary_press(event):
+		if _handle_primary_press(MobileInput.pointer_position(event)):
+			var input_viewport := get_viewport()
+			if input_viewport != null:
+				input_viewport.set_input_as_handled()
+		return
 	if not event.is_pressed() or event.is_echo() or event is not InputEventKey:
 		return
 	if event.keycode == KEY_F10:
@@ -424,21 +436,26 @@ func _input(event: InputEvent) -> void:
 
 
 func _gui_input(event: InputEvent) -> void:
-	if _save_menu.visible or not MobileInput.is_primary_press(event):
-		return
+	if MobileInput.is_primary_press(event) and _handle_primary_press(MobileInput.pointer_position(event)):
+		accept_event()
+
+
+## 直接处理触摸和鼠标按下；由 `_input` 兜底接收 Android ScreenTouch，不依赖鼠标模拟。
+func _handle_primary_press(raw_point: Vector2) -> bool:
+	if _save_menu.visible:
+		return false
 	if phase == Phase.SPLASH:
 		_finish_splash()
-		accept_event()
-		return
+		return true
 	if phase != Phase.OPENING_MENU or _opening_menu_elapsed < OPENING_MENU_FADE_SECONDS:
-		return
-	var point := Vector2i(MobileInput.pointer_position(event))
+		return false
+	var point := Vector2i(raw_point)
 	for index in range(MENU_POSITIONS.size()):
 		if Rect2i(MENU_POSITIONS[index] - Vector2i(3, 2), Vector2i(86, 18)).has_point(point):
 			menu_selection = index
 			_confirm_opening_menu()
-			accept_event()
-			return
+			return true
+	return false
 
 
 func _finish_splash() -> void:

@@ -1366,6 +1366,7 @@ func _load_classic_resources() -> void:
 	_equipment_background_texture = null
 	_status_background_texture = null
 	_portrait_textures.clear()
+	_font_texture = null
 	_font_glyphs.clear()
 	var metadata_path := database.root_path.path_join("text/font_glyphs.json")
 	var metadata_file := FileAccess.open(metadata_path, FileAccess.READ)
@@ -1373,10 +1374,7 @@ func _load_classic_resources() -> void:
 		var parsed = JSON.parse_string(metadata_file.get_as_text())
 		if parsed is Dictionary:
 			_font_glyphs = PalClassicFont.with_compatibility_aliases(parsed.get("glyphs", {}))
-	var atlas_path := ProjectSettings.globalize_path(database.root_path.path_join("text/font_atlas.png"))
-	var atlas_image := Image.load_from_file(atlas_path)
-	if not atlas_image.is_empty():
-		_font_texture = ImageTexture.create_from_image(atlas_image)
+	_font_texture = PalClassicFont.load_atlas_texture(database.root_path.path_join("text/font_atlas.png"))
 	var equipment_background := database.load_battle_background(1)
 	if equipment_background.is_valid() and not _palette.is_empty():
 		_equipment_background_texture = ImageTexture.create_from_image(equipment_background.to_rgba_image(_palette))

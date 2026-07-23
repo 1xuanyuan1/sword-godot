@@ -193,7 +193,8 @@ func load_tilemap_scene(map_number: int) -> PackedScene:
 	if not _verify_tilemap_content(map_number):
 		return null
 	var path := root_path.path_join("world/tilemaps/%03d.tscn" % map_number)
-	if not FileAccess.file_exists(path):
+	# 导出包只保留 `.tscn.remap` 与转换后的场景资源，原始 `.tscn` 不再能由 FileAccess 看到。
+	if not ResourceLoader.exists(path, "PackedScene"):
 		error_message = "地图 %d 缺少 TileMapLayer 资源，请在资源实验室重新导入 Data" % map_number
 		return null
 	var scene := ResourceLoader.load(path, "PackedScene", ResourceLoader.CACHE_MODE_REUSE) as PackedScene

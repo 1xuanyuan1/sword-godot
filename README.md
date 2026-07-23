@@ -117,7 +117,7 @@ mkdir -p builds/android
   --export-debug "Android APK (Local)" builds/android/SwordGodotStudyPort-Android-arm64-debug.apk
 ```
 
-发布前可额外导出并挂载 Android 同款资源包，检查核心数据库及标题音乐的 Godot 导入重映射；输出中的 `success`、`database_loaded` 和 `audio_loaded` 都应为 `true`：
+发布前可额外导出并挂载 Android 同款资源包，检查核心数据库、标题音乐、经典字库及正式 TileMapLayer 场景的 Godot 导入重映射；输出中的 `success`、`database_loaded`、`audio_loaded`、`font_loaded` 和 `tilemap_loaded` 都应为 `true`：
 
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
