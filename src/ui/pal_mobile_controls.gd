@@ -5,16 +5,21 @@ class_name PalMobileControls
 extends Control
 
 const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
+const MENU_ICON: Texture2D = preload("res://assets/ui/mobile/menu.png")
+const TALK_ICON: Texture2D = preload("res://assets/ui/mobile/interact_talk.png")
+const GRAB_ICON: Texture2D = preload("res://assets/ui/mobile/interact_grab.png")
 
 ## 玩家点击左上角固定菜单入口。
 signal menu_requested
 ## 玩家点击右下角互动键。
 signal interact_requested
 
-const MENU_RECT := Rect2(4, 4, 38, 22)
-const INTERACT_RECT := Rect2(270, 154, 46, 42)
+const MENU_RECT := Rect2(2, 2, 40, 36)
+const INTERACT_RECT := Rect2(268, 150, 50, 48)
 const JOYSTICK_RADIUS := 30.0
 const JOYSTICK_DEAD_ZONE := 7.0
+const MENU_ICON_SIZE := 28.0
+const INTERACT_ICON_SIZE := 32.0
 
 ## 测试可在加入场景树前强制显示；正式运行仍由平台或命令行参数决定。
 var force_touch_ui: bool = false
@@ -26,6 +31,7 @@ var _joystick_pointer_id: int = -1
 var _joystick_center := Vector2.ZERO
 var _joystick_knob := Vector2.ZERO
 var _movement_vector := Vector2.ZERO
+var _talk_interaction_available: bool = false
 
 
 func _ready() -> void:
@@ -55,6 +61,19 @@ func movement_vector() -> Vector2:
 ## 返回浮动摇杆是否已经由某个指针按下并显示。
 func joystick_active() -> bool:
 	return _joystick_active
+
+
+## NPC 等带方向动画的人物在搜索范围内时显示聊天气泡；其他情况显示抓取手。
+func set_talk_interaction_available(available: bool) -> void:
+	if _talk_interaction_available == available:
+		return
+	_talk_interaction_available = available
+	queue_redraw()
+
+
+## 返回当前互动按钮是否使用聊天气泡，供地图同步和触摸回归验证。
+func talk_interaction_available() -> bool:
+	return _talk_interaction_available
 
 
 func _input(event: InputEvent) -> void:
@@ -129,8 +148,8 @@ func _clear_joystick() -> void:
 func _draw() -> void:
 	if not visible:
 		return
-	_draw_touch_button(MENU_RECT, "菜单")
-	_draw_touch_button(INTERACT_RECT, "互动")
+	_draw_icon(MENU_ICON, MENU_RECT, MENU_ICON_SIZE)
+	_draw_icon(TALK_ICON if _talk_interaction_available else GRAB_ICON, INTERACT_RECT, INTERACT_ICON_SIZE)
 	if _joystick_active:
 		draw_circle(_joystick_center, JOYSTICK_RADIUS, Color(0.02, 0.03, 0.06, 0.36))
 		draw_arc(_joystick_center, JOYSTICK_RADIUS, 0.0, TAU, 48, Color(0.93, 0.82, 0.58, 0.8), 1.2, true)
@@ -138,11 +157,9 @@ func _draw() -> void:
 		draw_arc(_joystick_knob, 11.0, 0.0, TAU, 32, Color.WHITE, 1.0, true)
 
 
-func _draw_touch_button(rect: Rect2, label: String) -> void:
-	draw_rect(rect, Color(0.02, 0.03, 0.06, 0.72), true)
-	draw_rect(rect, Color(0.93, 0.82, 0.58, 0.9), false, 1.0)
-	var font := ThemeDB.fallback_font
-	var font_size := 9
-	var text_size := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-	var baseline := rect.position + Vector2((rect.size.x - text_size.x) * 0.5, (rect.size.y + text_size.y) * 0.5 - 1.0)
-	draw_string(font, baseline, label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
+func _draw_icon(texture: Texture2D, hit_rect: Rect2, icon_size: float) -> void:
+	if texture == null:
+		return
+	var size := Vector2(icon_size, icon_size)
+	var icon_rect := Rect2(hit_rect.get_center() - size * 0.5, size)
+	draw_texture_rect(texture, icon_rect, false)

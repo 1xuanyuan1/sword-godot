@@ -8,6 +8,7 @@ const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
+const MapExplorer := preload("res://src/world/map_explorer.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -2291,6 +2292,18 @@ func _test_mobile_touch_controls() -> void:
 	var interact_requests := [0]
 	controls.menu_requested.connect(func() -> void: menu_requests[0] += 1)
 	controls.interact_requested.connect(func() -> void: interact_requests[0] += 1)
+	var mobile_constants: Dictionary = controls.get_script().get_script_constant_map()
+	_expect(mobile_constants.get("MENU_ICON") != null and mobile_constants.get("TALK_ICON") != null and mobile_constants.get("GRAB_ICON") != null, "mobile controls preload transparent menu, talk and grab icon assets")
+	controls.set_talk_interaction_available(true)
+	_expect(controls.talk_interaction_available(), "mobile interaction switches to the talk bubble when a person is nearby")
+	controls.set_talk_interaction_available(false)
+	_expect(not controls.talk_interaction_available(), "mobile interaction returns to the grab hand away from people")
+	var nearby_person := PalEventObject.new()
+	nearby_person.sprite_frames = 3
+	var nearby_object := PalEventObject.new()
+	nearby_object.sprite_frames = 0
+	_expect(MapExplorer._event_uses_talk_icon(nearby_person), "mobile exploration classifies an animated nearby event as a person")
+	_expect(not MapExplorer._event_uses_talk_icon(nearby_object) and not MapExplorer._event_uses_talk_icon(null), "mobile exploration keeps the grab hand for static objects and empty ground")
 	_expect(controls.handle_pointer_press(Vector2(10, 10), 1) and menu_requests[0] == 1 and not controls.joystick_active(), "mobile top-left menu button opens without also starting the floating joystick")
 	_expect(controls.handle_pointer_press(Vector2(290, 175), 2) and interact_requests[0] == 1 and not controls.joystick_active(), "mobile interaction button remains separate from movement input")
 	_expect(controls.handle_pointer_press(Vector2(100, 120), 3) and controls.joystick_active(), "floating joystick appears at the initial map touch point")

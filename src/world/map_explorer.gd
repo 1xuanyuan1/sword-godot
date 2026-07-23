@@ -422,6 +422,15 @@ func _sync_mobile_controls() -> void:
 		and _pending_magic_object_id <= 0
 	)
 	_mobile_controls.set_exploration_available(available)
+	var nearby_event: PalEventObject = null
+	if available:
+		nearby_event = _find_search_event(_search_trigger_positions(_session.party_world_position(), _session.party_direction), _scene_events)
+	_mobile_controls.set_talk_interaction_available(_event_uses_talk_icon(nearby_event))
+
+
+## 有方向动画帧的搜索对象按人物处理；静态物件、暗格和空地继续使用抓取手。
+static func _event_uses_talk_icon(event: PalEventObject) -> bool:
+	return event != null and event.sprite_frames > 0
 
 
 func _on_mobile_menu_requested() -> void:

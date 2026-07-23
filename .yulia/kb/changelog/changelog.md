@@ -111,6 +111,32 @@ keywords:
   - `.yulia/kb/changelog/version-changelog-prod.md`
   - `.yulia/kb/changelog/changelog.md`
 
+---
+
+### [FT-083] [feat] 更新移动端透明操作图标与 Android 应用标识
+
+- **关联需求**: M2 地图探索、M3 经典菜单与对话、M4 经典战斗、M5 Android 发布质量
+- **关联 TODO**: 无
+- **功能描述**: 将移动端左上角菜单、菜单／战斗返回和右下角互动入口从“文字 + 矩形框”替换为透明 PNG 图标，保留更大的透明触控命中区；互动键在人物搜索范围内显示聊天气泡，面对静态物件、暗格或空地时显示抓取手。Android 应用显示名改为“仙剑奇侠传”，采用用户确认的李逍遥与“剑”字主题图标，同时保留内部项目名和包名以避免桌面存档目录与 Android 覆盖安装关系变化；Android 版本升级为 `0.1.4(5)`。
+- **验证情况**: 411 项合成检查通过，覆盖图标预加载、人物／物件互动分类、触控命中、对话推进与战斗菜单。Godot 4.7 OpenGL/Metal 真窗口使用正式 `TileMapLayer + PalTileMapWorld` 生成抓取手、聊天气泡、菜单返回和战斗返回截图，逐张确认透明背景、无黑色矩形框且不遮挡游戏内容。Android arm64-v8a debug APK 成功导出为 194 MiB，SHA-256 `66a5f4e18c40232661f9899a1ddad3675ed4f239102029567d9699526a163ba7`；`aapt`／`apkanalyzer` 确认应用名“仙剑奇侠传”、版本 `0.1.4(5)`、最低 API 24、目标 API 36和 arm64 单架构，v2／v3 签名有效。包内确认包含应用图标、四个移动图标、223 个 TileMap 与 290 个音频导入，零测试、视觉截图、原版根目录或 `.rpg`；当前无连接 Android 设备，仍需覆盖安装真机验收。
+- **涉及文件**:
+  - `.gitignore`
+  - `project.godot`
+  - `export_presets.cfg`
+  - `assets/ui/app_icon.png`
+  - `assets/ui/app_icon_192.png`
+  - `assets/ui/mobile/menu.png`
+  - `assets/ui/mobile/back.png`
+  - `assets/ui/mobile/interact_talk.png`
+  - `assets/ui/mobile/interact_grab.png`
+  - `src/ui/pal_mobile_controls.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `src/battle/pal_battle_ui.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_mobile_visual_test.gd`
+  - `.yulia/kb/changelog/changelog.md`
+
 ## 2026-07-22
 
 ### [FT-070] [feat] 补齐正式片头与标题菜单

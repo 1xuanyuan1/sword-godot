@@ -48,6 +48,13 @@ func _run() -> void:
 		printerr("FAIL: 移动探索截图没有生成有效的 320×200 画面")
 		quit(1)
 		return
+	controls.set_talk_interaction_available(true)
+	await _settle_render()
+	var talk_image := viewport.get_texture().get_image()
+	if talk_image == null or talk_image.save_png(output_directory.path_join("mobile_exploration_talk_controls.png")) != OK:
+		printerr("FAIL: 人物附近的聊天气泡互动图标截图写入失败")
+		quit(1)
+		return
 	controls.set_exploration_available(false)
 	var menu := PalGameMenu.new()
 	menu.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)

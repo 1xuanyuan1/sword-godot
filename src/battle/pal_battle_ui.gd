@@ -8,6 +8,7 @@ extends Control
 
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
 const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
+const MOBILE_BACK_ICON: Texture2D = preload("res://assets/ui/mobile/back.png")
 
 enum Mode {
 	WAITING,
@@ -72,7 +73,7 @@ const COLOR_MENU_SELECTED_INACTIVE := 0x1c
 const COLOR_MENU_SELECTED_FIRST := 0xf9
 const ENEMY_VITALS_RECT := Rect2(8, 8, 82, 40)
 const ENEMY_VITALS_BAR_RECT := Rect2(14, 38, 70, 5)
-const MOBILE_BACK_RECT := Rect2(272, 3, 44, 20)
+const MOBILE_BACK_RECT := Rect2(276, 2, 40, 30)
 
 ## 战斗使用的只读内容数据库。
 var database: PalContentDatabase
@@ -455,9 +456,8 @@ func _draw() -> void:
 
 
 func _draw_mobile_back_button() -> void:
-	draw_rect(MOBILE_BACK_RECT, Color(0.01, 0.02, 0.05, 0.9), true)
-	draw_rect(MOBILE_BACK_RECT, _palette_color(COLOR_MENU_NORMAL), false, 1.0)
-	_draw_pal_text("返回", Vector2i(278, 8), _palette_color(COLOR_MENU_NORMAL), true)
+	var size := Vector2(26, 26)
+	draw_texture_rect(MOBILE_BACK_ICON, Rect2(MOBILE_BACK_RECT.get_center() - size * 0.5, size), false)
 
 
 func _draw_player_status_boxes() -> void:

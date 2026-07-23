@@ -10,6 +10,7 @@
 builds/
 logs/
 node_modules/
+output/
 
 # Original PAL game data and all derivatives are proprietary and local-only.
 Data/
