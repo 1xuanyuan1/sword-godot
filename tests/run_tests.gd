@@ -1432,13 +1432,16 @@ func _test_script_vm_dialog_pause() -> void:
 	var session := GameSession.new()
 	var initial_position := session.party_world_position()
 	var messages: Array[int] = []
+	var dialog_rounds: Array[PackedInt32Array] = []
 	var requested_scenes: Array[int] = []
 	var vm := ScriptVM.new()
 	vm.configure(database, session)
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.dialog_round_ready.connect(func(indices: PackedInt32Array) -> void: dialog_rounds.append(indices))
 	vm.scene_change_requested.connect(func(index: int) -> void: requested_scenes.append(index))
 	vm.run_trigger(1)
 	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM combines consecutive dialog body messages")
+	_expect(dialog_rounds == [PackedInt32Array([12, 13])], "script VM exposes one stable body-message sequence for offline dialog voice lookup")
 	_expect(session.party_world_position() == initial_position and session.scene_index == 0 and requested_scenes.is_empty(), "dialog waits before any following world mutation or scene change")
 	vm.advance_dialog()
 	_expect(not vm.waiting_for_dialog and not vm.running and session.party_world_position() == Vector2i(320, 320) and session.scene_index == 1 and requested_scenes == [1], "script VM applies following world mutations only after the dialog round ends")
@@ -1458,11 +1461,14 @@ func _test_script_vm_title_and_body() -> void:
 	database.scripts[2].operands[0] = 12
 	database.scripts[3].operands[0] = 13
 	var messages: Array[int] = []
+	var dialog_rounds: Array[PackedInt32Array] = []
 	var vm := ScriptVM.new()
 	vm.configure(database)
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
+	vm.dialog_round_ready.connect(func(indices: PackedInt32Array) -> void: dialog_rounds.append(indices))
 	vm.run_trigger(1)
 	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM combines speaker title with first body line")
+	_expect(dialog_rounds == [PackedInt32Array([13])], "dialog voice sequence excludes the visible speaker title")
 	vm.advance_dialog()
 	_expect(not vm.waiting_for_dialog, "script VM title does not require a separate key press")
 	vm.free()
@@ -1484,14 +1490,17 @@ func _test_script_vm_dialog_page_break() -> void:
 	database.scripts[5].operands[0] = 14
 	var messages: Array[int] = []
 	var page_breaks: Array[int] = [0]
+	var dialog_rounds: Array[PackedInt32Array] = []
 	var vm := ScriptVM.new()
 	vm.configure(database)
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
 	vm.dialog_page_break.connect(func() -> void: page_breaks[0] += 1)
+	vm.dialog_round_ready.connect(func(indices: PackedInt32Array) -> void: dialog_rounds.append(indices))
 	vm.run_trigger(1)
 	_expect(vm.waiting_for_dialog and messages == [12, 13], "script VM pauses before a dialog page break")
 	vm.advance_dialog()
 	_expect(vm.waiting_for_dialog and page_breaks[0] == 1 and messages == [12, 13, 14], "script VM continues dialog after a page break")
+	_expect(dialog_rounds == [PackedInt32Array([13]), PackedInt32Array([14])], "dialog voice sequences follow the same page boundaries as interactive text")
 	vm.advance_dialog()
 	vm.free()
 
@@ -1906,12 +1915,15 @@ func _test_script_vm_center_toast() -> void:
 		database.scripts.append(entry)
 	var messages: Array[int] = []
 	var ended: Array[int] = []
+	var dialog_rounds: Array[PackedInt32Array] = []
 	var vm := ScriptVM.new()
 	vm.configure(database)
 	vm.dialog_message.connect(func(index: int) -> void: messages.append(index))
 	vm.dialog_ended.connect(func() -> void: ended.append(1))
+	vm.dialog_round_ready.connect(func(indices: PackedInt32Array) -> void: dialog_rounds.append(indices))
 	vm.run_trigger(1)
 	_expect(vm.running and vm.waiting_for_frames and not vm.waiting_for_dialog and messages == [0], "center toast waits without requiring dialog input")
+	_expect(dialog_rounds == [PackedInt32Array([0])], "timed narration exposes a voice round without becoming interactive dialog")
 	for frame in range(14):
 		vm.tick_frame()
 	_expect(not vm.running and ended.size() >= 1, "center toast closes automatically after 1.4 seconds")

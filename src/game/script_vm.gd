@@ -29,6 +29,8 @@ signal dialog_started(position: int, color: int, portrait: int)
 signal dialog_message(message_index: int)
 ## 原版脚本要求保留对话上下文并切换页面。
 signal dialog_page_break
+## 一整轮正文消息已经收齐；离线 TTS 可按这个稳定序列查找单条语音，不朗读说话人标题。
+signal dialog_round_ready(message_indices: PackedInt32Array)
 ## 当前对话上下文结束或 VM 被停止。
 signal dialog_ended
 ## 请求音频层切换场景音乐，并携带循环与淡入淡出语义。
@@ -125,6 +127,7 @@ var _last_event_object_id: int = 0
 var _call_stack: Array[Dictionary] = []
 var _dialog_has_body: bool = false
 var _dialog_is_toast: bool = false
+var _dialog_body_message_indices := PackedInt32Array()
 var _frames_remaining: int = 0
 var _auto_frame_number: int = 0
 var _close_dialog_after_frame_wait: bool = false
@@ -189,6 +192,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	_call_stack.clear()
 	_dialog_has_body = false
 	_dialog_is_toast = false
+	_dialog_body_message_indices.clear()
 	waiting_for_frames = false
 	waiting_for_party_walk = false
 	waiting_for_party_ride = false
@@ -220,6 +224,7 @@ func advance_dialog() -> void:
 		return
 	waiting_for_dialog = false
 	_dialog_has_body = false
+	_dialog_body_message_indices.clear()
 	running = true
 	_continue_execution()
 
@@ -320,6 +325,7 @@ func stop() -> void:
 	_confirmation_no_entry = 0
 	_dialog_has_body = false
 	_dialog_is_toast = false
+	_dialog_body_message_indices.clear()
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
 	_camera_pan_active = false
@@ -354,6 +360,7 @@ func tick_frame() -> bool:
 			_close_dialog_after_frame_wait = false
 			_dialog_has_body = false
 			_dialog_is_toast = false
+			_dialog_body_message_indices.clear()
 			dialog_ended.emit()
 		_continue_execution()
 	return world_changed
@@ -912,6 +919,7 @@ func _continue_execution() -> int:
 				_cursor = next_cursor
 				if not _is_dialog_title(database.get_message(entry.operands[0])):
 					_dialog_has_body = true
+					_dialog_body_message_indices.append(entry.operands[0])
 					if _dialog_is_toast and not _is_dialog_message_entry(next_cursor):
 						return _wait_for_frames(next_cursor, 14, true)
 				executed += 1
@@ -958,6 +966,7 @@ func _finish(next_entry: int) -> int:
 	_confirmation_no_entry = 0
 	_dialog_has_body = false
 	_dialog_is_toast = false
+	_dialog_body_message_indices.clear()
 	_frames_remaining = 0
 	_close_dialog_after_frame_wait = false
 	_camera_pan_active = false
@@ -969,7 +978,13 @@ func _finish(next_entry: int) -> int:
 func _pause_at_dialog_boundary() -> int:
 	running = false
 	waiting_for_dialog = true
+	_emit_dialog_round_ready()
 	return _cursor
+
+
+func _emit_dialog_round_ready() -> void:
+	if not _dialog_body_message_indices.is_empty():
+		dialog_round_ready.emit(_dialog_body_message_indices.duplicate())
 
 
 func _starts_quoted_narration(entry_index: int) -> bool:
@@ -1056,6 +1071,8 @@ func _wait_for_frames(next_cursor: int, frame_count: int, close_dialog_after_wai
 	waiting_for_frames = true
 	_close_dialog_after_frame_wait = close_dialog_after_wait
 	_camera_pan_active = false
+	if close_dialog_after_wait:
+		_emit_dialog_round_ready()
 	return _cursor
 
 
