@@ -9,6 +9,7 @@ const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
 const MapExplorer := preload("res://src/world/map_explorer.gd")
+const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -28,6 +29,7 @@ func _init() -> void:
 	_test_rng_rejects_malformed_delta()
 	_test_rng_playback_stream()
 	_test_map_helpers()
+	_test_presentation_metrics()
 	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
@@ -371,6 +373,13 @@ func _test_runtime_paths() -> void:
 	_expect(PalRuntimePaths.generated_root_for(false, true) == "res://generated/pal", "bundled Web and Android exports read the generated PAL content embedded in the package")
 	_expect(PalRuntimePaths.generated_root_for(false) == "user://generated/pal", "desktop export writes generated PAL content to the user directory")
 	_expect(PalRuntimePaths.content_root().ends_with("/generated/pal/content"), "runtime content root appends the database directory")
+
+
+func _test_presentation_metrics() -> void:
+	_expect(PresentationMetrics.CLASSIC_CONTENT_SIZE == Vector2i(320, 200), "presentation keeps the original PAL content size as the pixel baseline")
+	_expect(PresentationMetrics.DEFAULT_REMASTER_CANVAS_SIZE == Vector2i(1280, 800), "presentation defines a 4x default remaster canvas without changing source assets")
+	_expect(PresentationMetrics.classic_content_rect(Vector2i(1280, 800)) == Rect2i(0, 0, 1280, 800), "4x remaster canvas fits the classic content exactly")
+	_expect(PresentationMetrics.classic_content_rect(Vector2i(1920, 1080)) == Rect2i(160, 40, 1600, 1000), "widescreen output centers the largest integer-scaled classic content region")
 
 
 func _test_tilemap_runtime_retirement() -> void:

@@ -10,7 +10,8 @@ const PALETTE_SHADER: Shader = preload("res://shaders/indexed_palette.gdshader")
 const SCREEN_WAVE_SHADER: Shader = preload("res://shaders/pal_screen_wave_overlay.gdshader")
 const COLLECTIBLE_MARKER_SHADER: Shader = preload("res://shaders/collectible_marker.gdshader")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
-const VIEWPORT_SIZE := Vector2i(320, 200)
+const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
+const VIEWPORT_SIZE := PresentationMetrics.CLASSIC_CONTENT_SIZE
 const COLLECTIBLE_MARKER_SIZE := 9
 const SPRITELESS_COLLECTIBLE_HEIGHT := 10
 
