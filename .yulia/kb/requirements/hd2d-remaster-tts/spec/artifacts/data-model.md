@@ -8,20 +8,21 @@ keywords: ['data model', 'asset manifest', 'TTS', 'MOD']
 
 ## RemasterAssetPack
 
-- `schema_version: int`：当前为 1。
-- `pack_id: String`、`version: String`、`chapter: int`。
-- `entries: Array[RemasterAssetEntry]`。
-- 状态：`draft → reviewed → approved → retired`；只有 approved 条目可进入正式高清路径。
+- `schema_version: String`：当前为 `1.0.0`。
+- `pack_id: String`、`asset_version: String`、`chapter: int`。
+- `assets: Array[RemasterAssetEntry]`。
+- 状态：`draft → generated → technical_review → approved`；rejected 条目不得进入正式高清路径。
 
 ## RemasterAssetEntry
 
-- `logical_id: String`：稳定命名空间 ID。
+- `id: String`：稳定命名空间 ID。
 - `type: String`：environment、field_sprite、portrait、battlefield、battle_action、cutscene、voice、ui_theme。
 - `path: String`：包内相对路径，禁止绝对路径和 `..`。
 - `sha256: String`：64 位十六进制。
-- `source`: 生成模型、协议、提示词版本、请求尺寸、参考来源。
-- `fallback_id: String`：可选的下一层逻辑 ID。
-- `review_status: String`：draft/reviewed/approved/rejected。
+- `generation`: 生成服务、模型、协议、提示词清单 ID 和请求尺寸。
+- `source_references: Array[String]`：素材来源与权利审核引用。
+- `fallback_asset_id: String`：可选的下一层逻辑 ID。
+- `review_status: String`：draft/generated/technical_review/approved/rejected。
 
 ## PalWorldPresentationSnapshot
 
@@ -42,8 +43,8 @@ keywords: ['data model', 'asset manifest', 'TTS', 'MOD']
 
 ## TtsManifest / TtsItem
 
-- Manifest 保存 MiniMax defaults 和 `items`。
-- Item 包含 `id`、`chapter`、`message_ids`、`speaker_id`、`text`、`text_sha256`、`profile/voice_setting`、`output`、`audio_sha256`。
+- Manifest 保存 `speech-2.8-hd` 模型、32kHz/128kbps/单声道音频配置和 `entries`。
+- Entry 包含 `dialog_round_id`、`message_ids`、`speaker_id`、`role`、`text`、`text_sha256`、`voice_id/voice_settings`、`output_path`、`audio_sha256`。
 - 运行时索引键为完整 `message_ids` 序列，不是显示文本或说话人标题。
 
 ## ChapterAcceptance
@@ -51,4 +52,3 @@ keywords: ['data model', 'asset manifest', 'TTS', 'MOD']
 - `chapter`、`code_commit`、`asset_tag`、`asset_lock_sha256`。
 - 覆盖计数：maps、scenes、characters、portraits、battlefields、battle_actions、cutscenes、voice_rounds。
 - 门禁：synthetic、mainline、tilemap、windowed_visual、performance、audio_review、rights_review。
-

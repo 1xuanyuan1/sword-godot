@@ -17,6 +17,10 @@ jobs:
         run: godot --headless --editor --path . --quit
       - name: Check Chinese documentation and GDScript API comments
         run: python3 tools/check_documentation.py
+      - name: Guard public release content
+        run: |
+          python3 tools/scan_public_release.py
+          python3 tools/validate_remaster_manifest.py --manifest remaster-content.lock.json --kind lock --schema-only
       - name: Run synthetic format tests
         run: godot --headless --path . --script res://tests/run_tests.gd
       - name: Run synthetic equipment tests

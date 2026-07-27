@@ -20,6 +20,9 @@ local_data/
 generated/
 *.rpg
 
+# Nested private remaster art and voice repository.
+/sword-assets/
+
 # Native helper build products
 tools/rix_renderer/build/
 tools/rix_renderer/out/

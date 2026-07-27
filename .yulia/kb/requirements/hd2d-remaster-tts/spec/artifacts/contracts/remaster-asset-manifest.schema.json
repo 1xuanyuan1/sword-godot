@@ -1,46 +1,83 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://sword-godot.invalid/contracts/remaster-asset-manifest.schema.json",
-  "title": "Remaster Asset Manifest",
+  "$id": "https://sword-remaster.invalid/schemas/remaster-asset-manifest.schema.json",
+  "title": "Sword Remaster Asset Manifest",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "pack_id", "version", "chapter", "entries"],
+  "required": ["schema_version", "pack_id", "asset_version", "assets"],
   "properties": {
-    "schema_version": { "const": 1 },
-    "pack_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
-    "version": { "type": "string", "minLength": 1 },
-    "chapter": { "type": "integer", "minimum": 0, "maximum": 18 },
-    "entries": {
+    "schema_version": { "const": "1.0.0" },
+    "pack_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+    "asset_version": { "type": "string", "minLength": 1 },
+    "chapter": { "type": ["integer", "null"], "minimum": 0, "maximum": 18 },
+    "generated_at": { "type": "string", "format": "date-time" },
+    "assets": {
       "type": "array",
-      "items": { "$ref": "#/$defs/entry" }
+      "items": { "$ref": "#/$defs/asset" }
     }
   },
   "$defs": {
-    "entry": {
+    "asset": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["logical_id", "type", "path", "sha256", "review_status", "source"],
+      "required": [
+        "id",
+        "type",
+        "path",
+        "sha256",
+        "chapter",
+        "source_references",
+        "review_status"
+      ],
       "properties": {
-        "logical_id": { "type": "string", "pattern": "^(map|character|portrait|battlefield|battle|cutscene|voice|ui)/.+$" },
-        "type": { "enum": ["environment", "field_sprite", "portrait", "battlefield", "battle_action", "cutscene", "voice", "ui_theme"] },
-        "path": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
-        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-        "fallback_id": { "type": "string" },
-        "review_status": { "enum": ["draft", "reviewed", "approved", "rejected", "retired"] },
-        "source": {
+        "id": {
+          "type": "string",
+          "pattern": "^(map/[^/]+/environment|character/[^/]+/field|portrait/[^/]+/[^/]+|battlefield/[^/]+|battle/[^/]+/[^/]+|cutscene/[^/]+/[^/]+|voice/[^/]+|ui/[^/]+)$"
+        },
+        "type": {
+          "enum": [
+            "environment",
+            "field_sprite",
+            "portrait",
+            "battlefield",
+            "battle_action",
+            "cutscene",
+            "voice",
+            "ui_theme"
+          ]
+        },
+        "path": { "$ref": "#/$defs/relative_path" },
+        "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+        "chapter": { "type": ["integer", "null"], "minimum": 0, "maximum": 18 },
+        "generation": {
           "type": "object",
-          "additionalProperties": true,
-          "required": ["kind"],
+          "additionalProperties": false,
+          "required": ["provider", "model", "prompt_manifest_id"],
           "properties": {
-            "kind": { "enum": ["bitto", "procedural", "licensed", "manual"] },
-            "model": { "type": "string" },
-            "protocol": { "type": "string" },
-            "prompt_version": { "type": "string" },
-            "requested_size": { "type": "string" },
-            "reference": { "type": "string" }
+            "provider": { "type": "string", "minLength": 1 },
+            "model": { "type": "string", "minLength": 1 },
+            "prompt_manifest_id": { "type": "string", "minLength": 1 },
+            "protocol_version": { "type": "string" },
+            "width": { "type": "integer", "minimum": 1 },
+            "height": { "type": "integer", "minimum": 1 }
           }
-        }
+        },
+        "source_references": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "review_status": {
+          "enum": ["draft", "generated", "technical_review", "approved", "rejected"]
+        },
+        "fallback_asset_id": { "type": ["string", "null"] },
+        "notes": { "type": "string" }
       }
+    },
+    "relative_path": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
     }
   }
 }

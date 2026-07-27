@@ -6,7 +6,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "asset_repository", "asset_commit", "manifests"],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": "1.0.0" },
     "asset_repository": { "const": "sword-assets" },
     "asset_commit": { "type": "string", "pattern": "^(unlocked|[0-9a-f]{40})$" },
     "manifests": {

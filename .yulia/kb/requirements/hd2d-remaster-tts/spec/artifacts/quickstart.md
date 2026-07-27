@@ -22,6 +22,7 @@ sword/                  # 公开代码仓，release 分支
 
 ```bash
 python3 tools/validate_remaster_manifest.py --manifest sword-assets/manifests/remaster/chapter-01.json --root sword-assets
+python3 tools/validate_remaster_manifest.py --manifest remaster-content.lock.json --kind lock --schema-only
 python3 tools/scan_public_release.py
 ```
 
