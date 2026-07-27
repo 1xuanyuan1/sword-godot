@@ -9,6 +9,9 @@ const CAMERA_OFFSET := Vector3(10.5, 8.0, 12.0)
 const ACTOR_PIXEL_SIZE := 0.04
 const ACTOR_HEIGHT := 0.96
 
+## 仅供开发期检查坐标与镜头；正式运行和视觉验收不得显示合成色块。
+@export var diagnostic_placeholders_enabled: bool = false
+
 var _camera: Camera3D
 var _actor_root: Node3D
 var _environment_root: Node3D
@@ -23,13 +26,13 @@ func _ready() -> void:
 	_ensure_runtime_nodes()
 
 
-## 配置可回退的高清资源解析器；未找到资源时继续使用合成占位人物。
+## 配置可回退的高清资源解析器；未找到资源时隐藏高清人物，由 Shell 保持经典画面。
 func configure_asset_resolver(resolver: PalRemasterAssetResolver) -> void:
 	_asset_resolver = resolver
 	_texture_cache.clear()
 
 
-## 把共享快照同步到固定镜头与 Sprite3D 节点；缺失高清素材时显示合成占位人物。
+## 把共享快照同步到固定镜头与 Sprite3D 节点；缺失高清素材时不显示诊断色块。
 func sync_snapshot(snapshot: PalWorldPresentationSnapshot) -> void:
 	if snapshot == null:
 		return
@@ -110,6 +113,7 @@ func _ensure_runtime_nodes() -> void:
 	ground_material.roughness = 0.92
 	plane.material = ground_material
 	_ground.mesh = plane
+	_ground.visible = diagnostic_placeholders_enabled
 	_environment_root.add_child(_ground)
 
 	_actor_root = Node3D.new()
@@ -128,7 +132,7 @@ func _ensure_runtime_nodes() -> void:
 func _create_actor_sprite(actor: PalPresentationActor) -> Sprite3D:
 	var sprite := Sprite3D.new()
 	sprite.name = "Actor_%s" % actor.stable_key().replace(":", "_")
-	sprite.texture = _placeholder_actor_texture()
+	sprite.visible = false
 	sprite.pixel_size = ACTOR_PIXEL_SIZE
 	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
@@ -165,13 +169,18 @@ func _apply_actor_texture(sprite: Sprite3D, actor: PalPresentationActor) -> void
 	if resolved != null:
 		texture = _load_runtime_texture(resolved.path)
 	if texture == null:
-		sprite.texture = _placeholder_actor_texture()
-		sprite.hframes = 1
-		sprite.vframes = 1
-		sprite.frame = 0
-		sprite.modulate = _placeholder_color(actor.kind)
+		sprite.visible = diagnostic_placeholders_enabled
+		if diagnostic_placeholders_enabled:
+			sprite.texture = _placeholder_actor_texture()
+			sprite.hframes = 1
+			sprite.vframes = 1
+			sprite.frame = 0
+			sprite.modulate = _placeholder_color(actor.kind)
+		else:
+			sprite.texture = null
 		sprite.set_meta("asset_path", "")
 		return
+	sprite.visible = true
 	sprite.texture = texture
 	sprite.hframes = maxi(1, int(texture.get_width() / 128.0))
 	sprite.vframes = maxi(1, int(texture.get_height() / 128.0))

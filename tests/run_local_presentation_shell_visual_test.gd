@@ -1,10 +1,10 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
 ## 使用真实窗口渲染器检查 1920×1080 Shell 与 320×200 经典 SubViewport 的实际像素布局。
+## HD-2D 尚无审核素材时只检查结构，禁止把诊断占位色块保存为视觉成果。
 extends SceneTree
 
 const OUTPUT_PATH := "res://generated/pal/visual_tests/presentation_shell_1080p.png"
-const HD_OUTPUT_PATH := "res://generated/pal/visual_tests/presentation_shell_hd2d_synthetic_1080p.png"
 
 
 func _init() -> void:
@@ -42,6 +42,17 @@ func _run() -> void:
 		return
 
 	var hd_world := shell.get_node_or_null("HdWorldRoot") as PalHd2DWorld
+	var hd_camera := hd_world.get_node_or_null("FixedCinematicCamera") as Camera3D if hd_world != null else null
+	var actor_root := hd_world.get_node_or_null("ActorRoot") as Node3D if hd_world != null else null
+	var fallback_ground := hd_world.get_node_or_null("EnvironmentRoot/SyntheticFallbackGround") as MeshInstance3D if hd_world != null else null
+	if hd_world == null or hd_camera == null or actor_root == null or fallback_ground == null:
+		printerr("FAIL: HD-2D 展示骨架缺少世界、固定镜头、人物根节点或诊断地面")
+		quit(1)
+		return
+	if hd_world.diagnostic_placeholders_enabled or fallback_ground.visible:
+		printerr("FAIL: HD-2D 诊断占位必须默认隐藏")
+		quit(1)
+		return
 	var snapshot := PalWorldPresentationSnapshot.new()
 	snapshot.camera_focus_3d = Vector3.ZERO
 	for index in range(3):
@@ -56,15 +67,11 @@ func _run() -> void:
 		else:
 			snapshot.events.append(actor)
 	hd_world.sync_snapshot(snapshot)
-	shell.set_presentation_mode(PalPresentationShell.MODE_HD2D)
-	for _frame in range(4):
-		await process_frame
-	await RenderingServer.frame_post_draw
-	var hd_image := root.get_texture().get_image()
-	var hd_save_error := hd_image.save_png(ProjectSettings.globalize_path(HD_OUTPUT_PATH)) if hd_image != null else ERR_CANT_CREATE
-	if hd_image == null or hd_image.get_size() != PalPresentationMetrics.DEFAULT_REMASTER_CANVAS_SIZE or hd_save_error != OK:
-		printerr("FAIL: HD-2D 合成占位世界真实窗口截图失败")
-		quit(1)
-		return
-	print("PASS: 1920×1080 Presentation Shell 真实窗口截图：%s / %s" % [OUTPUT_PATH, HD_OUTPUT_PATH])
+	for child in actor_root.get_children():
+		var sprite := child as Sprite3D
+		if sprite != null and sprite.visible:
+			printerr("FAIL: 缺少审核高清素材时不应显示合成人物：%s" % sprite.name)
+			quit(1)
+			return
+	print("PASS: 1920×1080 经典 Presentation Shell 截图与隐藏占位的 HD-2D 结构：%s" % OUTPUT_PATH)
 	quit(0)
