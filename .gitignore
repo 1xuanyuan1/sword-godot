@@ -3,6 +3,7 @@
 
 # Operating-system and editor files
 .DS_Store
+.env.local
 *.swp
 *.tmp
 
