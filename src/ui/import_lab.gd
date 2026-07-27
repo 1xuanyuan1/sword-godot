@@ -265,7 +265,7 @@ func _show_report(report: PalImportReport) -> void:
 
 
 func _open_explorer() -> void:
-	get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
+	PalSceneRouter.change_scene(self, "res://scenes/map_explorer.tscn")
 
 
 func _open_save_loader() -> void:
@@ -281,19 +281,19 @@ func _on_startup_load_slot_requested(slot: int) -> void:
 		_status.text = "[color=#fca5a5]存档槽位必须在 1–%d 之间。[/color]" % PalSaveManager.SLOT_COUNT
 		return
 	_save_menu.close_menu()
-	get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
+	PalSceneRouter.change_scene(self, "res://scenes/map_explorer.tscn")
 
 
 func _open_rng_preview() -> void:
-	get_tree().change_scene_to_file("res://scenes/rng_preview.tscn")
+	PalSceneRouter.change_scene(self, "res://scenes/rng_preview.tscn")
 
 
 func _open_story_test() -> void:
-	get_tree().change_scene_to_file("res://scenes/story_test_lab.tscn")
+	PalSceneRouter.change_scene(self, "res://scenes/story_test_lab.tscn")
 
 
 func _open_battle_preview() -> void:
-	get_tree().change_scene_to_file("res://scenes/battle_preview.tscn")
+	PalSceneRouter.change_scene(self, "res://scenes/battle_preview.tscn")
 
 
 func _format_size(bytes: int) -> String:

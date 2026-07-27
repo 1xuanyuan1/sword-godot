@@ -379,7 +379,7 @@ func _process(delta: float) -> void:
 		Phase.FADE_TO_GAME:
 			_transition_elapsed += delta
 			if _transition_elapsed >= OPENING_MENU_FADE_SECONDS:
-				get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
+				PalSceneRouter.change_scene(self, "res://scenes/map_explorer.tscn")
 	queue_redraw()
 
 
@@ -498,7 +498,7 @@ func _start_game(slot: int) -> void:
 func _open_resource_lab() -> void:
 	if _audio_player != null:
 		_audio_player.stop_all()
-	get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
+	PalSceneRouter.change_scene(self, "res://scenes/import_lab.tscn")
 
 
 func _draw() -> void:

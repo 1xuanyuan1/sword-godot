@@ -4,7 +4,7 @@
 
 ```text
 sword/
-├── project.godot          # Godot 工程配置，主场景为 scenes/main.tscn
+├── project.godot          # Godot 工程配置，主场景为 1080p Presentation Shell
 ├── assets/                # 可随仓库分发的项目自有 UI 图集
 ├── scenes/                # 可直接切换的 Godot 场景
 ├── src/
@@ -15,6 +15,7 @@ sword/
 │   ├── formats/           # MKF、YJ1、RLE、Sprite、地图等底层格式
 │   ├── game/              # 运行时会话状态和 ScriptVM
 │   ├── import/            # 本地原版数据校验与转换
+│   ├── presentation/      # 1080p Shell、共享快照、场景路由与 HD-2D 展示
 │   ├── ui/                # 资源实验室、对话框、菜单和预览 UI
 │   └── world/             # 地图探索、TileMap 世界和人物节点
 ├── shaders/               # 索引颜色到 PAL 调色板的 GPU 映射
@@ -27,7 +28,8 @@ sword/
 
 ## 入口与主要场景
 
-- `scenes/main.tscn`：正式启动入口，编排商标 RNG、山水标题动画、“新的故事／旧的回忆”菜单和新游戏／读档转场。
+- `scenes/presentation_shell.tscn`：正式 1920×1080 入口，在经典 SubViewport 与 HD-2D 世界之间提供稳定展示壳。
+- `scenes/main.tscn`：Shell 内的经典启动内容，编排商标 RNG、山水标题动画、“新的故事／旧的回忆”菜单和新游戏／读档转场。
 - `scenes/import_lab.tscn`：资源实验室，提供数据目录选择、导入、快速启动和开发样板导航。
 - `scenes/map_explorer.tscn`：当前可玩探索场景，连接 `GameSession`、`ScriptVM`、地图世界、对话框和菜单。
 - `scenes/rng_preview.tscn`：RNG 增量动画浏览器。
@@ -64,6 +66,10 @@ sword/
 
 `map_explorer.gd` 负责输入、移动、事件触发和各子系统编排，也负责把场外仙术的使用/成功脚本按顺序交给 ScriptVM、成功后扣除 MP，以及在 ScriptVM 等待时覆盖打开剧情战斗、切换 BGM 并回传胜负。`PalMapCoordinates` 统一把任意 PAL 世界像素映射为菱形碰撞 half；`PalTileMapWorld` 是唯一正式地图渲染路径，负责 TileMapLayer、Camera2D、人物 Sprite2D、调色板和遮挡，不负责剧情规则。
 
+### `src/presentation`
+
+`PalPresentationShell` 提供 1920×1080 根画布和持续运行的 320×200 经典 SubViewport；`PalSceneRouter` 在 Shell 内替换经典场景，无 Shell 的合成测试仍回退 SceneTree。`PalWorldPresentationBuilder` 从 GameSession 与 EventObject 选择唯一的人物位置、方向和帧，`PalWorldTransform` 转换 3D 坐标，`PalTileMapWorld` 与 `PalHd2DWorld` 消费同一 `PalWorldPresentationSnapshot`。高清世界只创建 Camera3D、灯光、环境和 Sprite3D 表现节点，不创建碰撞或修改剧情。
+
 ### `src/ui`
 
 只负责屏幕控件和输入反馈。`PalStartup` 使用原版 RNG、FBP、MGO、点阵字和 RIX 编排正式片头与标题菜单，缺少本地内容时才转入资源实验室；`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备、系统和启动读档页。它们读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalClassicFont` 为自定义简体 UI 文案复用原版 Big5 字库中已有的繁体点阵，避免单个缺字回退到尺寸不同的系统字体；真正存在的简体字形永远优先。`PalRngPlayer` 从压缩归档流式播放脚本指定的帧区间，复用 RG8 纹理和调色板 Shader，并以完成信号解除 VM 的剧情等待。
@@ -80,6 +86,7 @@ sword/
 - `tests/run_save_system_tests.gd`：CI 使用合成内容验证版本、校验、损坏诊断和完整会话往返。
 - `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
 - `tests/run_local_tilemap_inventory_test.gd`：Headless 遍历全部本机有效地图和场景引用，验证正式 TileMapLayer 资源结构。
+- `tests/run_local_presentation_shell_visual_test.gd`：使用真实窗口渲染器输出 1920×1080 经典 Shell 和合成 HD-2D 世界截图。
 - `tests/support/`：只供测试使用的 CPU 地图／场景像素基准，不被正式游戏或导入器引用。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。

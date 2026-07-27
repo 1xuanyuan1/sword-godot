@@ -13,17 +13,22 @@ config_version=5
 config/name="Sword Godot Study Port"
 config/description="A non-official GPL-3.0 study port inspired by SDLPal"
 config/icon="res://assets/ui/app_icon.png"
-run/main_scene="res://scenes/main.tscn"
+run/main_scene="res://scenes/presentation_shell.tscn"
 config/features=PackedStringArray("4.7")
 
 [display]
 
-window/size/viewport_width=320
-window/size/viewport_height=200
-window/size/window_width_override=960
-window/size/window_height_override=600
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/window_width_override=1920
+window/size/window_height_override=1080
 window/stretch/mode="canvas_items"
+window/stretch/aspect="keep"
 window/handheld/orientation=0
+
+[presentation]
+
+default_mode="classic"
 
 [input_devices]
 

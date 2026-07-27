@@ -253,7 +253,7 @@ func _compare_case(database: PalContentDatabase, viewport: SubViewport, world: P
 		_restore_event_states(database, original_event_states)
 		_restore_role_sprites(database, original_role_sprites)
 		return "当前为 dummy renderer；请去掉 --headless，使用真实 GL Compatibility 渲染器运行"
-	var scene_items: Array = world._build_scene_items(session, events, session.viewport_position)
+	var scene_items: Array = world._build_scene_items(world.latest_snapshot, session, events, session.viewport_position)
 	var map_data := database.load_map(scene.map_number)
 	var tile_sprite := database.load_map_tiles(scene.map_number)
 	var cpu_indexed := PalSceneRenderer.render(map_data, tile_sprite, Rect2i(session.viewport_position, Vector2i(320, 200)), scene_items)

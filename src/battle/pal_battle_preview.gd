@@ -809,7 +809,7 @@ func _cancel_or_leave() -> void:
 	elif _input_mode == InputMode.COMMAND and _controller != null and _controller.cancel_pending_command():
 		_enter_command_mode()
 	elif lab_mode:
-		get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
+		PalSceneRouter.change_scene(self, "res://scenes/import_lab.tscn")
 
 
 func _confirm_battle_result() -> void:

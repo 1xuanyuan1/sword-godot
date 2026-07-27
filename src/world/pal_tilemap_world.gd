@@ -11,14 +11,20 @@ const SCREEN_WAVE_SHADER: Shader = preload("res://shaders/pal_screen_wave_overla
 const COLLECTIBLE_MARKER_SHADER: Shader = preload("res://shaders/collectible_marker.gdshader")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
+const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
 const VIEWPORT_SIZE := PresentationMetrics.CLASSIC_CONTENT_SIZE
 const COLLECTIBLE_MARKER_SIZE := 9
 const SPRITELESS_COLLECTIBLE_HEIGHT := 10
+
+## TileMap 正式路径完成一帧同步后发出同一份 2D/3D 展示快照。
+signal presentation_snapshot_ready(snapshot: PalWorldPresentationSnapshot)
 
 ## 最近一次地图资源、节点结构或调色板同步失败原因。
 var error_message: String = ""
 ## 当前成功载入的 PAL 地图编号，-1 表示尚未载入。
 var loaded_map_number: int = -1
+## 最近一次成功同步并已由 TileMap 正式路径消费的共享快照。
+var latest_snapshot: PalWorldPresentationSnapshot
 
 var _database: PalContentDatabase
 var _map_data: PalMapData
@@ -90,6 +96,7 @@ func load_map(database: PalContentDatabase, map_number: int) -> bool:
 	_effect_root.add_child(_map_instance)
 	_effect_root.move_child(_map_instance, 0)
 	loaded_map_number = map_number
+	latest_snapshot = null
 	_event_sprites.clear()
 	_reported_block_mismatches.clear()
 	_clear_sort_items()
@@ -122,10 +129,21 @@ func sync_world(session: GameSession, events: Array[PalEventObject], camera_offs
 	_camera.position = Vector2(render_viewport) + Vector2(VIEWPORT_SIZE) / 2.0
 	_wave_overlay.position = Vector2(render_viewport)
 	_clear_sort_items()
-	var scene_items := _build_scene_items(session, events, render_viewport)
+	latest_snapshot = PresentationBuilder.build(
+		_database,
+		session,
+		events,
+		loaded_map_number,
+		_walk_phase,
+		_showing_walk_frame,
+		camera_offset,
+		Callable(self, "is_map_blocked")
+	)
+	var scene_items := _build_scene_items(latest_snapshot, session, events, render_viewport)
 	var expanded := PalSceneLayout.expanded_draw_items(_map_data, _tile_sprite, render_viewport, scene_items)
 	for item in expanded:
 		_add_draw_item(item, render_viewport)
+	presentation_snapshot_ready.emit(latest_snapshot)
 	return true
 
 
@@ -258,76 +276,43 @@ func _update_palette(index: int, night: bool) -> bool:
 	return true
 
 
-func _build_scene_items(session: GameSession, events: Array[PalEventObject], render_viewport: Vector2i) -> Array:
+func _build_scene_items(snapshot: PalWorldPresentationSnapshot, session: GameSession, events: Array[PalEventObject], render_viewport: Vector2i) -> Array:
 	var result: Array = []
-	for party_index in range(mini(session.party_roles.size(), 3)):
-		var role_index := session.party_roles[party_index]
-		var sprite := _player_sprite_for_role(role_index)
-		var frame := _party_frame(sprite, role_index, party_index, session)
+	for raw_actor in snapshot.party:
+		var actor: PalPresentationActor = raw_actor
+		var sprite := _event_sprite(actor.sprite_number)
+		var frame := _decode_frame(sprite, actor.frame_index)
 		if not frame.is_valid():
 			continue
-		var world_position := session.party_member_world_position(party_index)
-		if party_index > 0 and _is_blocked_with_events(world_position, events):
-			world_position = session.party_member_fallback_world_position()
-		result.append(PalSceneLayout.player_item(frame, world_position - render_viewport, session.world_layer))
+		result.append(PalSceneLayout.player_item(frame, actor.pal_world_position - render_viewport, actor.scene_layer))
 
-	for follower_index in range(mini(2, session.follower_sprite_numbers.size())):
-		var trail_index := 3 + follower_index
-		if trail_index >= session.trail_positions.size() or trail_index >= session.trail_directions.size():
-			continue
-		var sprite := _event_sprite(session.follower_sprite_numbers[follower_index])
-		var frame := _decode_frame(sprite, PalSceneLayout.follower_frame_index(session.trail_directions[trail_index], sprite.frame_count()))
+	for raw_actor in snapshot.followers:
+		var actor: PalPresentationActor = raw_actor
+		var sprite := _event_sprite(actor.sprite_number)
+		var frame := _decode_frame(sprite, actor.frame_index)
 		if frame.is_valid():
-			result.append(PalSceneLayout.player_item(frame, session.trail_positions[trail_index] - render_viewport, session.world_layer))
+			result.append(PalSceneLayout.player_item(frame, actor.pal_world_position - render_viewport, actor.scene_layer))
 
+	var events_by_id: Dictionary = {}
 	for event in events:
-		if not event.is_visible():
-			continue
-		var frame := PalIndexedImage.new()
-		if event.sprite_number > 0:
-			var sprite := _event_sprite(event.sprite_number)
-			if sprite.is_valid():
-				var frame_index := event.current_frame
-				if event.sprite_frames == 3:
-					if frame_index == 2:
-						frame_index = 0
-					elif frame_index == 3:
-						frame_index = 2
-				frame_index += event.direction * event.sprite_frames
-				frame = _decode_frame(sprite, frame_index)
-		var screen_position := event.position - render_viewport
+		events_by_id[event.object_id] = event
+	for raw_actor in snapshot.events:
+		var actor: PalPresentationActor = raw_actor
+		var frame := _decode_frame(_event_sprite(actor.sprite_number), actor.frame_index)
+		var screen_position: Vector2i = actor.pal_world_position - render_viewport
 		if frame.is_valid() and not _outside_viewport(screen_position, frame.width, frame.height):
-			result.append(PalSceneLayout.event_item(frame, screen_position, event.layer))
-		if _collectible_markers_enabled and _collectible_classifier.is_available(event, session):
+			result.append(PalSceneLayout.event_item(frame, screen_position, actor.scene_layer))
+		var event: PalEventObject = events_by_id.get(actor.source_object_id)
+		if event != null and _collectible_markers_enabled and _collectible_classifier.is_available(event, session):
 			var source_height := frame.height if frame.is_valid() else SPRITELESS_COLLECTIBLE_HEIGHT
-			var marker_position := screen_position + Vector2i(0, -source_height - 2)
+			var marker_position: Vector2i = screen_position + Vector2i(0, -source_height - 2)
 			if not _outside_viewport(marker_position, COLLECTIBLE_MARKER_SIZE, COLLECTIBLE_MARKER_SIZE):
-				result.append(PalSceneLayout.collectible_marker_item(_collectible_marker_frame, screen_position, event.layer, source_height, event.object_id))
+				result.append(PalSceneLayout.collectible_marker_item(_collectible_marker_frame, screen_position, actor.scene_layer, source_height, actor.source_object_id))
 	return result
 
 
 func _outside_viewport(screen_position: Vector2i, width: int, height: int) -> bool:
 	return screen_position.x < -width or screen_position.x > VIEWPORT_SIZE.x + width or screen_position.y < -height or screen_position.y > VIEWPORT_SIZE.y + height
-
-
-func _party_frame(sprite: PalSprite, role_index: int, party_index: int, session: GameSession) -> PalIndexedImage:
-	if sprite == null or not sprite.is_valid():
-		return PalIndexedImage.new()
-	var scripted_frame := session.scripted_party_frame(party_index)
-	# 普通移动已经由 GameSession 清除旧剧情动作；移动后重新执行的 0015
-	# 必须覆盖残留步态。与 CPU 对照渲染器保持一致，避免两种后端动作不同。
-	if scripted_frame >= 0:
-		return _decode_frame(sprite, scripted_frame)
-	var walk_frames := _database.player_roles.walk_frame_count_for(role_index)
-	var direction := session.party_member_direction(party_index)
-	var frame_index := direction * walk_frames
-	if _showing_walk_frame:
-		if walk_frames == 4:
-			frame_index += _walk_phase
-		elif (_walk_phase & 1) != 0:
-			# SDLPal 三帧人物使用 0→1→0→2，而不是简单的 0→1→2 循环。
-			frame_index += int((_walk_phase + 1) / 2.0)
-	return _decode_frame(sprite, frame_index)
 
 
 func _player_sprite_for_role(role_index: int) -> PalSprite:
@@ -348,15 +333,6 @@ func _decode_frame(sprite: PalSprite, frame_index: int) -> PalIndexedImage:
 	if sprite == null or not sprite.is_valid() or frame_index < 0 or frame_index >= sprite.frame_count():
 		return PalIndexedImage.new()
 	return RleDecoder.decode(sprite.get_frame(frame_index))
-
-
-func _is_blocked_with_events(world_position: Vector2i, events: Array[PalEventObject]) -> bool:
-	if is_map_blocked(world_position):
-		return true
-	for event in events:
-		if event.blocks_movement() and PalMapCoordinates.positions_collide(event.position, world_position):
-			return true
-	return false
 
 
 func _add_draw_item(item: PalSceneLayout.DrawItem, viewport_position: Vector2i) -> void:

@@ -17,17 +17,20 @@ flowchart LR
     D --> Q
     Q --> S
     S -. 有效槽位 .-> R[PalStartupRequest]
-    S --> G
-    R --> G
+    S --> X[PalPresentationShell / PalSceneRouter]
+    R --> X
+    X --> G
     D --> G[MapExplorer]
     D --> O[PalBattlePreview / PalBattleController / PalBattleUI]
     E --> O
     E --> G
     F --> G
     G --> H[PalTileMapWorld]
+    H --> V[PalWorldPresentationSnapshot]
+    V --> J[TileMapLayer / Sprite2D / Camera2D]
+    V --> HD[PalHd2DWorld / Sprite3D / Camera3D]
     G --> I[HUD CanvasLayer]
     I --> K[状态栏 / 对话框 / 经典菜单 / RNG 播放器]
-    H --> J[TileMapLayer / Sprite2D / Camera2D]
     G --> L[PalAudioPlayer]
     L --> N[AudioStreamPlayer BGM / SFX]
 ```
@@ -45,7 +48,10 @@ flowchart LR
 | `ScriptVM` | 当前指令入口、等待原因、自动脚本调度 | 持久化内容、直接绘制画面 |
 | `MapExplorer` | 输入与各模块的编排、当前场景事件引用 | 重新解释资源格式 |
 | `PalMapCoordinates` | 世界像素到菱形 MAP half 的碰撞换算、玩家活动边界 | 读取地图内容、修改队伍位置 |
+| `PalPresentationShell` | 1920×1080 根画布、经典 SubViewport、HD 世界与场景路由承载点 | 修改 GameSession、解释事件脚本 |
+| `PalWorldPresentationBuilder` | 队员编队位置、人物方向、普通步态、剧情动作和事件帧的单次选择结果 | 绘制节点、加载高清模型、修改碰撞 |
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
+| `PalHd2DWorld` | 固定 Camera3D、环境/灯光和 Sprite3D 表现节点 | 创建权威碰撞、决定人物帧、修改剧情 |
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |
 | `PalBattleController` | 单场敌人体力、敌人毒/状态、合击贡献者、保护判定、指令、身法队列、回合末毒结算和胜负 | 读取原始文件、绘制 Sprite |
 | `PalBattlePreview` | 当前敌队、战场、双方节点、目标选择和攻击动画 | 自行计算伤害、修改探索剧情 |
@@ -55,7 +61,7 @@ flowchart LR
 
 ## 启动与场景加载
 
-1. Godot 从 `scenes/main.tscn` 启动正式 `PalStartup`；已有生成内容时依次播放商标 RNG #6、山水/仙鹤/题字动画，再显示“新的故事／旧的回忆”标题菜单。
+1. Godot 从 `scenes/presentation_shell.tscn` 启动 1920×1080 展示壳，再在 320×200 SubViewport 中加载 `scenes/main.tscn` 的正式 `PalStartup`；已有生成内容时依次播放商标 RNG #6、山水/仙鹤/题字动画，再显示“新的故事／旧的回忆”标题菜单。
 2. 本地内容缺失时自动切换到 `scenes/import_lab.tscn`；用户选择本机数据目录后，`PalDataImporter` 只读原始文件并写入被忽略的 `generated/pal/`，F10 也可主动进入该开发入口。
 3. “新的故事”直接建立新会话；“旧的回忆”复用 `PalGameMenu` 的 100 槽原版 UI，只把确认的槽位写入一次性 `PalStartupRequest`。
 4. 进入探索场景时，`PalContentDatabase.load_generated()` 读取结构化内容，`GameSession.reset_new_game()` 先建立安全默认状态。
@@ -66,7 +72,7 @@ flowchart LR
 
 系统菜单保存时，`PalSaveManager` 从 `GameSession` 和运行时内容数据库复制队伍、背包、装备、Scene、EventObject 与脚本游标，再写入 `user://saves/`。读档先验证格式、内容指纹和 SHA-256，随后恢复会话与可变剧情数据，由装备管理器重建派生属性、地图层重载场景但不重跑进入脚本。完整边界见[Godot 版本化存档系统](SAVE_SYSTEM.md)。
 
-`PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 在位置、事件帧或调色板变化时更新相机和动态 Sprite。`MapExplorer` 只走该路径，不再创建隐藏 CPU 画布、整屏 RGBA 纹理或运行时后端开关。
+`PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 先通过 `PalWorldPresentationBuilder` 生成共享快照，再由快照更新相机和动态 Sprite，并把同一对象发给 `PalHd2DWorld`。`MapExplorer` 只走 TileMap 权威路径，不再创建隐藏 CPU 画布、整屏 RGBA 纹理或运行时后端开关。
 
 `Camera2D` 只负责移动地图、人物与事件所在的世界画布。顶部状态栏、对话框、Toast、经典菜单和 RNG 过场播放器统一挂在前景 `HudLayer: CanvasLayer`，因此不会随队伍相机平移，也不会被地图节点遮挡。`RngPlaybackStream` 配置时只读外层 MKF 偏移表，播放时才载入当前动画分块，把 YJ1 增量顺序应用到单张 320×200 索引画布；`PalRngPlayer` 复用一个 RG8 纹理和调色板 Shader。RNG 层覆盖普通 HUD 但位于对话层下方，开始播放时会收起上一段正文，仍允许后续字幕叠加；屏幕渐变层位于 RNG 之上。RNG 首帧负责消费前置 `0050` 的待渐显状态，播放器在遮罩变透明前暂停帧计时，避免整段电影被黑层覆盖或漏掉开头。RNG 播放期间 `ScriptVM.waiting_for_rng` 阻止地图输入和后续指令，播放完成后再恢复。
 

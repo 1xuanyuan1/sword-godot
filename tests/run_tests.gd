@@ -10,6 +10,8 @@ const CollectibleClassifier := preload("res://src/game/pal_collectible_classifie
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
 const MapExplorer := preload("res://src/world/map_explorer.gd")
 const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
+const WorldTransform := preload("res://src/presentation/pal_world_transform.gd")
+const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -30,6 +32,7 @@ func _init() -> void:
 	_test_rng_playback_stream()
 	_test_map_helpers()
 	_test_presentation_metrics()
+	_test_world_presentation()
 	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
@@ -377,9 +380,45 @@ func _test_runtime_paths() -> void:
 
 func _test_presentation_metrics() -> void:
 	_expect(PresentationMetrics.CLASSIC_CONTENT_SIZE == Vector2i(320, 200), "presentation keeps the original PAL content size as the pixel baseline")
-	_expect(PresentationMetrics.DEFAULT_REMASTER_CANVAS_SIZE == Vector2i(1280, 800), "presentation defines a 4x default remaster canvas without changing source assets")
+	_expect(PresentationMetrics.DEFAULT_REMASTER_CANVAS_SIZE == Vector2i(1920, 1080), "presentation defines the 1080p remaster canvas without changing classic source assets")
 	_expect(PresentationMetrics.classic_content_rect(Vector2i(1280, 800)) == Rect2i(0, 0, 1280, 800), "4x remaster canvas fits the classic content exactly")
 	_expect(PresentationMetrics.classic_content_rect(Vector2i(1920, 1080)) == Rect2i(160, 40, 1600, 1000), "widescreen output centers the largest integer-scaled classic content region")
+	_expect(PresentationMetrics.safe_ui_rect(Vector2i(1920, 1080)) == Rect2i(64, 64, 1792, 952), "1080p HUD keeps the 64px safe margin")
+	_expect(PresentationMetrics.dialog_rect(Vector2i(1920, 1080)) == Rect2i(64, 716, 1792, 300), "1080p dialogue reserves the bottom 300px inside the safe area")
+
+
+func _test_world_presentation() -> void:
+	var pal_position := Vector2i(16, 8)
+	var world_position := WorldTransform.pal_to_world_3d(pal_position, 8)
+	_expect(world_position == Vector3(1.0, 0.5, 0.0), "PAL half-tile maps to east/north 3D axes and shared logical height")
+	_expect(WorldTransform.world_3d_to_pal(world_position) == pal_position, "PAL to 3D transform round-trips exact half-tile centers")
+
+	var database := PalContentDatabase.new()
+	var roles := PalPlayerRoles.new()
+	roles.scene_sprite_numbers = PackedInt32Array([11, 12, 13, 14, 15, 16])
+	roles.walk_frames = PackedInt32Array([3, 3, 3, 3, 3, 3])
+	database.player_roles = roles
+	var session := GameSession.new()
+	session.party_roles = PackedInt32Array([0])
+	session.party_direction = GameSession.DIR_EAST
+	session.set_party_world_position(Vector2i(160, 112))
+	var event := PalEventObject.new()
+	event.object_id = 7
+	event.vanish_time = 0
+	event.position = Vector2i(176, 120)
+	event.layer = 2
+	event.state = 1
+	event.sprite_number = 21
+	event.sprite_frames = 3
+	event.direction = GameSession.DIR_NORTH
+	event.current_frame = 3
+	var events: Array[PalEventObject] = [event]
+	var snapshot := PresentationBuilder.build(database, session, events, 12, 1, true)
+	_expect(snapshot.party.size() == 1 and snapshot.events.size() == 1, "shared presentation snapshot contains party and visible events")
+	_expect(snapshot.party[0].frame_index == 10, "shared presentation builder selects the SDLPal three-frame walk phase once")
+	_expect(snapshot.events[0].frame_index == 8, "shared presentation builder applies the event three-frame remap before direction offset")
+	_expect(snapshot.party[0].world_position_3d == WorldTransform.pal_to_world_3d(Vector2i(160, 112), 6), "snapshot actor 3D position comes from the canonical transform")
+	_expect(snapshot.camera_focus_3d == WorldTransform.pal_to_world_3d(Vector2i(160, 100)), "snapshot camera focuses on the classic viewport center")
 
 
 func _test_tilemap_runtime_retirement() -> void:
@@ -999,17 +1038,16 @@ func _test_tilemap_scripted_pose_priority() -> void:
 	var database := PalContentDatabase.new()
 	var roles := PalPlayerRoles.new()
 	roles.walk_frames = PackedInt32Array([3])
+	roles.scene_sprite_numbers = PackedInt32Array([2])
 	database.player_roles = roles
 	var session := GameSession.new()
 	session.reset_new_game()
+	session.set_party_world_position(Vector2i(160, 112))
 	session.set_party_gesture(GameSession.DIR_SOUTH, 1, 0)
 	# 剧情移动会短暂打开步态标志；紧随其后的 0015 必须重新取得优先级。
-	var tile_world := PalTileMapWorld.new()
-	tile_world._database = database
-	tile_world._showing_walk_frame = true
-	var native_frame: PalIndexedImage = tile_world._party_frame(_synthetic_map_tile_sprite(), 0, 0, session)
-	_expect(native_frame.is_valid() and native_frame.indices[0] == 9, "TileMap renderer prioritizes a scripted party pose over a stale walk-frame flag")
-	tile_world.free()
+	var events: Array[PalEventObject] = []
+	var snapshot := PresentationBuilder.build(database, session, events, 0, 3, true)
+	_expect(snapshot.party.size() == 1 and snapshot.party[0].frame_index == 1, "shared presentation builder prioritizes a scripted party pose over a stale walk-frame flag")
 
 
 func _test_player_scene_sprite_refresh() -> void:

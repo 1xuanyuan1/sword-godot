@@ -12,11 +12,11 @@
 
 ## 高清展示结构
 
-`PalPresentationMetrics` 统一定义经典内容尺寸、默认四倍高清画布和整数缩放后的居中区域。后续高清画面按以下层次推进：
+`PalPresentationMetrics` 统一定义经典内容尺寸、1920×1080 高清画布、64px UI 安全边距、300px 对话区和整数缩放后的居中区域。`PalPresentationShell` 在 1080p 根视口内持续运行 320×200 `SubViewport`；经典回退区域为 `(160,40,1600,1000)`，不拉伸像素比例。后续高清画面按以下层次推进：
 
 1. 经典兼容层保持 `320×200`，继续承担像素回归与缺失资源回退。
 2. 高清世界采用 Godot 原生模块化 3D、固定 Camera3D、像素 Sprite3D、水墨远景、灯光、阴影、雾效和景深。
-3. `PalWorldTransform` 把 PAL half-tile 映射到 3D 地面坐标；`PalWorldPresentationSnapshot` 为 TileMap 和 HD 世界提供同一帧人物与事件状态。
+3. `PalWorldPresentationBuilder` 只选择一次队员编队位置、步态、剧情动作和 EventObject 帧，再由 `PalWorldTransform` 映射 3D 坐标并产出 `PalWorldPresentationSnapshot`；TileMap 与 HD 世界消费同一快照。
 4. 高清 UI、字幕、立绘和语音状态使用 1080p 安全区，不改变经典世界坐标。
 5. 每个章节都同时运行 TileMap 正式路径回归与 1080p 带窗口截图。
 
@@ -42,9 +42,9 @@ MiniMax 只参与开发期离线资产生成：
 - [x] 固化旧版 `v0.1.5`，建立 `release` 分支。
 - [x] 提取经典内容与高清输出的共享展示度量。
 - [x] 从脚本层提供稳定的对白轮次消息 ID。
-- [ ] 建立高清输出壳和经典内容 SubViewport。
+- [x] 建立高清输出壳和经典内容 SubViewport。
 - [ ] 建立可回退的高清资源解析层。
-- [ ] 建立共享世界快照、PAL→3D 坐标与 `PalHd2DWorld`。
+- [x] 建立共享世界快照、PAL→3D 坐标与 `PalHd2DWorld` 合成占位骨架。
 - [ ] 接入独立语音目录、播放器和系统设置。
 - [ ] 完成第一章三场景草案、三条 TTS 样音、听检和正式运行回归。
 - [ ] 分章节替换高清素材并扩展语音，保持完整主线门禁。

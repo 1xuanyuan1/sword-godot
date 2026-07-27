@@ -13,7 +13,7 @@ func _ready() -> void:
 
 func _unhandled_key_input(event: InputEvent) -> void:
 	if event.is_pressed() and not event.is_echo() and event is InputEventKey and event.keycode == KEY_ESCAPE:
-		get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
+		PalSceneRouter.change_scene(self, "res://scenes/import_lab.tscn")
 
 
 func _build_interface() -> void:
@@ -63,7 +63,7 @@ func _build_interface() -> void:
 	var back_button := Button.new()
 	back_button.text = "返回资源实验室（Esc）"
 	back_button.add_theme_font_size_override("font_size", 9)
-	back_button.pressed.connect(func() -> void: get_tree().change_scene_to_file("res://scenes/import_lab.tscn"))
+	back_button.pressed.connect(func() -> void: PalSceneRouter.change_scene(self, "res://scenes/import_lab.tscn"))
 	page.add_child(back_button)
 
 func _add_checkpoint_button(parent: Control, label: String, checkpoint_id: String) -> void:
@@ -78,4 +78,4 @@ func _add_checkpoint_button(parent: Control, label: String, checkpoint_id: Strin
 
 func _open_checkpoint(checkpoint_id: String) -> void:
 	if DebugCheckpoint.request(checkpoint_id):
-		get_tree().change_scene_to_file("res://scenes/map_explorer.tscn")
+		PalSceneRouter.change_scene(self, "res://scenes/map_explorer.tscn")

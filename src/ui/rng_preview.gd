@@ -110,4 +110,4 @@ func _toggle_playback() -> void:
 
 
 func _return_to_lab() -> void:
-	get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
+	PalSceneRouter.change_scene(self, "res://scenes/import_lab.tscn")
