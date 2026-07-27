@@ -16,6 +16,7 @@ var _classic_scene: Node
 var _hd_world: PalHd2DWorld
 var _hd_hud: CanvasLayer
 var _classic_background: ColorRect
+var _asset_resolver: PalRemasterAssetResolver
 var _mode: int = MODE_CLASSIC
 
 
@@ -74,6 +75,11 @@ func _build_shell() -> void:
 	_hd_world = PalHd2DWorld.new()
 	_hd_world.name = "HdWorldRoot"
 	add_child(_hd_world)
+	_asset_resolver = PalRemasterAssetResolver.new()
+	_asset_resolver.set_unapproved_preview_enabled(bool(ProjectSettings.get_setting("presentation/allow_unapproved_assets", false)))
+	if not _asset_resolver.reload():
+		push_warning("高清素材清单加载失败，将使用经典或占位回退：%s" % _asset_resolver.error_message)
+	_hd_world.configure_asset_resolver(_asset_resolver)
 	_classic_background = ColorRect.new()
 	_classic_background.name = "ClassicLetterboxBackground"
 	_classic_background.color = Color.BLACK

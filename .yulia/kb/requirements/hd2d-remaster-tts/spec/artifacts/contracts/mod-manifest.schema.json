@@ -10,6 +10,7 @@
     "pack_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
     "version": { "type": "string", "minLength": 1 },
     "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 },
+    "enabled": { "type": "boolean", "default": true },
     "entries": {
       "type": "array",
       "items": {

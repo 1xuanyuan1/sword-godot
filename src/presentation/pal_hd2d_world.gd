@@ -15,10 +15,18 @@ var _environment_root: Node3D
 var _ground: MeshInstance3D
 var _actor_nodes: Dictionary = {}
 var _placeholder_texture: Texture2D
+var _asset_resolver: PalRemasterAssetResolver
+var _texture_cache: Dictionary = {}
 
 
 func _ready() -> void:
 	_ensure_runtime_nodes()
+
+
+## 配置可回退的高清资源解析器；未找到资源时继续使用合成占位人物。
+func configure_asset_resolver(resolver: PalRemasterAssetResolver) -> void:
+	_asset_resolver = resolver
+	_texture_cache.clear()
 
 
 ## 把共享快照同步到固定镜头与 Sprite3D 节点；缺失高清素材时显示合成占位人物。
@@ -39,7 +47,7 @@ func sync_snapshot(snapshot: PalWorldPresentationSnapshot) -> void:
 			_actor_nodes[key] = sprite
 			_actor_root.add_child(sprite)
 		sprite.position = actor.world_position_3d + Vector3(0.0, ACTOR_HEIGHT * 0.5, 0.0)
-		sprite.modulate = _placeholder_color(actor.kind)
+		_apply_actor_texture(sprite, actor)
 		sprite.set_meta("logical_id", actor.logical_id)
 		sprite.set_meta("frame_index", actor.frame_index)
 		sprite.set_meta("direction", actor.direction)
@@ -149,3 +157,36 @@ func _placeholder_color(kind: int) -> Color:
 		PalPresentationActor.KIND_FOLLOWER:
 			return Color("b6d4c8")
 	return Color("c5b7a7")
+
+
+func _apply_actor_texture(sprite: Sprite3D, actor: PalPresentationActor) -> void:
+	var resolved := _asset_resolver.resolve(actor.logical_id, "field_sprite") if _asset_resolver != null else null
+	var texture: Texture2D
+	if resolved != null:
+		texture = _load_runtime_texture(resolved.path)
+	if texture == null:
+		sprite.texture = _placeholder_actor_texture()
+		sprite.hframes = 1
+		sprite.vframes = 1
+		sprite.frame = 0
+		sprite.modulate = _placeholder_color(actor.kind)
+		sprite.set_meta("asset_path", "")
+		return
+	sprite.texture = texture
+	sprite.hframes = maxi(1, int(texture.get_width() / 128.0))
+	sprite.vframes = maxi(1, int(texture.get_height() / 128.0))
+	sprite.frame = clampi(actor.frame_index, 0, sprite.hframes * sprite.vframes - 1)
+	sprite.modulate = Color.WHITE
+	sprite.set_meta("asset_path", resolved.path)
+
+
+func _load_runtime_texture(path: String) -> Texture2D:
+	if _texture_cache.has(path):
+		return _texture_cache[path]
+	var texture := ResourceLoader.load(path, "Texture2D", ResourceLoader.CACHE_MODE_REUSE) as Texture2D if path.begins_with("res://") else null
+	if texture == null:
+		var image := Image.new()
+		if image.load(path) == OK:
+			texture = ImageTexture.create_from_image(image)
+	_texture_cache[path] = texture
+	return texture

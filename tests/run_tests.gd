@@ -12,6 +12,7 @@ const MapExplorer := preload("res://src/world/map_explorer.gd")
 const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
 const WorldTransform := preload("res://src/presentation/pal_world_transform.gd")
 const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
+const RemasterAssetResolver := preload("res://src/presentation/pal_remaster_asset_resolver.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -33,6 +34,7 @@ func _init() -> void:
 	_test_map_helpers()
 	_test_presentation_metrics()
 	_test_world_presentation()
+	_test_remaster_asset_resolver()
 	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
@@ -419,6 +421,91 @@ func _test_world_presentation() -> void:
 	_expect(snapshot.events[0].frame_index == 8, "shared presentation builder applies the event three-frame remap before direction offset")
 	_expect(snapshot.party[0].world_position_3d == WorldTransform.pal_to_world_3d(Vector2i(160, 112), 6), "snapshot actor 3D position comes from the canonical transform")
 	_expect(snapshot.camera_focus_3d == WorldTransform.pal_to_world_3d(Vector2i(160, 100)), "snapshot camera focuses on the classic viewport center")
+
+
+func _test_remaster_asset_resolver() -> void:
+	var resolver := RemasterAssetResolver.new()
+	resolver.set_file_verification_enabled(false)
+	var private_manifest := {
+		"schema_version": "1.0.0",
+		"pack_id": "chapter.01",
+		"asset_version": "0.1.0",
+		"assets": [{
+			"id": "character/role_00/field",
+			"type": "field_sprite",
+			"path": "art/runtime/chapter_01/role_00.webp",
+			"sha256": "0".repeat(64),
+			"review_status": "approved",
+		}],
+	}
+	_expect(resolver.add_remaster_manifest_data(private_manifest, "res://sword-assets"), "resolver accepts canonical approved Private asset manifests")
+	var low_mod := {
+		"schema_version": "1.0.0",
+		"pack_id": "low.mod",
+		"version": "1",
+		"priority": 5,
+		"enabled": true,
+		"entries": [{"logical_id": "character/role_00/field", "type": "field_sprite", "path": "low.webp"}],
+	}
+	var high_mod := low_mod.duplicate(true)
+	high_mod["pack_id"] = "high.mod"
+	high_mod["priority"] = 20
+	high_mod["entries"][0]["path"] = "high.webp"
+	_expect(resolver.add_mod_manifest_data(low_mod, "user://mods/low.mod"), "resolver accepts script-free MOD replacement types")
+	_expect(resolver.add_mod_manifest_data(high_mod, "user://mods/high.mod"), "resolver accepts a higher-priority MOD pack")
+	var resolved = resolver.resolve("character/role_00/field", "field_sprite")
+	_expect(resolved != null and resolved.pack_id == "high.mod" and resolved.path.ends_with("high.webp"), "MOD priority overrides lower MODs and the Private HD pack")
+
+	var disabled_mod := high_mod.duplicate(true)
+	disabled_mod["pack_id"] = "disabled.mod"
+	disabled_mod["priority"] = 1000
+	disabled_mod["enabled"] = false
+	_expect(resolver.add_mod_manifest_data(disabled_mod, "user://mods/disabled.mod"), "disabled MOD manifests are skipped without an error")
+	resolved = resolver.resolve("character/role_00/field", "field_sprite")
+	_expect(resolved != null and resolved.pack_id == "high.mod", "disabled MODs cannot override enabled packs")
+
+	var invalid_mod := {
+		"schema_version": "1.0.0",
+		"pack_id": "invalid.mod",
+		"version": "1",
+		"priority": 30,
+		"entries": [
+			{"logical_id": "portrait/test/default", "type": "portrait", "path": "valid.webp"},
+			{"logical_id": "character/test/field", "type": "script", "path": "../unsafe.gd"},
+		],
+	}
+	_expect(not resolver.add_mod_manifest_data(invalid_mod, "user://mods/invalid.mod"), "MOD scripts and path traversal are rejected")
+	_expect(resolver.resolve("portrait/test/default", "portrait") == null, "an invalid MOD is rejected atomically without registering earlier entries")
+
+	var verified_resolver := RemasterAssetResolver.new()
+	verified_resolver.set_failure_warnings_enabled(false)
+	var verified_private := {
+		"schema_version": "1.0.0",
+		"pack_id": "verified.private",
+		"asset_version": "1",
+		"assets": [{
+			"id": "ui/test",
+			"type": "ui_theme",
+			"path": "assets/ui/app_icon.png",
+			"sha256": "40edeb3729dad987e0e280e653f01dae4f3c1e752531f0929c3a1702e513b47e",
+			"review_status": "approved",
+		}],
+	}
+	var broken_mod := {
+		"schema_version": "1.0.0",
+		"pack_id": "broken.mod",
+		"version": "1",
+		"priority": 100,
+		"entries": [{
+			"logical_id": "ui/test",
+			"type": "ui_theme",
+			"path": "assets/ui/app_icon.png",
+			"sha256": "f".repeat(64),
+		}],
+	}
+	_expect(verified_resolver.add_remaster_manifest_data(verified_private, "res://") and verified_resolver.add_mod_manifest_data(broken_mod, "res://"), "resolver indexes candidates before lazy file verification")
+	var verified = verified_resolver.resolve("ui/test", "ui_theme")
+	_expect(verified != null and verified.pack_id == "verified.private", "hash-invalid high-priority MOD falls through to the verified Private candidate")
 
 
 func _test_tilemap_runtime_retirement() -> void:

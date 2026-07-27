@@ -38,6 +38,7 @@ keywords: ['data model', 'asset manifest', 'TTS', 'MOD']
 ## ModPack
 
 - `pack_id`、`version`、`priority`、`enabled`、`entries`。
+- `enabled` 省略时默认为 true；高 priority 包覆盖低 priority 包。
 - v1 类型白名单：portrait、field_sprite、voice、ui_theme。
 - 禁止脚本、绝对路径、路径穿越和未声明类型。
 

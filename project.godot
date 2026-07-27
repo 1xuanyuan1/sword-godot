@@ -29,6 +29,7 @@ window/handheld/orientation=0
 [presentation]
 
 default_mode="classic"
+allow_unapproved_assets=false
 
 [input_devices]
 

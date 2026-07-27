@@ -50,6 +50,7 @@ flowchart LR
 | `PalMapCoordinates` | 世界像素到菱形 MAP half 的碰撞换算、玩家活动边界 | 读取地图内容、修改队伍位置 |
 | `PalPresentationShell` | 1920×1080 根画布、经典 SubViewport、HD 世界与场景路由承载点 | 修改 GameSession、解释事件脚本 |
 | `PalWorldPresentationBuilder` | 队员编队位置、人物方向、普通步态、剧情动作和事件帧的单次选择结果 | 绘制节点、加载高清模型、修改碰撞 |
+| `PalRemasterAssetResolver` | Private/MOD Manifest、资源优先级、路径与 SHA-256 校验 | 运行 MOD 脚本、阻断经典剧情回退 |
 | `PalTileMapWorld` | 地图节点、相机、人物节点、调色板材质和遮挡 | 决定事件是否触发、修改剧情 |
 | `PalHd2DWorld` | 固定 Camera3D、环境/灯光和 Sprite3D 表现节点 | 创建权威碰撞、决定人物帧、修改剧情 |
 | `PalAudioPlayer` | 当前 BGM、音效声道、循环淡入淡出和即时音量 | 决定场景曲目编号、保存剧情进度 |

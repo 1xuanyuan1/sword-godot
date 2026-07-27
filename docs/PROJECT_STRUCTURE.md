@@ -68,7 +68,7 @@ sword/
 
 ### `src/presentation`
 
-`PalPresentationShell` 提供 1920×1080 根画布和持续运行的 320×200 经典 SubViewport；`PalSceneRouter` 在 Shell 内替换经典场景，无 Shell 的合成测试仍回退 SceneTree。`PalWorldPresentationBuilder` 从 GameSession 与 EventObject 选择唯一的人物位置、方向和帧，`PalWorldTransform` 转换 3D 坐标，`PalTileMapWorld` 与 `PalHd2DWorld` 消费同一 `PalWorldPresentationSnapshot`。高清世界只创建 Camera3D、灯光、环境和 Sprite3D 表现节点，不创建碰撞或修改剧情。
+`PalPresentationShell` 提供 1920×1080 根画布和持续运行的 320×200 经典 SubViewport；`PalSceneRouter` 在 Shell 内替换经典场景，无 Shell 的合成测试仍回退 SceneTree。`PalWorldPresentationBuilder` 从 GameSession 与 EventObject 选择唯一的人物位置、方向和帧，`PalWorldTransform` 转换 3D 坐标，`PalTileMapWorld` 与 `PalHd2DWorld` 消费同一 `PalWorldPresentationSnapshot`。`PalRemasterAssetResolver` 校验 Private/MOD Manifest、类型、相对路径和 SHA-256，并按优先级回退。高清世界只创建 Camera3D、灯光、环境和 Sprite3D 表现节点，不创建碰撞或修改剧情。
 
 ### `src/ui`
 

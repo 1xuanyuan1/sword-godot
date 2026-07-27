@@ -311,13 +311,15 @@ def validate_art_manifest(data: dict[str, Any], _root: Path | None) -> None:
 
 def validate_mod_manifest(data: dict[str, Any], root: Path | None) -> None:
     required = {"schema_version", "pack_id", "version", "priority", "entries"}
-    require_keys(data, "manifest", required, required)
+    require_keys(data, "manifest", required, required | {"enabled"})
     require_schema_version(data)
     pack_id = require_string(data["pack_id"], "manifest.pack_id")
     if not PACK_ID_RE.fullmatch(pack_id):
         fail("manifest.pack_id", "contains unsupported characters")
     require_string(data["version"], "manifest.version")
     require_integer(data["priority"], "manifest.priority", -1000, 1000)
+    if "enabled" in data and not isinstance(data["enabled"], bool):
+        fail("manifest.enabled", "must be a boolean")
     logical_ids: set[str] = set()
     for index, raw_entry in enumerate(require_array(data["entries"], "manifest.entries")):
         location = f"manifest.entries[{index}]"
