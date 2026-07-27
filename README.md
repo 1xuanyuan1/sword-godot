@@ -107,6 +107,8 @@ tools\generate_resources.cmd "D:\games\PAL\Data" --godot "C:\Tools\Godot\Godot_v
 
 生成内容位于上述目录的 `generated/pal/`，存档位于 `saves/`。方向键、空格／回车、Esc、M、Tab、I 和 F10 与源码工程使用相同输入映射。当前 macOS 验收包未签名、未公证；面向外部分发时仍需使用发布者自己的证书完成签名和公证。
 
+高清展示与离线角色语音的重构边界、阶段顺序和发布约束见[高清重制与 TTS 重构](docs/REMASTER.md)。
+
 ### Android 本地验收包
 
 安装 Godot 4.7 Android 模板并配置 Android SDK 与 JDK 17 后，可生成仅包含 arm64-v8a 的 debug 签名 APK：
