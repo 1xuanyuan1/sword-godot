@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sword-godot.invalid/contracts/remaster-content-lock.schema.json",
+  "title": "Remaster Content Lock",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "asset_repository", "asset_commit", "manifests"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "asset_repository": { "const": "sword-assets" },
+    "asset_commit": { "type": "string", "pattern": "^(unlocked|[0-9a-f]{40})$" },
+    "manifests": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "sha256"],
+        "properties": {
+          "path": { "type": "string", "pattern": "^manifests/.+\\.json$" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}

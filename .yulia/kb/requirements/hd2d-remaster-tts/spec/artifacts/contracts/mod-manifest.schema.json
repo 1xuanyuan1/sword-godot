@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sword-godot.invalid/contracts/mod-manifest.schema.json",
+  "title": "Sword Remaster Mod Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "pack_id", "version", "priority", "entries"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "pack_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]+$" },
+    "version": { "type": "string", "minLength": 1 },
+    "priority": { "type": "integer", "minimum": -1000, "maximum": 1000 },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["logical_id", "type", "path"],
+        "properties": {
+          "logical_id": { "type": "string", "minLength": 3 },
+          "type": { "enum": ["portrait", "field_sprite", "voice", "ui_theme"] },
+          "path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}
