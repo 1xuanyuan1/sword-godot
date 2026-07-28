@@ -7,7 +7,7 @@ extends Node3D
 
 const CAMERA_OFFSET := Vector3(10.5, 8.0, 12.0)
 const HD_ACTOR_PIXEL_SIZE := 0.0125
-const CLASSIC_ACTOR_PIXEL_SIZE := 0.04
+const CLASSIC_ACTOR_PIXEL_SIZE := 0.05
 
 signal active_environment_changed(available: bool, map_number: int)
 
@@ -111,20 +111,26 @@ func _ensure_runtime_nodes() -> void:
 	world_environment.name = "WorldEnvironment"
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color("17212a")
+	environment.background_color = Color("15201f")
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("aeb8bd")
-	environment.ambient_light_energy = 0.55
+	environment.ambient_light_color = Color("91a39e")
+	environment.ambient_light_energy = 0.42
 	environment.fog_enabled = true
-	environment.fog_light_color = Color("9aa7a6")
-	environment.fog_density = 0.012
+	environment.fog_light_color = Color("71817d")
+	environment.fog_density = 0.006
+	environment.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	environment.tonemap_exposure = 0.94
+	environment.adjustment_enabled = true
+	environment.adjustment_brightness = 0.96
+	environment.adjustment_contrast = 1.12
+	environment.adjustment_saturation = 0.86
 	world_environment.environment = environment
 	_environment_root.add_child(world_environment)
 
 	var key_light := DirectionalLight3D.new()
 	key_light.name = "InkWashKeyLight"
 	key_light.light_color = Color("ffe0b1")
-	key_light.light_energy = 1.15
+	key_light.light_energy = 0.88
 	key_light.rotation_degrees = Vector3(-52.0, -32.0, 0.0)
 	key_light.shadow_enabled = true
 	_environment_root.add_child(key_light)
@@ -150,6 +156,12 @@ func _ensure_runtime_nodes() -> void:
 	_camera.fov = 32.0
 	_camera.near = 0.1
 	_camera.far = 180.0
+	var camera_attributes := CameraAttributesPractical.new()
+	camera_attributes.dof_blur_far_enabled = true
+	camera_attributes.dof_blur_far_distance = 23.5
+	camera_attributes.dof_blur_far_transition = 7.0
+	camera_attributes.dof_blur_amount = 0.025
+	_camera.attributes = camera_attributes
 	_camera.current = true
 	add_child(_camera)
 
