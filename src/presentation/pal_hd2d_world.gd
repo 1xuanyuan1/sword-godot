@@ -6,8 +6,8 @@ class_name PalHd2DWorld
 extends Node3D
 
 const CAMERA_OFFSET := Vector3(10.5, 8.0, 12.0)
-const ACTOR_PIXEL_SIZE := 0.04
-const ACTOR_HEIGHT := 0.96
+const HD_ACTOR_PIXEL_SIZE := 0.0125
+const CLASSIC_ACTOR_PIXEL_SIZE := 0.04
 
 signal active_environment_changed(available: bool, map_number: int)
 
@@ -22,6 +22,7 @@ var _actor_nodes: Dictionary = {}
 var _placeholder_texture: Texture2D
 var _asset_resolver: PalRemasterAssetResolver
 var _texture_cache: Dictionary = {}
+var _classic_actor_texture_provider: Callable
 var _active_environment: PalHd2DEnvironment
 var _active_environment_path: String = ""
 var _active_map_number: int = -1
@@ -35,6 +36,11 @@ func _ready() -> void:
 func configure_asset_resolver(resolver: PalRemasterAssetResolver) -> void:
 	_asset_resolver = resolver
 	_texture_cache.clear()
+
+
+## 接入 PalTileMapWorld 的经典帧解码器，高清图集缺失时仍显示真实像素人物。
+func configure_classic_actor_texture_provider(provider: Callable) -> void:
+	_classic_actor_texture_provider = provider
 
 
 ## 把共享快照同步到固定镜头与 Sprite3D 节点；缺失高清素材时不显示诊断色块。
@@ -55,8 +61,8 @@ func sync_snapshot(snapshot: PalWorldPresentationSnapshot) -> void:
 			sprite = _create_actor_sprite(actor)
 			_actor_nodes[key] = sprite
 			_actor_root.add_child(sprite)
-		sprite.position = actor.world_position_3d + Vector3(0.0, ACTOR_HEIGHT * 0.5, 0.0)
-		_apply_actor_texture(sprite, actor)
+		sprite.position = actor.world_position_3d
+		_apply_actor_texture(sprite, actor, snapshot.palette_index, snapshot.night_palette)
 		sprite.set_meta("logical_id", actor.logical_id)
 		sprite.set_meta("frame_index", actor.frame_index)
 		sprite.set_meta("direction", actor.direction)
@@ -195,7 +201,7 @@ func _create_actor_sprite(actor: PalPresentationActor) -> Sprite3D:
 	var sprite := Sprite3D.new()
 	sprite.name = "Actor_%s" % actor.stable_key().replace(":", "_")
 	sprite.visible = false
-	sprite.pixel_size = ACTOR_PIXEL_SIZE
+	sprite.pixel_size = HD_ACTOR_PIXEL_SIZE
 	sprite.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	sprite.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
 	sprite.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON
@@ -225,11 +231,15 @@ func _placeholder_color(kind: int) -> Color:
 	return Color("c5b7a7")
 
 
-func _apply_actor_texture(sprite: Sprite3D, actor: PalPresentationActor) -> void:
+func _apply_actor_texture(sprite: Sprite3D, actor: PalPresentationActor, palette_index: int, night_palette: bool) -> void:
 	var resolved := _asset_resolver.resolve(actor.logical_id, "field_sprite") if _asset_resolver != null else null
 	var texture: Texture2D
 	if resolved != null:
 		texture = _load_runtime_texture(resolved.path)
+	var using_classic_fallback := false
+	if texture == null and _classic_actor_texture_provider.is_valid():
+		texture = _classic_actor_texture_provider.call(actor, palette_index, night_palette) as Texture2D
+		using_classic_fallback = texture != null
 	if texture == null:
 		sprite.visible = diagnostic_placeholders_enabled
 		if diagnostic_placeholders_enabled:
@@ -244,11 +254,20 @@ func _apply_actor_texture(sprite: Sprite3D, actor: PalPresentationActor) -> void
 		return
 	sprite.visible = true
 	sprite.texture = texture
-	sprite.hframes = maxi(1, int(texture.get_width() / 128.0))
-	sprite.vframes = maxi(1, int(texture.get_height() / 128.0))
-	sprite.frame = clampi(actor.frame_index, 0, sprite.hframes * sprite.vframes - 1)
+	if using_classic_fallback:
+		sprite.pixel_size = CLASSIC_ACTOR_PIXEL_SIZE
+		sprite.hframes = 1
+		sprite.vframes = 1
+		sprite.frame = 0
+	else:
+		sprite.pixel_size = HD_ACTOR_PIXEL_SIZE
+		sprite.hframes = maxi(1, int(texture.get_width() / 128.0))
+		sprite.vframes = maxi(1, int(texture.get_height() / 128.0))
+		sprite.frame = clampi(actor.frame_index, 0, sprite.hframes * sprite.vframes - 1)
+	var frame_height := float(texture.get_height()) / float(sprite.vframes)
+	sprite.position = actor.world_position_3d + Vector3(0.0, frame_height * sprite.pixel_size * 0.5, 0.0)
 	sprite.modulate = Color.WHITE
-	sprite.set_meta("asset_path", resolved.path)
+	sprite.set_meta("asset_path", "classic://mgo/%03d/%d" % [actor.sprite_number, actor.frame_index] if using_classic_fallback else resolved.path)
 
 
 func _load_runtime_texture(path: String) -> Texture2D:

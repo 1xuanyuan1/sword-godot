@@ -150,6 +150,7 @@ func _bind_snapshot_source() -> void:
 	if tile_world == null:
 		_hd_world.clear_world()
 		return
+	_hd_world.configure_classic_actor_texture_provider(Callable(tile_world, "classic_actor_texture"))
 	var callback := Callable(self, "_on_presentation_snapshot_ready")
 	if not tile_world.presentation_snapshot_ready.is_connected(callback):
 		tile_world.presentation_snapshot_ready.connect(callback)

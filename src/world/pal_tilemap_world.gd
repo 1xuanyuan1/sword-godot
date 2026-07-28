@@ -173,6 +173,25 @@ func reset_sprite_cache() -> void:
 	_texture_cache.clear()
 
 
+## 为 HD-2D Sprite3D 提供与正式 TileMap 完全相同的 MGO 解码帧，避免另写一套选帧或格式解析。
+## 该纹理只作为玩家本地经典素材回退；人物位置、方向和帧编号仍来自共享快照。
+func classic_actor_texture(actor: PalPresentationActor, palette_index: int, night_palette: bool) -> Texture2D:
+	if actor == null or actor.sprite_number <= 0 or actor.frame_index < 0 or _database == null:
+		return null
+	var key := "classic-rgba:%d:%d:%d:%d" % [actor.sprite_number, actor.frame_index, palette_index, 1 if night_palette else 0]
+	if _texture_cache.has(key):
+		return _texture_cache[key]
+	var frame := _decode_frame(_event_sprite(actor.sprite_number), actor.frame_index)
+	if not frame.is_valid():
+		return null
+	var palette := _database.load_palette(palette_index, night_palette)
+	if palette.size() < PaletteDecoder.PALETTE_BYTES:
+		return null
+	var texture := ImageTexture.create_from_image(frame.to_rgba_image(palette))
+	_texture_cache[key] = texture
+	return texture
+
+
 ## 像素基准测试可关闭新增辅助标识；正式游戏保持默认开启。
 func set_collectible_markers_enabled(enabled: bool) -> void:
 	_collectible_markers_enabled = enabled
