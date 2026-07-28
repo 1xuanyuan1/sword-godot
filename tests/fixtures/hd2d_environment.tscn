@@ -1,0 +1,11 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/presentation/pal_hd2d_environment.gd" id="1_environment"]
+
+[node name="TestHd2DEnvironment" type="Node3D"]
+script = ExtResource("1_environment")
+pal_anchor = Vector2i(1248, 1040)
+camera_offset = Vector3(9, 7, 11)
+camera_fov = 30.0
+
+[node name="FixtureMarker" type="Node3D" parent="."]

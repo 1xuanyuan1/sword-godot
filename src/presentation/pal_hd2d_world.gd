@@ -9,6 +9,8 @@ const CAMERA_OFFSET := Vector3(10.5, 8.0, 12.0)
 const ACTOR_PIXEL_SIZE := 0.04
 const ACTOR_HEIGHT := 0.96
 
+signal active_environment_changed(available: bool, map_number: int)
+
 ## 仅供开发期检查坐标与镜头；正式运行和视觉验收不得显示合成色块。
 @export var diagnostic_placeholders_enabled: bool = false
 
@@ -20,6 +22,9 @@ var _actor_nodes: Dictionary = {}
 var _placeholder_texture: Texture2D
 var _asset_resolver: PalRemasterAssetResolver
 var _texture_cache: Dictionary = {}
+var _active_environment: PalHd2DEnvironment
+var _active_environment_path: String = ""
+var _active_map_number: int = -1
 
 
 func _ready() -> void:
@@ -37,6 +42,7 @@ func sync_snapshot(snapshot: PalWorldPresentationSnapshot) -> void:
 	if snapshot == null:
 		return
 	_ensure_runtime_nodes()
+	_sync_environment(snapshot.map_number)
 	var active_keys: Dictionary = {}
 	for raw_actor in snapshot.all_actors():
 		var actor: PalPresentationActor = raw_actor
@@ -63,8 +69,10 @@ func sync_snapshot(snapshot: PalWorldPresentationSnapshot) -> void:
 		_actor_nodes.erase(key)
 
 	_ground.position = Vector3(snapshot.camera_focus_3d.x, 0.0, snapshot.camera_focus_3d.z)
-	_camera.position = snapshot.camera_focus_3d + CAMERA_OFFSET
-	_camera.look_at(snapshot.camera_focus_3d + Vector3(0.0, 0.45, 0.0), Vector3.UP)
+	var camera_offset := _active_environment.camera_offset if _active_environment != null else CAMERA_OFFSET
+	var camera_look_offset := _active_environment.camera_look_offset if _active_environment != null else Vector3(0.0, 0.45, 0.0)
+	_camera.fov = _active_environment.camera_fov if _active_environment != null else 32.0
+	_camera.look_at_from_position(snapshot.camera_focus_3d + camera_offset, snapshot.camera_focus_3d + camera_look_offset, Vector3.UP)
 
 
 ## 清空当前高清人物节点；经典 TileMap 状态不受影响。
@@ -73,6 +81,17 @@ func clear_world() -> void:
 		if node is Node:
 			node.queue_free()
 	_actor_nodes.clear()
+	_unload_environment()
+
+
+## 当前地图是否已经加载经过解析器审核的模块化 HD 环境。
+func has_active_environment() -> bool:
+	return _active_environment != null
+
+
+## 供回归测试检查当前环境，不允许调用方修改剧情状态。
+func active_environment() -> PalHd2DEnvironment:
+	return _active_environment
 
 
 func _ensure_runtime_nodes() -> void:
@@ -127,6 +146,49 @@ func _ensure_runtime_nodes() -> void:
 	_camera.far = 180.0
 	_camera.current = true
 	add_child(_camera)
+
+
+func _sync_environment(map_number: int) -> void:
+	if map_number == _active_map_number:
+		return
+	_active_map_number = map_number
+	var logical_id := "map/%03d/environment" % map_number
+	var resolved := _asset_resolver.resolve(logical_id, "environment") if _asset_resolver != null else null
+	if resolved == null:
+		_unload_environment(false)
+		active_environment_changed.emit(false, map_number)
+		return
+	if resolved.path == _active_environment_path and _active_environment != null:
+		active_environment_changed.emit(true, map_number)
+		return
+	_unload_environment(false)
+	var packed := ResourceLoader.load(resolved.path, "PackedScene", ResourceLoader.CACHE_MODE_REUSE) as PackedScene
+	if packed == null:
+		push_warning("高清环境回退：无法加载 %s" % resolved.path)
+		active_environment_changed.emit(false, map_number)
+		return
+	var instance := packed.instantiate() as PalHd2DEnvironment
+	if instance == null:
+		push_warning("高清环境回退：%s 根节点必须是 PalHd2DEnvironment" % resolved.path)
+		active_environment_changed.emit(false, map_number)
+		return
+	_active_environment = instance
+	_active_environment_path = resolved.path
+	instance.name = "Map%03dEnvironment" % map_number
+	_environment_root.add_child(instance)
+	instance.align_to_pal_world()
+	active_environment_changed.emit(true, map_number)
+
+
+func _unload_environment(reset_map_number: bool = true) -> void:
+	if _active_environment != null:
+		if _active_environment.get_parent() != null:
+			_active_environment.get_parent().remove_child(_active_environment)
+		_active_environment.queue_free()
+	_active_environment = null
+	_active_environment_path = ""
+	if reset_map_number:
+		_active_map_number = -1
 
 
 func _create_actor_sprite(actor: PalPresentationActor) -> Sprite3D:

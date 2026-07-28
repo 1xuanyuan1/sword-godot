@@ -13,6 +13,7 @@ const PresentationMetrics := preload("res://src/presentation/pal_presentation_me
 const WorldTransform := preload("res://src/presentation/pal_world_transform.gd")
 const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
 const RemasterAssetResolver := preload("res://src/presentation/pal_remaster_asset_resolver.gd")
+const Hd2DWorld := preload("res://src/presentation/pal_hd2d_world.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -35,6 +36,7 @@ func _init() -> void:
 	_test_presentation_metrics()
 	_test_world_presentation()
 	_test_remaster_asset_resolver()
+	_test_hd2d_environment_loading()
 	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
@@ -506,6 +508,39 @@ func _test_remaster_asset_resolver() -> void:
 	_expect(verified_resolver.add_remaster_manifest_data(verified_private, "res://") and verified_resolver.add_mod_manifest_data(broken_mod, "res://"), "resolver indexes candidates before lazy file verification")
 	var verified = verified_resolver.resolve("ui/test", "ui_theme")
 	_expect(verified != null and verified.pack_id == "verified.private", "hash-invalid high-priority MOD falls through to the verified Private candidate")
+	_expect(resolver.set_additional_remaster_roots(PackedStringArray(["res://sword-assets", "user://preview"])), "resolver accepts explicit Godot resource roots")
+	_expect(not resolver.set_additional_remaster_roots(PackedStringArray(["/tmp/private-assets"])), "resolver rejects arbitrary filesystem roots")
+
+
+func _test_hd2d_environment_loading() -> void:
+	var resolver := RemasterAssetResolver.new()
+	resolver.set_file_verification_enabled(false)
+	var manifest := {
+		"schema_version": "1.0.0",
+		"pack_id": "fixture.environment",
+		"asset_version": "1",
+		"assets": [{
+			"id": "map/012/environment",
+			"type": "environment",
+			"path": "tests/fixtures/hd2d_environment.tscn",
+			"sha256": "0".repeat(64),
+			"review_status": "approved",
+		}],
+	}
+	_expect(resolver.add_remaster_manifest_data(manifest, "res://"), "resolver indexes an approved HD-2D environment scene")
+	var world := Hd2DWorld.new()
+	world.configure_asset_resolver(resolver)
+	var snapshot := PalWorldPresentationSnapshot.new()
+	snapshot.map_number = 12
+	snapshot.camera_focus_3d = PalWorldTransform.pal_to_world_3d(Vector2i(1248, 1040))
+	world.sync_snapshot(snapshot)
+	var environment := world.active_environment()
+	_expect(environment != null and environment.has_node("FixtureMarker"), "HD-2D world instantiates the resolved modular environment")
+	_expect(environment != null and environment.position == snapshot.camera_focus_3d, "HD-2D environment aligns its PAL anchor with the canonical transform")
+	snapshot.map_number = 13
+	world.sync_snapshot(snapshot)
+	_expect(not world.has_active_environment(), "missing HD-2D map environment falls back without retaining the previous map")
+	world.free()
 
 
 func _test_tilemap_runtime_retirement() -> void:

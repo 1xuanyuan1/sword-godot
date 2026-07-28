@@ -49,6 +49,7 @@ var _reported_failures: Dictionary = {}
 var _verify_files: bool = true
 var _allow_unapproved: bool = false
 var _failure_warnings_enabled: bool = true
+var _additional_remaster_roots: PackedStringArray = []
 
 
 ## 清空旧索引并加载编辑器 Private 仓、用户高清包和 `user://mods`。
@@ -57,7 +58,12 @@ func reload() -> bool:
 	_reported_failures.clear()
 	error_message = ""
 	var success := true
-	var private_roots := PackedStringArray(["res://sword-assets"] if Engine.is_editor_hint() else ["user://remaster/assets"])
+	var private_roots := PackedStringArray(["user://remaster/assets"])
+	if Engine.is_editor_hint():
+		private_roots.append("res://sword-assets")
+	for configured_root in _additional_remaster_roots:
+		if configured_root not in private_roots:
+			private_roots.append(configured_root)
 	for pack_root in private_roots:
 		success = _load_remaster_directory(pack_root.path_join("manifests/remaster"), pack_root) and success
 	success = _load_mod_directory("user://mods") and success
@@ -174,6 +180,21 @@ func set_file_verification_enabled(enabled: bool) -> void:
 ## 开发期可允许 generated/technical_review 条目参与预览；正式运行只接受 approved。
 func set_unapproved_preview_enabled(enabled: bool) -> void:
 	_allow_unapproved = enabled
+
+
+## 加入显式的本地高清包根目录；只接受 Godot 资源路径，避免项目自动扫描任意目录。
+func set_additional_remaster_roots(roots: PackedStringArray) -> bool:
+	var validated := PackedStringArray()
+	for root in roots:
+		var normalized := root.trim_suffix("/")
+		if not normalized.begins_with("res://") and not normalized.begins_with("user://"):
+			return _set_error("高清包根目录必须使用 res:// 或 user://：%s" % root)
+		if normalized.contains("..") or normalized.contains("\\"):
+			return _set_error("高清包根目录不安全：%s" % root)
+		if normalized not in validated:
+			validated.append(normalized)
+	_additional_remaster_roots = validated
+	return true
 
 
 ## 自动测试可关闭预期的回退警告；正式运行默认每个失败原因只提示一次。

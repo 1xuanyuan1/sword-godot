@@ -5,8 +5,13 @@
 class_name PalPresentationShell
 extends Control
 
+const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 const MODE_CLASSIC := 0
 const MODE_HD2D := 1
+const TECHNICAL_PREVIEW_ARGUMENT := "--pal-remaster-technical-preview"
+const PRIVATE_ROOT_ARGUMENT_PREFIX := "--pal-remaster-private-root="
+const FORCE_HD2D_ARGUMENT := "--pal-remaster-hd2d"
+const DEBUG_CHECKPOINT_ARGUMENT_PREFIX := "--pal-debug-checkpoint="
 
 @export_file("*.tscn") var initial_classic_scene := "res://scenes/main.tscn"
 
@@ -23,11 +28,20 @@ var _mode: int = MODE_CLASSIC
 func _ready() -> void:
 	_build_shell()
 	var configured_mode := str(ProjectSettings.get_setting("presentation/default_mode", "classic"))
-	set_presentation_mode(MODE_HD2D if configured_mode == "hd2d" else MODE_CLASSIC)
-	if not initial_classic_scene.is_empty():
-		var result := open_classic_scene(initial_classic_scene)
+	var force_hd2d := FORCE_HD2D_ARGUMENT in OS.get_cmdline_user_args()
+	set_presentation_mode(MODE_HD2D if force_hd2d or configured_mode == "hd2d" else MODE_CLASSIC)
+	var opening_scene := initial_classic_scene
+	for argument in OS.get_cmdline_user_args():
+		if argument.begins_with(DEBUG_CHECKPOINT_ARGUMENT_PREFIX):
+			var checkpoint_id := argument.trim_prefix(DEBUG_CHECKPOINT_ARGUMENT_PREFIX)
+			if DebugCheckpoint.request(checkpoint_id):
+				opening_scene = "res://scenes/map_explorer.tscn"
+			else:
+				push_warning("未知剧情检查点：%s" % checkpoint_id)
+	if not opening_scene.is_empty():
+		var result := open_classic_scene(opening_scene)
 		if result != OK:
-			push_error("无法打开经典启动场景 %s：%s" % [initial_classic_scene, error_string(result)])
+			push_error("无法打开经典启动场景 %s：%s" % [opening_scene, error_string(result)])
 
 
 ## 在 Shell 的 320×200 SubViewport 中替换经典场景；供 PalSceneRouter 调用。
@@ -50,14 +64,19 @@ func open_classic_scene(scene_path: String) -> Error:
 ## 切换经典回退或 HD-2D 展示；两种模式始终由同一个经典 SubViewport 推进游戏逻辑。
 func set_presentation_mode(mode: int) -> void:
 	_mode = MODE_HD2D if mode == MODE_HD2D else MODE_CLASSIC
+	_update_presentation_layers()
+
+
+func _update_presentation_layers() -> void:
+	var hd_available := _mode == MODE_HD2D and _hd_world != null and _hd_world.has_active_environment()
 	if _classic_container != null:
-		_classic_container.modulate.a = 0.0 if _mode == MODE_HD2D else 1.0
+		_classic_container.modulate.a = 0.0 if hd_available else 1.0
 	if _classic_background != null:
-		_classic_background.visible = _mode == MODE_CLASSIC
+		_classic_background.visible = not hd_available
 	if _hd_world != null:
-		_hd_world.visible = _mode == MODE_HD2D
+		_hd_world.visible = hd_available
 	if _hd_hud != null:
-		_hd_hud.visible = _mode == MODE_HD2D
+		_hd_hud.visible = hd_available
 
 
 ## 返回当前经典回退或 HD-2D 模式编号。
@@ -75,8 +94,17 @@ func _build_shell() -> void:
 	_hd_world = PalHd2DWorld.new()
 	_hd_world.name = "HdWorldRoot"
 	add_child(_hd_world)
+	_hd_world.active_environment_changed.connect(_on_hd_environment_changed)
 	_asset_resolver = PalRemasterAssetResolver.new()
-	_asset_resolver.set_unapproved_preview_enabled(bool(ProjectSettings.get_setting("presentation/allow_unapproved_assets", false)))
+	var user_arguments := OS.get_cmdline_user_args()
+	var technical_preview := TECHNICAL_PREVIEW_ARGUMENT in user_arguments
+	_asset_resolver.set_unapproved_preview_enabled(technical_preview or bool(ProjectSettings.get_setting("presentation/allow_unapproved_assets", false)))
+	var private_roots := PackedStringArray()
+	for argument in user_arguments:
+		if argument.begins_with(PRIVATE_ROOT_ARGUMENT_PREFIX):
+			private_roots.append(argument.trim_prefix(PRIVATE_ROOT_ARGUMENT_PREFIX))
+	if not _asset_resolver.set_additional_remaster_roots(private_roots):
+		push_warning("高清素材目录参数无效，将保持经典回退：%s" % _asset_resolver.error_message)
 	if not _asset_resolver.reload():
 		push_warning("高清素材清单加载失败，将使用经典或占位回退：%s" % _asset_resolver.error_message)
 	_hd_world.configure_asset_resolver(_asset_resolver)
@@ -131,3 +159,7 @@ func _bind_snapshot_source() -> void:
 
 func _on_presentation_snapshot_ready(snapshot: PalWorldPresentationSnapshot) -> void:
 	_hd_world.sync_snapshot(snapshot)
+
+
+func _on_hd_environment_changed(_available: bool, _map_number: int) -> void:
+	_update_presentation_layers()
