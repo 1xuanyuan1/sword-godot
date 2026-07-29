@@ -361,6 +361,21 @@ Map 012 的 384×216 重制视野、中央 UI 核心和 1920×1080 截图门禁�
   --script res://tests/run_local_map012_remaster_2d_visual_test.gd
 ```
 
+制作私有高清地图前，先从玩家本地导入内容生成 GOP 五倍兼容图集、`pal-map-tileset.json` 和逐帧覆盖台账。该工具不会修改公开运行资源，`--out` 必须指向私有素材仓或被 Git 忽略目录；焦点坐标使用 PAL 世界坐标，Map 012 客栈基准检查点的 384×216 视野左上角为 `(464,1024)`：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tools/export_pal_map_tileset_reference.gd -- \
+  --map=12 --out=/private/sword-assets/art/runtime/chapter_01/maps/map_012/tileset/v001 \
+  --palette=0 --focus-x=464 --focus-y=1024 --focus-width=384 --focus-height=216
+
+python3 tools/validate_pal_map_tileset.py \
+  --tileset /private/sword-assets/art/runtime/chapter_01/maps/map_012/tileset/v001/pal-map-tileset.json \
+  --expected-map 12 --expected-frame-count 310
+```
+
+初始五倍图集只承担结构完整的兼容底稿。美术生产按原 GOP `source_frame_index` 逐帧替换已审核图块；未精修帧保持最近邻兼容图块，不得把整张概念图直接接成可行走地图，也不得改变 MAP、阻挡、逻辑高度或事件坐标。
+
 macOS Metal 在单一窗口连续销毁大量 SubViewport 后若停止派发 `frame_post_draw`，可用名称筛选逐个运行，不得改用 `--headless` 代替真实像素验收：
 
 ```bash
