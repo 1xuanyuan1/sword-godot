@@ -383,6 +383,16 @@ python3 tools/validate_pal_map_tileset.py \
   --out=/private/sword-assets/art/source/chapter_01/characters/li_xiaoyao/pose_references/run_v001
 ```
 
+2DCS `p` 候选通过单帧检查后，使用锁定版本的 Sprite Video Lab 完成纯绿幕、去色溢出和硬 Alpha。工具还会在硬 Alpha 外轮廓的三像素范围内清理低亮度暗绿溢色，亮绿和暗绿边缘残留必须同时为零。工具拒绝覆盖旧输出，并记录输入/输出哈希、Alpha 边界、两级绿边检查结果和处理像素数；不完整候选可以先做技术预检，但不得组装成正式 Atlas：
+
+```bash
+../sword-tools/sprite-video-lab/.venv/bin/python \
+  tools/process_pal_character_candidates.py \
+  --input-dir=/private/sword-assets/art/runtime/chapter_01/characters/li_xiaoyao/candidates/pose_run_v001 \
+  --output-dir=/private/sword-assets/art/runtime/chapter_01/characters/li_xiaoyao/processed/run_v001 \
+  --sprite-video-lab=../sword-tools/sprite-video-lab
+```
+
 初始五倍图集只承担结构完整的兼容底稿。美术生产按原 GOP `source_frame_index` 逐帧替换已审核图块；未精修帧保持最近邻兼容图块，不得把整张概念图直接接成可行走地图，也不得改变 MAP、阻挡、逻辑高度或事件坐标。
 
 图片模型批量精修图块时，先把明确的 GOP 帧排成固定 1536×1024 绿幕制作板，再把生成结果写入新的图集版本。写回器永远复用原 GOP Alpha；模型扩大的轮廓会被裁掉，仍为绿幕的内部像素会保留原图，避免绿色接缝。不得覆盖已有版本目录：
