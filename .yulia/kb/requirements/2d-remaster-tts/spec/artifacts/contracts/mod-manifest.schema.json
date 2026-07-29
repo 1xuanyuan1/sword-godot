@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sword-godot.invalid/contracts/mod-manifest.schema.json",
-  "title": "Sword Remaster Mod Manifest",
+  "title": "Sword 2D Remaster Mod Manifest",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "pack_id", "version", "priority", "entries"],

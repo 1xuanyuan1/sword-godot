@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sword-remaster.invalid/schemas/pal-map-tileset.schema.json",
+  "title": "PAL Remaster Map Tileset",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "map_number", "source_frame_count", "scale", "tile_cell_px", "content_px", "image", "frames"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "map_number": { "type": "integer", "minimum": 0 },
+    "source_frame_count": { "type": "integer", "minimum": 1 },
+    "scale": { "const": 5 },
+    "tile_cell_px": { "const": [160, 80] },
+    "content_px": { "const": [160, 75] },
+    "image": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.png$" },
+    "night_image": { "type": ["string", "null"], "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.png$" },
+    "frames": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["source_frame_index", "rect"],
+        "properties": {
+          "source_frame_index": { "type": "integer", "minimum": 0 },
+          "rect": {
+            "type": "array",
+            "prefixItems": [
+              { "type": "integer", "minimum": 0 }, { "type": "integer", "minimum": 0 },
+              { "const": 160 }, { "const": 80 }
+            ],
+            "minItems": 4,
+            "maxItems": 4
+          }
+        }
+      }
+    }
+  }
+}

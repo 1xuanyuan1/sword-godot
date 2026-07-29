@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sword-godot.invalid/contracts/remaster-content-lock.schema.json",
-  "title": "Remaster Content Lock",
+  "title": "2D Remaster Content Lock",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "asset_repository", "asset_commit", "manifests"],

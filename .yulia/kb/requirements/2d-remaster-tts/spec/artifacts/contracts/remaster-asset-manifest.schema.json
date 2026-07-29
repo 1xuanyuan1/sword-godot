@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://sword-remaster.invalid/schemas/remaster-asset-manifest.schema.json",
-  "title": "Sword Remaster Asset Manifest",
+  "title": "Sword 2D Remaster Asset Manifest",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "pack_id", "asset_version", "assets"],
@@ -11,40 +11,20 @@
     "asset_version": { "type": "string", "minLength": 1 },
     "chapter": { "type": ["integer", "null"], "minimum": 0, "maximum": 18 },
     "generated_at": { "type": "string", "format": "date-time" },
-    "assets": {
-      "type": "array",
-      "items": { "$ref": "#/$defs/asset" }
-    }
+    "assets": { "type": "array", "items": { "$ref": "#/$defs/asset" } }
   },
   "$defs": {
     "asset": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "id",
-        "type",
-        "path",
-        "sha256",
-        "chapter",
-        "source_references",
-        "review_status"
-      ],
+      "required": ["id", "type", "path", "sha256", "chapter", "source_references", "review_status"],
       "properties": {
         "id": {
           "type": "string",
-          "pattern": "^(map/[^/]+/environment|character/[^/]+/field|portrait/[^/]+/[^/]+|battlefield/[^/]+|battle/[^/]+/[^/]+|cutscene/[^/]+/[^/]+|voice/[^/]+|ui/[^/]+)$"
+          "pattern": "^(map/[^/]+/tileset|character/[^/]+/field|portrait/[^/]+/[^/]+|battlefield/[^/]+|battle/[^/]+/[^/]+|cutscene/[^/]+/[^/]+|voice/[^/]+|ui/[^/]+)$"
         },
         "type": {
-          "enum": [
-            "environment",
-            "field_sprite",
-            "portrait",
-            "battlefield",
-            "battle_action",
-            "cutscene",
-            "voice",
-            "ui_theme"
-          ]
+          "enum": ["map_tileset", "field_sprite", "portrait", "battlefield", "battle_action", "cutscene", "voice", "ui_theme"]
         },
         "path": { "$ref": "#/$defs/relative_path" },
         "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
@@ -62,22 +42,12 @@
             "height": { "type": "integer", "minimum": 1 }
           }
         },
-        "source_references": {
-          "type": "array",
-          "items": { "type": "string", "minLength": 1 },
-          "uniqueItems": true
-        },
-        "review_status": {
-          "enum": ["draft", "generated", "technical_review", "approved", "rejected"]
-        },
+        "source_references": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
+        "review_status": { "enum": ["draft", "generated", "technical_review", "approved", "rejected"] },
         "fallback_asset_id": { "type": ["string", "null"] },
         "notes": { "type": "string" }
       }
     },
-    "relative_path": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$"
-    }
+    "relative_path": { "type": "string", "minLength": 1, "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+$" }
   }
 }

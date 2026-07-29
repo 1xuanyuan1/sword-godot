@@ -7,7 +7,7 @@
   "required": ["schema_version", "chapter", "model", "audio_profile", "entries"],
   "properties": {
     "schema_version": { "const": "1.0.0" },
-    "chapter": { "type": "integer", "minimum": 1, "maximum": 18 },
+    "chapter": { "const": 1 },
     "model": { "const": "speech-2.8-hd" },
     "audio_profile": {
       "type": "object",

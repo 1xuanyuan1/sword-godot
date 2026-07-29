@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sword-remaster.invalid/schemas/art-prompt-manifest.schema.json",
+  "title": "Sword 2D Remaster Art Generation Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "style_guide_version", "prompts"],
+  "properties": {
+    "schema_version": { "const": "1.0.0" },
+    "style_guide_version": { "type": "string", "minLength": 1 },
+    "prompts": { "type": "array", "items": { "$ref": "#/$defs/prompt" } }
+  },
+  "$defs": {
+    "prompt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id", "asset_id", "phase", "skill", "skill_mode", "provider", "model",
+        "protocol", "prompt", "negative_prompt", "requested_width", "requested_height",
+        "background", "input_references", "review_status"
+      ],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
+        "asset_id": { "type": "string", "minLength": 1 },
+        "phase": { "enum": ["concept", "pose", "final"] },
+        "skill": { "const": "2dcs" },
+        "skill_version": { "type": "string" },
+        "skill_mode": { "enum": ["ct", "p", "sq"] },
+        "provider": { "const": "bitto" },
+        "model": { "enum": ["nano-banana-2", "gpt-image-2"] },
+        "protocol": { "enum": ["vertex", "openai-images"] },
+        "prompt": { "type": "string", "minLength": 1 },
+        "negative_prompt": { "type": "string" },
+        "requested_width": { "const": 1536 },
+        "requested_height": { "const": 1024 },
+        "actual_width": { "type": "integer", "minimum": 128 },
+        "actual_height": { "type": "integer", "minimum": 128 },
+        "background": { "const": "solid_key_color" },
+        "key_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "default": "#00FF00" },
+        "input_references": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["order", "role", "path", "sha256"],
+            "properties": {
+              "order": { "type": "integer", "minimum": 1 },
+              "role": { "enum": ["appearance", "target_style", "pose"] },
+              "path": { "type": "string", "minLength": 1 },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        },
+        "prompt_version": { "type": "string" },
+        "review_status": { "enum": ["draft", "generated", "technical_review", "approved", "rejected"] },
+        "output_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
+        "review_notes": { "type": "string" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "model": { "const": "nano-banana-2" } } },
+          "then": { "properties": { "protocol": { "const": "vertex" } } }
+        },
+        {
+          "if": { "properties": { "model": { "const": "gpt-image-2" } } },
+          "then": { "properties": { "protocol": { "const": "openai-images" } } }
+        }
+      ]
+    }
+  }
+}
