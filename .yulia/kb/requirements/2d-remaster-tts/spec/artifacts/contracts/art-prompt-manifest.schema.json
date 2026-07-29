@@ -23,9 +23,9 @@
         "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9._-]*$" },
         "asset_id": { "type": "string", "minLength": 1 },
         "phase": { "enum": ["concept", "pose", "final"] },
-        "skill": { "const": "2dcs" },
+        "skill": { "enum": ["2dcs", "bitto-imagegen"] },
         "skill_version": { "type": "string" },
-        "skill_mode": { "enum": ["ct", "p", "sq"] },
+        "skill_mode": { "enum": ["ct", "p", "sq", "generate", "edit"] },
         "provider": { "const": "bitto" },
         "model": { "enum": ["nano-banana-2", "gpt-image-2"] },
         "protocol": { "enum": ["vertex", "openai-images"] },
@@ -36,18 +36,17 @@
         "actual_width": { "type": "integer", "minimum": 128 },
         "actual_height": { "type": "integer", "minimum": 128 },
         "output_path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))art/runtime/.+\\.(png|webp)$" },
-        "background": { "const": "solid_key_color" },
+        "background": { "enum": ["opaque", "solid_key_color"] },
         "key_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "default": "#00FF00" },
         "input_references": {
           "type": "array",
-          "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": ["order", "role", "path", "sha256"],
             "properties": {
               "order": { "type": "integer", "minimum": 1 },
-              "role": { "enum": ["appearance", "target_style", "pose"] },
+              "role": { "enum": ["appearance", "target_style", "pose", "layout", "material_style"] },
               "path": { "type": "string", "minLength": 1 },
               "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
             }
@@ -59,6 +58,19 @@
         "review_notes": { "type": "string" }
       },
       "allOf": [
+        {
+          "if": { "properties": { "skill": { "const": "2dcs" } } },
+          "then": {
+            "properties": {
+              "skill_mode": { "enum": ["ct", "p", "sq"] },
+              "background": { "const": "solid_key_color" }
+            }
+          }
+        },
+        {
+          "if": { "properties": { "skill": { "const": "bitto-imagegen" } } },
+          "then": { "properties": { "skill_mode": { "enum": ["generate", "edit"] } } }
+        },
         {
           "if": { "properties": { "model": { "const": "nano-banana-2" } } },
           "then": { "properties": { "protocol": { "const": "vertex" } } }

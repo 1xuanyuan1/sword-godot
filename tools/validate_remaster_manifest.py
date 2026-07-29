@@ -296,11 +296,14 @@ def validate_art_manifest(data: dict[str, Any], root: Path | None) -> None:
         prompt_ids.add(prompt_id)
         require_string(prompt["asset_id"], f"{location}.asset_id")
         require_enum(prompt["phase"], f"{location}.phase", {"concept", "pose", "final"})
-        if prompt["skill"] != "2dcs":
-            fail(f"{location}.skill", "must equal 2dcs")
+        skill = require_enum(prompt["skill"], f"{location}.skill", {"2dcs", "bitto-imagegen"})
         if "skill_version" in prompt:
             require_string(prompt["skill_version"], f"{location}.skill_version")
-        skill_mode = require_enum(prompt["skill_mode"], f"{location}.skill_mode", {"ct", "p", "sq"})
+        skill_mode = require_enum(prompt["skill_mode"], f"{location}.skill_mode", {"ct", "p", "sq", "generate", "edit"})
+        if skill == "2dcs" and skill_mode not in {"ct", "p", "sq"}:
+            fail(f"{location}.skill_mode", "2dcs mode must be ct, p, or sq")
+        if skill == "bitto-imagegen" and skill_mode not in {"generate", "edit"}:
+            fail(f"{location}.skill_mode", "bitto-imagegen mode must be generate or edit")
         if prompt["provider"] != "bitto":
             fail(f"{location}.provider", "must equal bitto")
         model = require_enum(prompt["model"], f"{location}.model", {"nano-banana-2", "gpt-image-2"})
@@ -314,14 +317,15 @@ def validate_art_manifest(data: dict[str, Any], root: Path | None) -> None:
             fail(f"{location}.requested_width", "must equal 1536")
         if require_integer(prompt["requested_height"], f"{location}.requested_height", 128, 65536) != 1024:
             fail(f"{location}.requested_height", "must equal 1024")
-        if prompt["background"] != "solid_key_color":
-            fail(f"{location}.background", "must equal solid_key_color")
+        background = require_enum(prompt["background"], f"{location}.background", {"opaque", "solid_key_color"})
+        if skill == "2dcs" and background != "solid_key_color":
+            fail(f"{location}.background", "2dcs outputs must use solid_key_color")
         key_color = prompt.get("key_color", "#00FF00")
         if not isinstance(key_color, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", key_color):
             fail(f"{location}.key_color", "must be a six-digit RGB color")
 
         input_references = require_array(prompt["input_references"], f"{location}.input_references")
-        if not input_references:
+        if skill == "2dcs" and not input_references:
             fail(f"{location}.input_references", "must contain at least one ordered input")
         input_roles: list[str] = []
         input_orders: list[int] = []
@@ -331,7 +335,7 @@ def validate_art_manifest(data: dict[str, Any], root: Path | None) -> None:
             reference_keys = {"order", "role", "path", "sha256"}
             require_keys(reference, reference_location, reference_keys, reference_keys)
             input_orders.append(require_integer(reference["order"], f"{reference_location}.order", 1, len(input_references)))
-            input_roles.append(require_enum(reference["role"], f"{reference_location}.role", {"appearance", "target_style", "pose"}))
+            input_roles.append(require_enum(reference["role"], f"{reference_location}.role", {"appearance", "target_style", "pose", "layout", "material_style"}))
             input_path = require_relative_path(reference["path"], f"{reference_location}.path")
             input_digest = require_sha256(reference["sha256"], f"{reference_location}.sha256")
             verify_file(root, input_path, input_digest, f"{reference_location}.path")
@@ -343,6 +347,10 @@ def validate_art_manifest(data: dict[str, Any], root: Path | None) -> None:
             fail(f"{location}.input_references", "p requires appearance first followed by one or more poses")
         if skill_mode == "sq" and input_roles != ["appearance"]:
             fail(f"{location}.input_references", "sq requires exactly one appearance input")
+        if skill_mode == "generate" and input_roles:
+            fail(f"{location}.input_references", "generate mode must not contain source images; use edit mode")
+        if skill_mode == "edit" and not input_roles:
+            fail(f"{location}.input_references", "edit mode requires at least one source image")
 
         if "prompt_version" in prompt:
             require_string(prompt["prompt_version"], f"{location}.prompt_version")
@@ -374,7 +382,7 @@ def validate_art_manifest(data: dict[str, Any], root: Path | None) -> None:
             fail(f"{location}.output_sha256", f"is required when review_status is {status}")
         if output_path and output_digest:
             verify_file(root, output_path, output_digest, f"{location}.output_path")
-        if status == "approved" and actual_width * 2 != actual_height * 3:
+        if status == "approved" and skill == "2dcs" and actual_width * 2 != actual_height * 3:
             fail(location, "approved 2DCS output must have an exact 3:2 aspect ratio")
 
 
