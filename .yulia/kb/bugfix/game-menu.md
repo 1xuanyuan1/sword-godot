@@ -12,6 +12,25 @@ keywords:
 
 ## 修复记录
 
+## 2026-07-29
+
+### [BF-052] Web 结束游戏显示不可用并在退出时触发音频异常
+
+- **来源**: 用户试玩反馈
+- **关联需求**: M3 经典系统菜单、M5 Web 发布质量
+- **问题描述**: 系统页绘制逻辑只把前四项标记为可用，导致已经接通的“结束游戏”仍显示红色不可用颜色；确认后直接结束 SceneTree，Web 音频 SampleNode 尚未消费停止命令就开始销毁，浏览器因此报 `Cannot read properties of null (reading 'currentTime')`。
+- **涉及文件**:
+  - `src/ui/pal_game_menu.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `docs/CLASSIC_UI.md`
+  - `.yulia/kb/bugfix/game-menu.md`
+- **修复内容**: 将第五项纳入系统菜单正常可用状态；退出请求先停止 BGM 与全部音效，在 B 站 App 内优先调用 Toy `closeBrowser`，不支持时等待两个渲染帧让 Web 音频线程消费 stop 命令后再退出 Godot。新增颜色能力和退出通道路由回归，并使用真实窗口重新生成系统页像素截图。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-22
 
 ### [BF-048] 战斗与场外异常状态图标带方形黑底

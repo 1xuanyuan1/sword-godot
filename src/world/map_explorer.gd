@@ -40,6 +40,7 @@ var _battle_view: PalBattlePreview
 var _ending_player: PalEndingPlayer
 var _audio_player: Node
 var _toy_coordinator: PalToyCoordinator
+var _quit_pending: bool = false
 var _fade_overlay: ColorRect
 var _fade_tween: Tween
 var _fbp_tween: Tween
@@ -92,6 +93,7 @@ func _ready() -> void:
 	_toy_coordinator.name = "PalToyCoordinator"
 	add_child(_toy_coordinator)
 	_toy_coordinator.configure(_save_manager, _game_menu, _session)
+	_toy_coordinator.close_browser_finished.connect(_on_toy_close_browser_finished)
 	_rng_player.configure(_database, _session)
 	_audio_player = AudioPlayer.new()
 	_audio_player.name = "PalAudioPlayer"
@@ -954,12 +956,32 @@ func _on_followers_changed() -> void:
 
 
 func _on_quit_requested() -> void:
+	if _quit_pending:
+		return
+	_quit_pending = true
+	if _audio_player != null:
+		_audio_player.stop_all()
+	if _toy_coordinator != null and _toy_coordinator.is_available():
+		_toy_coordinator.request_close_browser()
+		return
 	call_deferred("_quit_application")
 
 
 func _quit_application() -> void:
+	if not is_inside_tree():
+		return
+	var tree := get_tree()
+	# Web 音频节点需要在 quit 前消费 stop 命令，否则浏览器销毁已暂停的
+	# SampleNode 时可能访问已经释放的 AudioContext。
+	await tree.process_frame
+	await tree.process_frame
 	if is_inside_tree():
-		get_tree().quit()
+		tree.quit()
+
+
+func _on_toy_close_browser_finished(success: bool) -> void:
+	if not success:
+		call_deferred("_quit_application")
 
 
 func _on_ending_requested(kind: int, first: int, second: int, third: int) -> void:

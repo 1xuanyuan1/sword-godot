@@ -923,13 +923,17 @@ func _draw_system_menu() -> void:
 	# 保留经典窗口与点阵字，而不引入不协调的现代滑块控件。
 	_draw_classic_box(SYSTEM_MENU_POSITION, 4, 8, 0, 6)
 	for index in range(SYSTEM_ITEM_POSITIONS.size()):
-		var enabled := index in [0, 1, 2, 3]
+		var enabled := _system_item_enabled(index)
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _system_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
 		_draw_pal_text(database.get_word(11 + index), SYSTEM_ITEM_POSITIONS[index], _palette_color(color_index), true)
 	_draw_number(session.music_volume, 3, Vector2i(VOLUME_VALUE_X, SYSTEM_ITEM_POSITIONS[2].y + 4), 19)
 	_draw_number(session.sound_volume, 3, Vector2i(VOLUME_VALUE_X, SYSTEM_ITEM_POSITIONS[3].y + 4), 19)
+
+
+func _system_item_enabled(index: int) -> bool:
+	return index >= 0 and index < SYSTEM_ITEM_POSITIONS.size()
 
 
 func _move_selection(direction: Vector2i) -> void:

@@ -2038,6 +2038,13 @@ func _test_explorer_hud_canvas_layer() -> void:
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.quit_requested.is_connected(explorer._on_quit_requested), "system menu routes its quit request through the explorer application exit handler")
+	var explorer_source := FileAccess.get_file_as_string("res://src/world/map_explorer.gd")
+	_expect(
+		explorer_source.find("_audio_player.stop_all()") >= 0
+		and explorer_source.find("_toy_coordinator.request_close_browser()") >= 0
+		and explorer_source.find("await tree.process_frame") >= 0,
+		"application exit stops Web audio, prefers Toy closeBrowser and delays the Godot fallback",
+	)
 	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
 	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index() and explorer._fade_overlay.get_index() > explorer._location_toast.get_index(), "screen fade covers the complete world, location toast and HUD during scene transitions")
 	explorer._fade_overlay.visible = true
@@ -2254,6 +2261,7 @@ func _test_game_menu_inventory() -> void:
 	menu.quit_requested.connect(func() -> void: quit_requests[0] += 1)
 	menu._system_selection = 4
 	menu._confirm_selection()
+	_expect(menu._system_item_enabled(4), "system quit entry uses the normal enabled color")
 	_expect(quit_requests[0] == 1 and not menu.visible, "system quit entry closes the menu and requests application exit")
 	_expect(menu._main_item_count() == 4, "non-Toy builds keep the original four-item classic main menu")
 	menu.configure_toy_features(true, "Toy connected")

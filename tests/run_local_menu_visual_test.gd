@@ -160,6 +160,8 @@ func _init() -> void:
 	menu.open_main()
 	menu._main_selection = 3
 	menu._confirm_selection()
+	menu._system_selection = 4
+	menu.queue_redraw()
 	await process_frame
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_system_audio.png"))
