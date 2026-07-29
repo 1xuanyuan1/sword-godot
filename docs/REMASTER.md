@@ -41,6 +41,8 @@
 
 所有 Bitto 调用显式指定模型，不使用自动路由，不请求原生透明背景，不覆盖已有候选。清单保存 2DCS 模式、模型、协议、输入顺序/哈希、提示词版本、请求/实际尺寸、输出哈希与审核结论。
 
+本地生产工具由 `remaster-toolchain.lock.json` 固定版本，可运行 `python3 tools/verify_remaster_toolchain.py` 检查安装。Sprite Video Lab 使用独立 Python 3.11 `.venv`；XSXB 只允许启动 `npm run start:lite`，不得同步 Godot runtime 或 gameplay 状态机。
+
 ## 第一章 TTS
 
 MiniMax 当前只生产第一章：
@@ -54,7 +56,8 @@ MiniMax 当前只生产第一章：
 
 - [x] 固化旧版 `v0.1.5` 并建立 `release` 分支。
 - [x] 建立 1920×1080 展示壳、资源解析器和稳定对白轮次信号。
-- [ ] 退役 3D 原型并恢复纯 2D Compatibility 路径。
+- [x] 退役 3D 原型并恢复纯 2D Compatibility 路径。
+- [x] 安装并锁定 2DCS、Sprite Video Lab 与 XSXB Frame Tuner Lite。
 - [ ] 完成 384×216、5 倍输出和经典 UI 输入映射。
 - [ ] 完成地图 TileSet、人物 Atlas、校验器和缺失回退。
 - [ ] 完成李逍遥四方向基准与 Map 012 客栈垂直切片。

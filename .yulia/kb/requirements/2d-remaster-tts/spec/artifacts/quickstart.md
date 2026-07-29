@@ -16,9 +16,11 @@ sword/                         # 公开代码仓，release 分支
 └── xsxb-frame-tuner/
 ```
 
-- 2DCS 安装到 `~/.codex/skills/2dcs`。
-- Sprite Video Lab 使用 `uv` 创建 Python 3.11 虚拟环境；XSXB Lite 使用现有 Node.js。
+- 2DCS 安装到 `~/.codex/skills/2dcs`；Sprite Video Lab 与 XSXB 固定在同级 `sword-tools/` 目录，具体提交见 `remaster-toolchain.lock.json`。
+- Sprite Video Lab 使用 `uv` 创建 Python 3.11 虚拟环境；XSXB Lite 使用现有 Node.js，并且只启动 `npm run start:lite`。
 - `.env.local` 只保存 MiniMax Key，权限为 600；Bitto 使用已有 CLI 登录态，不打印或复制凭据。
+
+在生成素材前运行 `python3 tools/verify_remaster_toolchain.py`，确保 2DCS 文件哈希和两个工具的 Git 提交都与锁文件一致。
 
 ## 人物生成
 

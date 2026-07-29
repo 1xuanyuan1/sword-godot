@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "tools": [
+    {
+      "id": "2dcs",
+      "source": "https://github.com/sparklecatta-lang/2D-Character-Starter.git",
+      "commit": "4c052e24d7608b657a60cc7654fc9db13157b38f",
+      "kind": "codex_skill",
+      "local_path": "~/.codex/skills/2dcs",
+      "files": {
+        "SKILL.md": "b990e86620deb7f12af340bb82e6c2ab5087ca38806a2da7b6ad85d2544a4634"
+      }
+    },
+    {
+      "id": "sprite-video-lab",
+      "source": "https://github.com/sparklecatta-lang/sprite-video-lab.git",
+      "commit": "79915f42c0538b7dd2c74ae475f687bef59eadce",
+      "kind": "git_checkout",
+      "local_path": "../sword-tools/sprite-video-lab",
+      "runtime": {
+        "python": "3.11",
+        "environment": ".venv",
+        "entrypoint": "server.py"
+      }
+    },
+    {
+      "id": "xsxb-frame-tuner-lite",
+      "source": "https://github.com/sparklecatta-lang/XSXB-Frame-Tuner.git",
+      "commit": "362bfce7a54590471db31a25362b7d9ea8f0038d",
+      "kind": "git_checkout",
+      "local_path": "../sword-tools/xsxb-frame-tuner",
+      "runtime": {
+        "node": ">=18",
+        "entrypoint": "tools/frame_tuner_lite/server.js",
+        "mode": "lite_only"
+      },
+      "forbidden_features": [
+        "godot_runtime_sync",
+        "gameplay_state_machine"
+      ]
+    }
+  ],
+  "bitto": {
+    "cli_version": "0.3.0",
+    "models": {
+      "draft": {
+        "name": "nano-banana-2",
+        "protocol": "vertex"
+      },
+      "final": {
+        "name": "gpt-image-2",
+        "protocol": "openai-images"
+      }
+    },
+    "allow_automatic_model_fallback": false
+  }
+}
