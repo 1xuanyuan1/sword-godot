@@ -377,11 +377,30 @@ func _test_runtime_paths() -> void:
 func _test_web_export_uses_formal_startup() -> void:
 	var file := FileAccess.open("res://tools/prepare_eva_web_project.mjs", FileAccess.READ)
 	var source := file.get_as_text() if file != null else ""
+	var preset_file := FileAccess.open("res://export_presets.cfg", FileAccess.READ)
+	var preset_source := preset_file.get_as_text() if preset_file != null else ""
+	var startup_file := FileAccess.open("res://src/ui/pal_startup.gd", FileAccess.READ)
+	var startup_source := startup_file.get_as_text() if startup_file != null else ""
+	var explorer_file := FileAccess.open("res://src/world/map_explorer.gd", FileAccess.READ)
+	var explorer_source := explorer_file.get_as_text() if explorer_file != null else ""
 	_expect(
 		file != null
 		and source.find('run/main_scene="res://scenes/main.tscn"') >= 0
 		and source.find('run/main_scene="res://scenes/map_explorer.tscn"') < 0,
 		"Web export keeps the formal animated startup and new/load title menu",
+	)
+	_expect(
+		preset_file != null
+		and preset_source.find('include_filter="generated/pal/**/*.bin') >= 0
+		and preset_source.find('generated/pal/**/*.mkf"') >= 0,
+		"Web export embeds the raw RNG archive required by the formal animated startup",
+	)
+	_expect(
+		preset_source.find("scenes/import_lab.tscn") >= 0
+		and preset_source.find("src/ui/import_lab.gd") >= 0
+		and startup_source.find('event.keycode == KEY_F10 and not OS.has_feature("web")') >= 0
+		and explorer_source.find('event.keycode == RETURN_TO_LAB_KEYCODE and not OS.has_feature("web")') >= 0,
+		"Web release excludes the developer resource lab and disables both F10 entry points",
 	)
 
 

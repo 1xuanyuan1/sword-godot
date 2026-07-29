@@ -2,7 +2,7 @@
 # Adapted from SDLPal main.c and uigame.c.
 # SPDX-License-Identifier: GPL-3.0-or-later
 ## 正式游戏启动入口：播放商标 RNG、山水标题动画，并显示原版“新的故事／旧的回忆”菜单。
-## 本地内容缺失时自动进入资源实验室；F10 始终保留为开发入口。
+## 本地开发内容缺失时自动进入资源实验室；内置内容的 Web 发布包不会携带开发页面。
 class_name PalStartup
 extends Control
 
@@ -99,8 +99,11 @@ func _ready() -> void:
 	if not has_startup_content or not database_loaded:
 		if _startup_error_message.is_empty():
 			_startup_error_message = _database.error_message
-		push_error("正式启动资源检查失败，将进入资源实验室：%s" % _startup_error_message)
-		call_deferred("_open_resource_lab")
+		push_error("正式启动资源检查失败：%s" % _startup_error_message)
+		if OS.has_feature("web"):
+			_show_web_startup_error()
+		else:
+			call_deferred("_open_resource_lab")
 		return
 	_session.reset_new_game()
 	_session.initialize_role_state(_database.player_roles)
@@ -407,7 +410,7 @@ func _input(event: InputEvent) -> void:
 		return
 	if not event.is_pressed() or event.is_echo() or event is not InputEventKey:
 		return
-	if event.keycode == KEY_F10:
+	if event.keycode == KEY_F10 and not OS.has_feature("web"):
 		_open_resource_lab()
 		get_viewport().set_input_as_handled()
 		return
@@ -496,9 +499,23 @@ func _start_game(slot: int) -> void:
 
 
 func _open_resource_lab() -> void:
+	if OS.has_feature("web"):
+		return
 	if _audio_player != null:
 		_audio_player.stop_all()
 	get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
+
+
+func _show_web_startup_error() -> void:
+	var error_label := Label.new()
+	error_label.name = "WebStartupError"
+	error_label.text = "Web 数据包不完整，请重新下载或刷新页面。\n%s" % _startup_error_message
+	error_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	error_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	error_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	error_label.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	error_label.add_theme_font_size_override("font_size", 16)
+	add_child(error_label)
 
 
 func _draw() -> void:

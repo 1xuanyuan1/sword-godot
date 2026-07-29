@@ -395,7 +395,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 			return
 		if _pending_magic_object_id > 0:
 			return
-	if event is InputEventKey and event.keycode == RETURN_TO_LAB_KEYCODE:
+	if event is InputEventKey and event.keycode == RETURN_TO_LAB_KEYCODE and not OS.has_feature("web"):
 		get_tree().change_scene_to_file("res://scenes/import_lab.tscn")
 		return
 	if event is InputEventKey and event.keycode in [KEY_SPACE, KEY_ENTER, KEY_KP_ENTER]:
