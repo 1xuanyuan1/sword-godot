@@ -8,6 +8,7 @@ extends Control
 
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
 const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
+const WebTextRenderer := preload("res://src/ui/pal_web_text_renderer.gd")
 const MOBILE_BACK_ICON: Texture2D = preload("res://assets/ui/mobile/back.png")
 
 ## 玩家确认使用物品时发出；接收方负责运行脚本并决定是否消耗。
@@ -86,6 +87,9 @@ const TOY_SLOT_NEXT_HITBOX := Rect2i(140, 52, 24, 27)
 const TOY_ACTION_POSITIONS := [Vector2i(38, 101), Vector2i(38, 127)]
 const TOY_ACTION_LABELS := ["上传此存档", "下载到本地"]
 const TOY_RANK_NAMES := ["逍遥等级", "队伍等级", "最高金钱"]
+const TOY_NICKNAME_POSITION_X := 54
+const TOY_NICKNAME_MAX_WIDTH := 160
+const TOY_NICKNAME_FONT_SIZE := 14
 const TOY_CONFIRM_BOX_POSITION := Vector2i(40, 55)
 const TOY_CONFIRM_OPTION_POSITIONS := [Vector2i(96, 111), Vector2i(208, 111)]
 const TOY_CONFIRM_OPTION_HITBOXES := [Rect2i(72, 98, 80, 40), Rect2i(176, 98, 80, 40)]
@@ -190,6 +194,7 @@ var _toy_pending_action: String = ""
 var _toy_rank_board: int = 1
 var _toy_rank_entries: Array = []
 var _toy_my_rank: Dictionary = {}
+var _toy_nickname_renders: Dictionary = {}
 var _last_feedback: String = ""
 var _confirmation_selection: int = 0
 var _shop_ids: Array[int] = []
@@ -325,6 +330,7 @@ func notify_toy_rank(board: int, entries: Array, mine: Dictionary, message: Stri
 	_toy_rank_board = clampi(board, 1, 3)
 	_toy_rank_entries = entries.duplicate(true)
 	_toy_my_rank = mine.duplicate(true)
+	_prepare_toy_nickname_renders()
 	_toy_busy = false
 	_toy_status = message
 	queue_redraw()
@@ -1229,13 +1235,53 @@ func _draw_toy_rank_page() -> void:
 	for index in range(mini(5, _toy_rank_entries.size())):
 		var entry: Dictionary = _toy_rank_entries[index]
 		var rank := int(entry.get("rank", index + 1))
-		var nickname := _fit_pal_text(str(entry.get("nickname", "玩家")), 142)
-		_draw_pal_text("%2d  %s" % [rank, nickname], Vector2i(22, 48 + index * 22), _palette_color(COLOR_NORMAL), true)
+		var nickname := str(entry.get("nickname", "玩家"))
+		var row_y := 48 + index * 22
+		_draw_pal_text("%2d" % rank, Vector2i(22, row_y), _palette_color(COLOR_NORMAL), true)
+		_draw_toy_nickname(nickname, Vector2i(TOY_NICKNAME_POSITION_X, row_y), _palette_color(COLOR_NORMAL))
 		_draw_pal_text(str(int(entry.get("score", 0))), Vector2i(234, 48 + index * 22), _palette_color(COLOR_CONFIRMED), true)
 	var mine_label := "我：未上榜"
 	if bool(_toy_my_rank.get("ranked", false)):
 		mine_label = "我：第 %d 名  %d" % [int(_toy_my_rank.get("rank", 0)), int(_toy_my_rank.get("score", 0))]
 	_draw_pal_text(mine_label, Vector2i(22, 165), _palette_color(0x3c), true)
+
+
+func _prepare_toy_nickname_renders() -> void:
+	_toy_nickname_renders.clear()
+	for entry in _toy_rank_entries:
+		if entry is not Dictionary:
+			continue
+		var nickname := str(entry.get("nickname", "玩家"))
+		if _toy_nickname_renders.has(nickname):
+			continue
+		var rendered := WebTextRenderer.render(nickname, TOY_NICKNAME_MAX_WIDTH)
+		if rendered.is_empty():
+			rendered = {"text": _fit_system_text(nickname, TOY_NICKNAME_MAX_WIDTH, TOY_NICKNAME_FONT_SIZE)}
+		_toy_nickname_renders[nickname] = rendered
+
+
+func _draw_toy_nickname(nickname: String, position: Vector2i, color: Color) -> void:
+	var rendered: Dictionary = _toy_nickname_renders.get(nickname, {})
+	var texture: Texture2D = rendered.get("texture")
+	if texture != null:
+		draw_texture(texture, Vector2(position + Vector2i.ONE), Color(0, 0, 0, 0.9))
+		draw_texture(texture, Vector2(position), color)
+		return
+	var fitted := str(rendered.get("text", _fit_system_text(nickname, TOY_NICKNAME_MAX_WIDTH, TOY_NICKNAME_FONT_SIZE)))
+	var baseline := Vector2(position + Vector2i(0, TOY_NICKNAME_FONT_SIZE))
+	draw_string(ThemeDB.fallback_font, baseline + Vector2.ONE, fitted, HORIZONTAL_ALIGNMENT_LEFT, -1, TOY_NICKNAME_FONT_SIZE, Color(0, 0, 0, 0.9))
+	draw_string(ThemeDB.fallback_font, baseline, fitted, HORIZONTAL_ALIGNMENT_LEFT, -1, TOY_NICKNAME_FONT_SIZE, color)
+
+
+func _fit_system_text(text: String, maximum_width: int, font_size: int) -> String:
+	var font := ThemeDB.fallback_font
+	if font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x <= maximum_width:
+		return text
+	var fitted := text
+	var suffix := "…"
+	while not fitted.is_empty() and font.get_string_size(fitted + suffix, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size).x > maximum_width:
+		fitted = fitted.substr(0, fitted.length() - 1)
+	return fitted + suffix
 
 
 func _main_item_count() -> int:

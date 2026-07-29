@@ -249,7 +249,12 @@ func _init() -> void:
 		printerr("FAIL: 排行榜忙碌时无法从逍遥等级切换到队伍等级")
 		quit(1)
 		return
-	menu.notify_toy_rank(2, [], {}, "预览模式：正式页面将显示排行榜")
+	menu.notify_toy_rank(
+		2,
+		[{"rank": 1, "nickname": "轩辕坑货", "score": 1}],
+		{"ranked": true, "rank": 1, "score": 1},
+		""
+	)
 	await process_frame
 	await process_frame
 	var toy_rank_image := viewport.get_texture().get_image()
@@ -261,7 +266,7 @@ func _init() -> void:
 		printerr("FAIL: Toy 云存档页与排行榜页没有形成有效的像素差异")
 		quit(1)
 		return
-	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 扩展系统菜单、云存档、确认框与可切换空排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 扩展系统菜单、云存档、确认框、排行榜切换与运行时昵称视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
 		field_magic_id,
 		session.attack_strength_for(0),
 		session.magic_strength_for(0),

@@ -2321,6 +2321,8 @@ func _test_game_menu_inventory() -> void:
 	menu._toy_busy = true
 	menu._move_selection(Vector2i(1, 0))
 	_expect(menu._toy_rank_board == 2 and rank_requests == [1, 2], "Toy leaderboard keyboard navigation switches boards even while a preview request is busy")
+	menu.notify_toy_rank(2, [{"rank": 1, "nickname": "轩辕坑货", "score": 1}], {"ranked": true, "rank": 1, "score": 1}, "")
+	_expect(menu._toy_nickname_renders.get("轩辕坑货", {}).get("text") == "轩辕坑货", "Toy leaderboard preserves runtime nicknames that are absent from the static bitmap atlas")
 	menu.go_back()
 	_expect(menu.current_page == PalGameMenu.Page.SYSTEM, "Toy leaderboard returns to the system submenu")
 	var score_session := GameSession.new()

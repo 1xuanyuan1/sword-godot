@@ -74,6 +74,25 @@ keywords:
 
 ---
 
+### [BF-055] Toy 排行榜运行时昵称显示为方框乱码
+
+- **来源**: 用户正式页面试玩反馈
+- **关联需求**: M5 Toy Web 发布质量
+- **问题描述**: 简体补充点阵只扫描构建时 `src/` 与 `scenes/` 中的静态汉字，Toy SDK 运行时返回的玩家昵称无法提前进入图集。“轩辕坑货”等昵称逐字落入 Godot fallback；桌面系统通常能补字，但 Web 导出没有内置中文 fallback，最终显示成连续方框。
+- **涉及文件**:
+  - `src/ui/pal_web_text_renderer.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `assets/ui/PAL_SIMPLIFIED_FONT.md`
+  - `docs/SAVE_SYSTEM.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `.yulia/kb/bugfix/game-menu.md`
+- **修复内容**: 排行榜昵称与静态 UI 字库解耦：Web 端在收到榜单后用浏览器 Canvas 和系统中文字体同步生成白色透明纹理，缓存后按游戏调色板着色并绘制阴影；输入通过 JSON 字面量转义，超宽昵称按浏览器实测宽度截断。非 Web 环境以整段系统字体回退，避免原先逐字 8 像素步进造成重叠。真实窗口样板使用“轩辕坑货”验证未进入点阵图集的昵称仍完整可读。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-22
 
 ### [BF-048] 战斗与场外异常状态图标带方形黑底

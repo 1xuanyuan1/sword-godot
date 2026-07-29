@@ -7,3 +7,5 @@
 - 生成命令：`node tools/build_pal_simplified_font.mjs --unifont /path/to/unifont-17.0.03.hex.gz`
 
 提交的 PNG/JSON 只包含当前 `src/` 与 `scenes/` 使用到的汉字。新增 UI 文案出现缺字时，应重新运行生成命令并提交更新后的两个产物。
+
+Toy 排行榜昵称不属于静态 UI 文案，内容直到 SDK 返回时才知道，因此不加入这个构建期子集。Web 端统一由 `PalWebTextRenderer` 使用浏览器 Canvas 和系统中文字体生成透明文字纹理；桌面视觉回归使用 Godot 系统 fallback。这样任意玩家昵称不需要提前写入点阵图集，静态界面仍保持原版像素风格。
