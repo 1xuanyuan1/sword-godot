@@ -157,18 +157,12 @@ func _build_interface() -> void:
 	_ui_layer.layer = 10
 	add_child(_ui_layer)
 
-	var status_background := ColorRect.new()
-	status_background.name = "StatusBackground"
-	status_background.color = Color(0.02, 0.03, 0.06, 0.82)
-	status_background.position = Vector2(3, 3)
-	status_background.size = Vector2(314, 20)
-	_ui_layer.add_child(status_background)
+	# 旧版把操作提示、场景号和 TileMap 后端永久显示在地图顶部；这些只属于
+	# 开发诊断，不应占用正式 320×200 游戏画面。保留隐藏 Label 作为测试和
+	# 错误文本的内部接收点，玩家需要看到的反馈继续走对话框／Toast。
 	_status = Label.new()
 	_status.name = "StatusLabel"
-	_status.position = Vector2(6, 5)
-	_status.size = Vector2(308, 17)
-	_status.add_theme_font_size_override("font_size", 8)
-	_status.add_theme_color_override("font_color", Color("f8fafc"))
+	_status.hide()
 	_ui_layer.add_child(_status)
 
 	# 地点提示独立于 PalDialogBox，避免场景进入脚本立刻播放对话时互相覆盖。

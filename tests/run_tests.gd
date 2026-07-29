@@ -29,6 +29,7 @@ func _init() -> void:
 	_test_rng_playback_stream()
 	_test_map_helpers()
 	_test_runtime_paths()
+	_test_web_export_uses_formal_startup()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
 	_test_voc_decoder()
@@ -371,6 +372,17 @@ func _test_runtime_paths() -> void:
 	_expect(PalRuntimePaths.generated_root_for(false, true) == "res://generated/pal", "bundled Web and Android exports read the generated PAL content embedded in the package")
 	_expect(PalRuntimePaths.generated_root_for(false) == "user://generated/pal", "desktop export writes generated PAL content to the user directory")
 	_expect(PalRuntimePaths.content_root().ends_with("/generated/pal/content"), "runtime content root appends the database directory")
+
+
+func _test_web_export_uses_formal_startup() -> void:
+	var file := FileAccess.open("res://tools/prepare_eva_web_project.mjs", FileAccess.READ)
+	var source := file.get_as_text() if file != null else ""
+	_expect(
+		file != null
+		and source.find('run/main_scene="res://scenes/main.tscn"') >= 0
+		and source.find('run/main_scene="res://scenes/map_explorer.tscn"') < 0,
+		"Web export keeps the formal animated startup and new/load title menu",
+	)
 
 
 func _test_tilemap_runtime_retirement() -> void:
@@ -1993,8 +2005,8 @@ func _test_explorer_hud_canvas_layer() -> void:
 	var explorer: Control = explorer_script.new()
 	explorer._build_interface()
 	_expect(explorer._ui_layer is CanvasLayer and explorer._ui_layer.layer > 0, "explorer HUD uses an independent foreground CanvasLayer")
-	_expect(explorer._status.get_parent() == explorer._ui_layer, "status label stays outside the Camera2D world canvas")
-	_expect(explorer._location_toast.get_parent() == explorer._ui_layer and explorer._location_toast.position == Vector2(104, 28) and explorer._location_toast.size == Vector2(112, 24), "scene location toast stays centered below the HUD status line")
+	_expect(explorer._status.get_parent() == explorer._ui_layer and not explorer._status.visible and explorer._ui_layer.get_node_or_null("StatusBackground") == null, "formal explorer keeps diagnostics hidden and removes the permanent top status bar")
+	_expect(explorer._location_toast.get_parent() == explorer._ui_layer and explorer._location_toast.position == Vector2(104, 28) and explorer._location_toast.size == Vector2(112, 24), "scene location toast stays centered on the foreground HUD")
 	_expect(explorer._fbp_layer.get_parent() == explorer._ui_layer and explorer._fbp_layer.get_index() > explorer._location_toast.get_index() and explorer._fbp_layer.get_index() < explorer._dialog_box.get_index(), "FBP cutscene layer covers world HUD while keeping narrative dialog visible")
 	_expect(explorer._mobile_controls.get_parent() == explorer._ui_layer and explorer._mobile_controls.get_index() > explorer._rng_player.get_index() and explorer._mobile_controls.get_index() < explorer._dialog_box.get_index(), "mobile exploration controls use the HUD CanvasLayer below dialogue and modal menus")
 	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")

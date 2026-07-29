@@ -33,7 +33,6 @@ async function prepareProjectConfig() {
   if (!config.includes(originalEntry)) {
     throw new Error(`无法定位原项目入口：${sourcePath}`)
   }
-  config = config.replace(originalEntry, 'run/main_scene="res://scenes/map_explorer.tscn"')
   if (/^\[autoload\]$/m.test(config)) {
     config = config.replace(
       /^\[autoload\]$/m,
