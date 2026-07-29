@@ -110,11 +110,18 @@ func _test_classic_font_aliases() -> void:
 		"棧": [32, 0, 16, 15],
 		"間": [48, 0, 16, 15],
 		"敗": [64, 0, 16, 15],
+		"級": [80, 0, 16, 15],
+		"暫": [96, 0, 16, 15],
+		"數": [112, 0, 16, 15],
+		"據": [128, 0, 16, 15],
+		"錢": [144, 0, 16, 15],
 	}
 	var resolved := PalClassicFont.with_compatibility_aliases(original)
 	_expect(resolved.get("戏") == original["戲"] and resolved.get("档") == original["檔"], "classic font maps simplified game/save labels to original Big5 bitmap glyphs")
 	_expect(resolved.get("栈") == original["棧"] and resolved.get("间") == original["間"], "classic font maps simplified location labels without falling back to a system font")
 	_expect(resolved.get("败") == original["敗"], "classic font maps simplified battle failure text to the original Big5 bitmap glyph")
+	_expect(resolved.get("级") == original["級"] and resolved.get("暂") == original["暫"], "classic font maps Toy leaderboard level and empty-state labels to Big5 glyphs")
+	_expect(resolved.get("数") == original["數"] and resolved.get("据") == original["據"] and resolved.get("钱") == original["錢"], "classic font maps Toy leaderboard data and cash labels to Big5 glyphs")
 	_expect(not original.has("戏") and not original.has("档"), "classic font compatibility does not mutate imported glyph metadata")
 	var atlas_path := "user://pal_classic_font_atlas_test.png"
 	var atlas_image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
@@ -2265,7 +2272,8 @@ func _test_game_menu_inventory() -> void:
 	_expect(quit_requests[0] == 1 and not menu.visible, "system quit entry closes the menu and requests application exit")
 	_expect(menu._main_item_count() == 4, "non-Toy builds keep the original four-item classic main menu")
 	menu.configure_toy_features(true, "Toy connected")
-	_expect(menu._main_item_count() == 5, "Toy builds expose a fifth cloud entry without changing non-Web menus")
+	_expect(menu._main_item_count() == 6, "Toy builds expose cloud saves and leaderboards as two peer entries without changing non-Web menus")
+	_expect(PalGameMenu.TOY_MAIN_LABELS == ["云端存档", "排行榜"] and PalGameMenu.TOY_ACTION_LABELS == ["上传此存档", "下载到本地"], "Toy cloud and leaderboard labels stay separate and avoid unsupported slot glyphs")
 	var cloud_state_requests := [0]
 	menu.toy_cloud_state_requested.connect(func() -> void: cloud_state_requests[0] += 1)
 	menu.open_toy(false)
@@ -2276,6 +2284,7 @@ func _test_game_menu_inventory() -> void:
 	menu.toy_cloud_upload_requested.connect(func(slot: int) -> void: cloud_uploads.append(slot))
 	menu._toy_selection = 0
 	menu._confirm_selection()
+	_expect(menu._toy_confirmation_text() == "上传并覆盖云存档？", "Toy upload confirmation uses a complete centered prompt")
 	menu._confirmation_selection = 1
 	menu._confirm_selection()
 	_expect(cloud_uploads == [1] and menu._toy_busy, "Toy cloud upload requires confirmation and emits the selected populated slot")
@@ -2284,20 +2293,30 @@ func _test_game_menu_inventory() -> void:
 	menu.toy_cloud_download_requested.connect(func(slot: int) -> void: cloud_downloads.append(slot))
 	menu._toy_selection = 1
 	menu._confirm_selection()
+	_expect(menu._toy_confirmation_text() == "下载并覆盖本地存档 001？", "Toy download confirmation names the destination save without unsupported glyphs")
 	menu._confirmation_selection = 1
 	menu._confirm_selection()
 	_expect(cloud_downloads == [1] and menu._toy_busy, "Toy cloud download requires confirmation before overwriting a local slot")
 	menu.notify_toy_cloud_operation(true, "downloaded")
 	var rank_requests: Array[int] = []
 	menu.toy_rank_requested.connect(func(board: int) -> void: rank_requests.append(board))
-	menu._toy_selection = 2
+	menu.go_back()
+	menu._main_selection = 5
 	menu._confirm_selection()
-	_expect(menu.current_page == PalGameMenu.Page.TOY_RANK and rank_requests == [1], "Toy cloud page opens the first leaderboard and requests its data")
+	_expect(menu.current_page == PalGameMenu.Page.TOY_RANK and rank_requests == [1], "Toy main menu opens the peer leaderboard entry and requests its data")
+	menu.go_back()
+	_expect(menu.current_page == PalGameMenu.Page.MAIN, "Toy leaderboard returns to the same-level main menu")
 	var score_session := GameSession.new()
 	score_session.role_levels = PackedInt32Array([12, 10, 8, 1, 1, 1])
 	score_session.party_roles = PackedInt32Array([0, 1, 2])
 	score_session.cash = 3456
 	_expect(ToyService.scores_for_session(score_session) == {"1": 12, "2": 30, "3": 3456}, "Toy leaderboard scores map to leader level, active-party total and cash")
+	var preview_service := ToyService.new()
+	var preview_availability: Array = []
+	preview_service.availability_changed.connect(func(available: bool, message: String) -> void: preview_availability.append([available, message]))
+	preview_service._on_availability_result([JSON.stringify({"success": true, "preview": true, "cloud": false, "rank": false, "closeBrowser": false})])
+	_expect(preview_service.is_available() and preview_availability.back()[0] == true and "预览模式" in preview_availability.back()[1], "Toy preview keeps the complete cloud UI visible while explaining that real storage starts on the formal page")
+	preview_service.free()
 	menu.free()
 
 

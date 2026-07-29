@@ -52,7 +52,8 @@ func _init() -> void:
 	await process_frame
 	var output_dir := ProjectSettings.globalize_path("res://generated/pal/visual_tests")
 	DirAccess.make_dir_recursive_absolute(output_dir)
-	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_main_menu.png"))
+	var classic_main_image := viewport.get_texture().get_image()
+	classic_main_image.save_png(output_dir.path_join("classic_main_menu.png"))
 	menu.open_inventory()
 	await process_frame
 	await process_frame
@@ -187,6 +188,19 @@ func _init() -> void:
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_save_slots.png"))
 	menu.configure_toy_features(true, "Toy 云存档与排行榜已连接")
+	menu.open_main()
+	menu._main_selection = 4
+	await process_frame
+	await process_frame
+	var toy_main_image := viewport.get_texture().get_image()
+	if toy_main_image.save_png(output_dir.path_join("classic_toy_main_menu.png")) != OK:
+		printerr("FAIL: 无法写入 Toy 同级主菜单截图")
+		quit(1)
+		return
+	if _pixel_difference_in_rect(classic_main_image, toy_main_image, Rect2i(0, 35, 100, 130)) < 200:
+		printerr("FAIL: Toy 主菜单没有形成同级的云端存档与排行榜入口")
+		quit(1)
+		return
 	menu.open_toy(false)
 	menu.notify_toy_cloud_info({
 		"saved_at": "2026-07-29 20:30:00",
@@ -200,12 +214,22 @@ func _init() -> void:
 		printerr("FAIL: 无法写入 Toy 云存档页截图")
 		quit(1)
 		return
-	menu.current_page = PalGameMenu.Page.TOY_RANK
-	menu.notify_toy_rank(1, [
-		{"rank": 1, "score": 99, "nickname": "李逍遥"},
-		{"rank": 2, "score": 87, "nickname": "赵灵儿"},
-		{"rank": 3, "score": 72, "nickname": "林月如"},
-	], {"ranked": true, "rank": 8, "score": 42}, "")
+	menu._toy_selection = 0
+	menu._confirm_selection()
+	await process_frame
+	await process_frame
+	var toy_confirm_image := viewport.get_texture().get_image()
+	if toy_confirm_image.save_png(output_dir.path_join("classic_toy_confirm.png")) != OK:
+		printerr("FAIL: 无法写入 Toy 云存档确认框截图")
+		quit(1)
+		return
+	if _pixel_difference_in_rect(toy_cloud_image, toy_confirm_image, Rect2i(36, 50, 248, 100)) < 800:
+		printerr("FAIL: Toy 云存档确认框没有形成清晰的居中模态层")
+		quit(1)
+		return
+	menu.go_back()
+	menu.open_toy_rank(false)
+	menu.notify_toy_rank(1, [], {}, "")
 	await process_frame
 	await process_frame
 	var toy_rank_image := viewport.get_texture().get_image()
@@ -217,7 +241,7 @@ func _init() -> void:
 		printerr("FAIL: Toy 云存档页与排行榜页没有形成有效的像素差异")
 		quit(1)
 		return
-	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 云存档与排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 同级主菜单、云存档、确认框与空排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
 		field_magic_id,
 		session.attack_strength_for(0),
 		session.magic_strength_for(0),

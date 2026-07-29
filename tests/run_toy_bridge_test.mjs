@@ -48,7 +48,7 @@ const toy = {
   },
 }
 
-const window = { toy }
+const window = { toy, location: { pathname: '/toy/ohoj0wRiHHOC0K32/index.html' } }
 vm.runInNewContext(bridgeMatch[1], { window, TextEncoder, Promise, JSON, String, Number, Array, Boolean, Error })
 const bridge = window.SwordPalToyBridge
 assert.ok(bridge?.available(), 'bridge must detect the injected Toy SDK')

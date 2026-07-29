@@ -62,7 +62,8 @@ enum Page {
 
 const MAIN_MENU_POSITION := Vector2i(3, 37)
 const MOBILE_BACK_RECT := Rect2(276, 2, 40, 30)
-const MAIN_ITEM_POSITIONS := [Vector2i(16, 50), Vector2i(16, 68), Vector2i(16, 86), Vector2i(16, 104), Vector2i(16, 122)]
+const MAIN_ITEM_POSITIONS := [Vector2i(16, 50), Vector2i(16, 68), Vector2i(16, 86), Vector2i(16, 104), Vector2i(16, 122), Vector2i(16, 140)]
+const TOY_MAIN_LABELS := ["云端存档", "排行榜"]
 const INVENTORY_ACTION_POSITION := Vector2i(30, 60)
 const SYSTEM_MENU_POSITION := Vector2i(40, 60)
 const SYSTEM_ITEM_POSITIONS := [Vector2i(53, 72), Vector2i(53, 90), Vector2i(53, 108), Vector2i(53, 126), Vector2i(53, 144)]
@@ -75,8 +76,12 @@ const SAVE_SLOT_COUNT_POSITION_X := 276
 const SAVE_DETAIL_TEXT_WIDTH := 136
 const SAVE_DETAIL_PARTY_POSITION := Vector2i(12, 92)
 const SAVE_DETAIL_PARTY_SPACING := 28
-const TOY_ACTION_POSITIONS := [Vector2i(38, 91), Vector2i(38, 113), Vector2i(38, 135)]
+const TOY_ACTION_POSITIONS := [Vector2i(38, 101), Vector2i(38, 127)]
+const TOY_ACTION_LABELS := ["上传此存档", "下载到本地"]
 const TOY_RANK_NAMES := ["逍遥等级", "队伍等级", "最高金钱"]
+const TOY_CONFIRM_BOX_POSITION := Vector2i(40, 55)
+const TOY_CONFIRM_OPTION_POSITIONS := [Vector2i(96, 111), Vector2i(208, 111)]
+const TOY_CONFIRM_OPTION_HITBOXES := [Rect2i(72, 98, 80, 40), Rect2i(176, 98, 80, 40)]
 const INVENTORY_COLUMNS := 3
 const INVENTORY_ROWS := 7
 const INVENTORY_ITEM_WIDTH := 100
@@ -225,6 +230,11 @@ func configure_toy_features(available: bool, message: String = "") -> void:
 		_toy_status = message
 	if not available and _main_selection >= 4:
 		_main_selection = 3
+	if not available and current_page in [Page.TOY, Page.TOY_RANK, Page.TOY_CONFIRM]:
+		if _close_toy_on_cancel:
+			close_menu()
+		else:
+			current_page = Page.MAIN
 	queue_redraw()
 
 
@@ -249,7 +259,7 @@ func open_load_slots(close_on_cancel: bool = false) -> void:
 	queue_redraw()
 
 
-## 打开 Toy 云存档与排行榜页；标题页可选择取消后直接关闭。
+## 打开 Toy 云存档页；标题页可选择取消后直接关闭。
 func open_toy(close_on_cancel: bool = false) -> void:
 	if database == null or session == null or not _toy_features_available:
 		return
@@ -261,6 +271,19 @@ func open_toy(close_on_cancel: bool = false) -> void:
 	show()
 	queue_redraw()
 	toy_cloud_state_requested.emit()
+
+
+## 打开与云存档同级的 Toy 排行榜页；标题页可选择取消后直接关闭。
+func open_toy_rank(close_on_cancel: bool = false) -> void:
+	if database == null or session == null or not _toy_features_available:
+		return
+	_close_toy_on_cancel = close_on_cancel
+	_toy_busy = true
+	_toy_status = "正在读取排行榜…"
+	current_page = Page.TOY_RANK
+	show()
+	queue_redraw()
+	toy_rank_requested.emit(_toy_rank_board)
 
 
 ## 设置 Toy 页的异步忙碌状态和玩家可见诊断。
@@ -442,8 +465,11 @@ func go_back() -> void:
 				current_page = Page.MAIN
 				queue_redraw()
 		Page.TOY_RANK:
-			current_page = Page.TOY
-			queue_redraw()
+			if _close_toy_on_cancel:
+				close_menu()
+			else:
+				current_page = Page.MAIN
+				queue_redraw()
 		Page.TOY_CONFIRM:
 			_toy_pending_action = ""
 			current_page = Page.TOY
@@ -488,7 +514,7 @@ func _gui_input(event: InputEvent) -> void:
 		return
 	match current_page:
 		Page.MAIN:
-			for index in range(MAIN_ITEM_POSITIONS.size()):
+			for index in range(_main_item_count()):
 				if Rect2i(MAIN_ITEM_POSITIONS[index] - Vector2i(3, 2), Vector2i(46, 18)).has_point(point):
 					_main_selection = index
 					_confirm_selection()
@@ -535,8 +561,11 @@ func _gui_input(event: InputEvent) -> void:
 				_toy_busy = true
 				toy_rank_requested.emit(board)
 		Page.TOY_CONFIRM:
-			_confirmation_selection = 0 if point.y < 110 else 1
-			_confirm_selection()
+			for index in range(TOY_CONFIRM_OPTION_HITBOXES.size()):
+				if TOY_CONFIRM_OPTION_HITBOXES[index].has_point(point):
+					_confirmation_selection = index
+					_confirm_selection()
+					break
 		Page.STATUS:
 			_status_party_selection = posmod(_status_party_selection + (1 if point.x >= 160 else -1), maxi(1, session.party_roles.size()))
 		Page.MAGIC_CASTER:
@@ -650,7 +679,7 @@ func _draw_main_menu() -> void:
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _main_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
-		_draw_pal_text(database.get_word(3 + index) if index < 4 else "云端", MAIN_ITEM_POSITIONS[index], _palette_color(color_index), true)
+		_draw_pal_text(database.get_word(3 + index) if index < 4 else TOY_MAIN_LABELS[index - 4], MAIN_ITEM_POSITIONS[index], _palette_color(color_index), true)
 
 
 func _draw_inventory_action() -> void:
@@ -1028,6 +1057,8 @@ func _confirm_selection() -> void:
 				current_page = Page.SYSTEM
 			elif _main_selection == 4:
 				open_toy(false)
+			elif _main_selection == 5:
+				open_toy_rank(false)
 		Page.INVENTORY_ACTION:
 			_inventory_for_equipment = _action_selection == 0
 			_inventory_return_page = Page.INVENTORY_ACTION
@@ -1075,12 +1106,7 @@ func _confirm_selection() -> void:
 		Page.TOY:
 			if _toy_busy:
 				return
-			if _toy_selection == 2:
-				current_page = Page.TOY_RANK
-				_toy_busy = true
-				_toy_status = "正在读取排行榜…"
-				toy_rank_requested.emit(_toy_rank_board)
-			elif _toy_selection == 0 and bool(_selected_save_slot_metadata().get("can_load", false)):
+			if _toy_selection == 0 and bool(_selected_save_slot_metadata().get("can_load", false)):
 				_toy_pending_action = "upload"
 				_confirmation_selection = 0
 				current_page = Page.TOY_CONFIRM
@@ -1111,9 +1137,8 @@ func _draw_toy_page() -> void:
 	if not _toy_cloud_metadata.is_empty():
 		cloud_label = "云端：%s" % _format_save_time(str(_toy_cloud_metadata.get("saved_at", "")))
 	_draw_pal_text(cloud_label, Vector2i(20, 38), _palette_color(COLOR_NORMAL), true)
-	_draw_pal_text("本地槽位 %03d  ◀  ▶" % (_save_slot_selection + 1), Vector2i(20, 61), _palette_color(COLOR_CONFIRMED), true)
-	var labels := ["上传此槽位", "下载到此槽", "查看排行榜"]
-	for index in range(labels.size()):
+	_draw_pal_text("本地存档 %03d  ◀  ▶" % (_save_slot_selection + 1), Vector2i(20, 61), _palette_color(COLOR_CONFIRMED), true)
+	for index in range(TOY_ACTION_LABELS.size()):
 		var enabled := not _toy_busy
 		if index == 0:
 			enabled = enabled and bool(_selected_save_slot_metadata().get("can_load", false))
@@ -1122,17 +1147,24 @@ func _draw_toy_page() -> void:
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _toy_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
-		_draw_pal_text(labels[index], TOY_ACTION_POSITIONS[index], _palette_color(color_index), true)
+		_draw_pal_text(TOY_ACTION_LABELS[index], TOY_ACTION_POSITIONS[index], _palette_color(color_index), true)
 	var status_lines := _wrap_pal_text(_toy_status, 278, 2)
 	for line_index in range(status_lines.size()):
 		_draw_pal_text(status_lines[line_index], Vector2i(20, 162 + line_index * 16), _palette_color(0x3c), true)
 
 
 func _draw_toy_confirmation() -> void:
-	draw_rect(Rect2(58, 63, 204, 78), Color(0, 0, 0, 0.88))
-	var action := "上传并覆盖云存档？" if _toy_pending_action == "upload" else "覆盖本地槽位 %03d？" % (_save_slot_selection + 1)
-	_draw_pal_text(action, Vector2i(70, 67), _palette_color(COLOR_CONFIRMED), true)
-	_draw_confirmation()
+	draw_rect(Rect2(Vector2.ZERO, size), Color(0, 0, 0, 0.58))
+	_draw_classic_box(TOY_CONFIRM_BOX_POSITION, 3, 13, 0, 6)
+	var action := _toy_confirmation_text()
+	_draw_pal_text(action, Vector2i(160 - int(_pal_text_width(action) / 2.0), 75), _palette_color(COLOR_CONFIRMED), true)
+	for index in range(2):
+		var color_index := _selected_color_index() if index == _confirmation_selection else COLOR_NORMAL
+		_draw_pal_text(database.get_word(19 + index), TOY_CONFIRM_OPTION_POSITIONS[index], _palette_color(color_index), true)
+
+
+func _toy_confirmation_text() -> String:
+	return "上传并覆盖云存档？" if _toy_pending_action == "upload" else "下载并覆盖本地存档 %03d？" % (_save_slot_selection + 1)
 
 
 func _draw_toy_rank_page() -> void:
@@ -1156,7 +1188,7 @@ func _draw_toy_rank_page() -> void:
 
 
 func _main_item_count() -> int:
-	return 5 if _toy_features_available else 4
+	return 6 if _toy_features_available else 4
 
 
 func _draw_confirmation() -> void:

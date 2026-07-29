@@ -34,7 +34,8 @@ const TITLE_MUSIC := 5
 const OPENING_MENU_MUSIC := 4
 const COLOR_NORMAL := 0x4f
 const COLOR_SELECTED_FIRST := 0xf9
-const MENU_POSITIONS := [Vector2i(125, 95), Vector2i(125, 112), Vector2i(125, 129)]
+const MENU_POSITIONS := [Vector2i(125, 95), Vector2i(125, 112), Vector2i(125, 129), Vector2i(125, 146)]
+const TOY_MENU_LABELS := ["云端存档", "排行榜"]
 const REQUIRED_STARTUP_FILES := [
 	"content/battle/backgrounds/038.idx",
 	"content/battle/backgrounds/039.idx",
@@ -491,6 +492,8 @@ func _confirm_opening_menu() -> void:
 		elif menu_selection == 2 and _toy_coordinator != null and _toy_coordinator.is_available():
 			_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
 			_save_menu.open_toy(true)
+		elif menu_selection == 3 and _toy_coordinator != null and _toy_coordinator.is_available():
+			_save_menu.open_toy_rank(true)
 
 
 func _on_load_slot_requested(slot: int) -> void:
@@ -583,11 +586,11 @@ func _draw_opening_menu() -> void:
 		draw_texture_rect(_opening_menu_texture, Rect2(Vector2.ZERO, size), false)
 	for index in range(_opening_menu_item_count()):
 		var color_index := COLOR_SELECTED_FIRST + int(Time.get_ticks_msec() / 100) % 6 if index == menu_selection else COLOR_NORMAL
-		_draw_pal_text(_database.get_word(7 + index) if index < 2 else "云端存档", MENU_POSITIONS[index], _palette_color(color_index), true)
+		_draw_pal_text(_database.get_word(7 + index) if index < 2 else TOY_MENU_LABELS[index - 2], MENU_POSITIONS[index], _palette_color(color_index), true)
 
 
 func _opening_menu_item_count() -> int:
-	return 3 if _toy_coordinator != null and _toy_coordinator.is_available() else 2
+	return 4 if _toy_coordinator != null and _toy_coordinator.is_available() else 2
 
 
 func _draw_pal_text(text: String, position: Vector2i, color: Color, shadow: bool = false) -> void:

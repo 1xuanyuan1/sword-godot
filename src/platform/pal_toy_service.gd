@@ -60,6 +60,7 @@ const BRIDGE_SOURCE := """
     checkAbilities(callback) {
       finish(callback, async () => {
         const toy = requireToy();
+        const preview = (window.location?.pathname || "").includes("/toy/preview/");
         const names = [
           "getCloudStorage", "setCloudStorage", "removeCloudStorage",
           "submitScore", "getRankList", "getMyRank", "closeBrowser"
@@ -74,6 +75,7 @@ const BRIDGE_SOURCE := """
         }
         return {
           success: true,
+          preview,
           cloud: supported.getCloudStorage && supported.setCloudStorage && supported.removeCloudStorage,
           rank: supported.submitScore && supported.getRankList && supported.getMyRank,
           closeBrowser: supported.closeBrowser,
@@ -180,7 +182,9 @@ const BRIDGE_SOURCE := """
 """
 
 var _bridge: JavaScriptObject
+var _sdk_loaded: bool = false
 var _available: bool = false
+var _preview_host: bool = false
 var _cloud_supported: bool = false
 var _rank_supported: bool = false
 var _close_supported: bool = false
@@ -203,8 +207,9 @@ func initialize() -> void:
 	if _bridge == null or not bool(_bridge.available()):
 		availability_changed.emit(false, "Toy SDK 未加载")
 		return
-	_available = true
-	availability_changed.emit(true, "正在检查 Toy 能力…")
+	_sdk_loaded = true
+	_available = false
+	availability_changed.emit(false, "正在检查 Toy 能力…")
 	_availability_callback = JavaScriptBridge.create_callback(_on_availability_result)
 	_bridge.checkAbilities(_availability_callback)
 
@@ -228,6 +233,9 @@ func rank_supported() -> bool:
 func request_cloud_info() -> void:
 	if not _available or _bridge == null:
 		cloud_info_received.emit({}, "Toy 云存档不可用")
+		return
+	if _preview_host:
+		cloud_info_received.emit({}, "预览模式：正式页面将连接云存档")
 		return
 	_cloud_info_callback = JavaScriptBridge.create_callback(_on_cloud_info_result)
 	_bridge.getCloudInfo(_cloud_info_callback)
@@ -279,7 +287,7 @@ func submit_session_scores(session: GameSession) -> void:
 
 ## 在 B 站 App WebView 内请求关闭当前容器；不支持时通知调用方回退到 Godot 退出。
 func request_close_browser() -> void:
-	if not _available or not _close_supported:
+	if not _sdk_loaded:
 		close_finished.emit(false)
 		return
 	_close_callback = JavaScriptBridge.create_callback(_on_close_result)
@@ -371,22 +379,45 @@ func _parse_callback(arguments: Array) -> Dictionary:
 	return parsed if parsed is Dictionary else {"success": false, "error": "Toy SDK 返回了无效数据"}
 
 
+func _result_error(result: Dictionary, fallback: String) -> String:
+	var raw := str(result.get("error", "")).strip_edges()
+	if raw.is_empty():
+		return fallback
+	var normalized := raw.to_lower()
+	if "toy id not available on host" in normalized:
+		return "Toy 预览页没有正式 ID，云功能将在正式页面启用"
+	if raw.begins_with("[ToySDK]"):
+		push_warning("%s：%s" % [fallback, raw])
+		if "login" in normalized:
+			return "请先登录 B 站再使用 Toy 云功能"
+		return "%s，请稍后重试" % fallback
+	return raw
+
+
 func _on_availability_result(arguments: Array) -> void:
 	var result := _parse_callback(arguments)
 	if not bool(result.get("success", false)):
 		_available = false
-		availability_changed.emit(false, str(result.get("error", "Toy SDK 能力检查失败")))
+		availability_changed.emit(false, _result_error(result, "Toy SDK 能力检查失败"))
 		return
 	_cloud_supported = bool(result.get("cloud", false))
 	_rank_supported = bool(result.get("rank", false))
 	_close_supported = bool(result.get("closeBrowser", false))
-	availability_changed.emit(true, "Toy 云存档与排行榜已连接")
+	_preview_host = bool(result.get("preview", false))
+	_available = _cloud_supported and _rank_supported
+	if _available:
+		availability_changed.emit(true, "Toy 云存档与排行榜已连接")
+	elif _preview_host:
+		_available = true
+		availability_changed.emit(true, "Toy 预览模式：正式页面将启用云功能")
+	else:
+		availability_changed.emit(false, "当前环境不支持 Toy 云存档与排行榜")
 
 
 func _on_cloud_info_result(arguments: Array) -> void:
 	var result := _parse_callback(arguments)
 	if not bool(result.get("success", false)):
-		cloud_info_received.emit({}, str(result.get("error", "读取云存档失败")))
+		cloud_info_received.emit({}, _result_error(result, "读取云存档失败"))
 		return
 	var manifest = result.get("manifest")
 	cloud_info_received.emit(manifest if manifest is Dictionary else {}, "")
@@ -394,13 +425,13 @@ func _on_cloud_info_result(arguments: Array) -> void:
 
 func _on_cloud_upload_result(arguments: Array) -> void:
 	var result := _parse_callback(arguments)
-	cloud_upload_finished.emit(bool(result.get("success", false)), "云存档上传完成" if bool(result.get("success", false)) else str(result.get("error", "云存档上传失败")))
+	cloud_upload_finished.emit(bool(result.get("success", false)), "云存档上传完成" if bool(result.get("success", false)) else _result_error(result, "云存档上传失败"))
 
 
 func _on_cloud_download_result(arguments: Array) -> void:
 	var result := _parse_callback(arguments)
 	if not bool(result.get("success", false)):
-		cloud_download_finished.emit(false, str(result.get("error", "云存档下载失败")), "")
+		cloud_download_finished.emit(false, _result_error(result, "云存档下载失败"), "")
 		return
 	var manifest = result.get("manifest")
 	if manifest is not Dictionary:
@@ -418,7 +449,7 @@ func _on_rank_result(arguments: Array) -> void:
 	var result := _parse_callback(arguments)
 	var board := clampi(int(result.get("board", 1)), 1, 3)
 	if not bool(result.get("success", false)):
-		rank_received.emit(board, [], {}, str(result.get("error", "读取排行榜失败")))
+		rank_received.emit(board, [], {}, _result_error(result, "读取排行榜失败"))
 		return
 	var entries = result.get("entries")
 	var mine = result.get("mine")
@@ -428,7 +459,7 @@ func _on_rank_result(arguments: Array) -> void:
 
 func _on_scores_result(arguments: Array) -> void:
 	var result := _parse_callback(arguments)
-	scores_submitted.emit(bool(result.get("success", false)), "" if bool(result.get("success", false)) else str(result.get("error", "排行榜上报失败")))
+	scores_submitted.emit(bool(result.get("success", false)), "" if bool(result.get("success", false)) else _result_error(result, "排行榜上报失败"))
 
 
 func _on_close_result(arguments: Array) -> void:
