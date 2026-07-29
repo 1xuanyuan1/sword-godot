@@ -361,6 +361,13 @@ Map 012 的 384×216 重制视野、中央 UI 核心和 1920×1080 截图门禁�
   --script res://tests/run_local_map012_remaster_2d_visual_test.gd
 ```
 
+Map 010 的醉道士剧情机位在私有高清包存在时使用独立真窗口门禁；该测试只接受正式 `PalTileMapWorld`、完整 172 帧 TileSet 和 1920×1080 截图：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . \
+  --script res://tests/run_local_map010_remaster_2d_visual_test.gd
+```
+
 制作私有高清地图前，先从玩家本地导入内容生成 GOP 五倍兼容图集、`pal-map-tileset.json` 和逐帧覆盖台账。该工具不会修改公开运行资源，`--out` 必须指向私有素材仓或被 Git 忽略目录；焦点坐标使用 PAL 世界坐标，Map 012 客栈基准检查点的 384×216 视野左上角为 `(464,1024)`：
 
 ```bash
