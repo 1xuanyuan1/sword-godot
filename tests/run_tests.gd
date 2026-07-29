@@ -14,6 +14,7 @@ const PresentationBuilder := preload("res://src/presentation/pal_world_presentat
 const RemasterAssetResolver := preload("res://src/presentation/pal_remaster_asset_resolver.gd")
 const RemasterMapTileset := preload("res://src/presentation/pal_remaster_map_tileset.gd")
 const RemasterSpriteAtlas := preload("res://src/presentation/pal_remaster_sprite_atlas.gd")
+const ChromaGreen := preload("res://tools/pal_chroma_green.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -37,6 +38,7 @@ func _init() -> void:
 	_test_world_presentation()
 	_test_remaster_asset_resolver()
 	_test_remaster_asset_contracts()
+	_test_map_tile_batch_chroma_green()
 	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
@@ -108,6 +110,13 @@ func _expect(condition: bool, message: String) -> void:
 	_checks += 1
 	if not condition:
 		_failures.append(message)
+
+
+func _test_map_tile_batch_chroma_green() -> void:
+	_expect(ChromaGreen.matches(Color(0.0, 1.0, 0.0)), "map tile batch rejects bright chroma green")
+	_expect(ChromaGreen.matches(Color(0.02, 0.18, 0.03)), "map tile batch rejects dark generated chroma gradients")
+	_expect(not ChromaGreen.matches(Color(0.32, 0.34, 0.33)), "map tile batch keeps neutral gray pixels")
+	_expect(not ChromaGreen.matches(Color(0.42, 0.24, 0.12)), "map tile batch keeps ordinary wood pixels")
 
 
 func _test_classic_font_aliases() -> void:

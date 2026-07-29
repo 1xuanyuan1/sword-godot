@@ -4,6 +4,8 @@
 ## 该步骤只替换颜色与内部像素细节，不允许模型改变图块占位、遮挡轮廓或 MAP 语义。
 extends SceneTree
 
+const ChromaGreen := preload("res://tools/pal_chroma_green.gd")
+
 
 func _init() -> void:
 	var options := _parse_options(OS.get_cmdline_user_args())
@@ -93,15 +95,10 @@ func _replace_frame_rgb(target: Image, target_rect: Rect2i, source: Image, sourc
 			var generated_color := source.get_pixelv(source_rect.position + Vector2i(x, y))
 			# 图片模型可能把严格槽位中的轮廓画窄；这些仍为绿幕的像素保留原图，
 			# 避免将 #00FF00 写成不透明接缝，同时不扩大原 GOP Alpha。
-			if _is_chroma_green(generated_color):
+			if ChromaGreen.matches(generated_color):
 				continue
 			generated_color.a = 1.0
 			target.set_pixelv(target_rect.position + Vector2i(x, y), generated_color)
-
-
-func _is_chroma_green(color: Color) -> bool:
-	return color.g >= 0.75 and color.g - maxf(color.r, color.b) >= 0.35
-
 
 func _frames_by_index(raw_frames) -> Dictionary:
 	var result := {}
