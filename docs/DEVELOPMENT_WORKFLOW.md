@@ -374,6 +374,15 @@ python3 tools/validate_pal_map_tileset.py \
   --expected-map 12 --expected-frame-count 310
 ```
 
+人物母版批准后，按原 MGO 帧号导出 2DCS `p` 使用的中性姿势参考。输出会去除原角色配色，只保留四方向、三帧步态、轮廓、重心与统一脚底基线；图片和清单必须写入 Private 素材仓或 `generated/`：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tools/export_pal_character_pose_references.gd -- \
+  --sprite=2 --frames=0,1,2,3,4,5,6,7,8,9,10,11 \
+  --out=/private/sword-assets/art/source/chapter_01/characters/li_xiaoyao/pose_references/run_v001
+```
+
 初始五倍图集只承担结构完整的兼容底稿。美术生产按原 GOP `source_frame_index` 逐帧替换已审核图块；未精修帧保持最近邻兼容图块，不得把整张概念图直接接成可行走地图，也不得改变 MAP、阻挡、逻辑高度或事件坐标。
 
 图片模型批量精修图块时，先把明确的 GOP 帧排成固定 1536×1024 绿幕制作板，再把生成结果写入新的图集版本。写回器永远复用原 GOP Alpha；模型扩大的轮廓会被裁掉，仍为绿幕的内部像素会保留原图，避免绿色接缝。不得覆盖已有版本目录：

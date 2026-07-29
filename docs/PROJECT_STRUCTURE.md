@@ -88,6 +88,7 @@ sword/
 - `tests/run_local_tilemap_inventory_test.gd`：Headless 遍历全部本机有效地图和场景引用，验证正式 TileMapLayer 资源结构。
 - `tests/run_local_presentation_shell_visual_test.gd`：使用真实窗口渲染器输出 1920×1080 Shell 截图，验证经典与 384×216 重制模式切换。
 - `tests/run_local_map012_remaster_2d_visual_test.gd`：真实窗口验证 Map 012 的 384×216 TileMap 视野与中央 320×200 UI 核心。
+- `tools/export_pal_character_pose_references.gd`：从玩家本地 MGO 帧导出不含原配色的三色中性姿势参考及帧号/方向/哈希清单，供 2DCS `p` 使用。
 - `src/presentation/pal_remaster_map_tileset.gd` / `pal_remaster_sprite_atlas.gd`：运行时严格加载 5 倍地图图块和逐原帧人物 Atlas，失败时不产生混搭。
 - `tools/validate_pal_map_tileset.py` / `validate_pal_sprite_atlas.py`：素材入仓前校验 PNG 尺寸、帧覆盖、统一画布、pivot 与安全路径。
 - `tests/support/`：只供测试使用的 CPU 地图／场景像素基准，不被正式游戏或导入器引用。
