@@ -33,6 +33,18 @@ static func pointer_position(event: InputEvent) -> Vector2:
 	return Vector2.INF
 
 
+## 全局输入回调使用：384×216 时减去 (32,8)，核心区外不允许命中旧 UI。
+## Control._gui_input 已经收到本地坐标，不应调用此函数重复换算。
+static func classic_pointer_position(event: InputEvent, viewport_size: Vector2i, reject_outside: bool = true) -> Vector2:
+	var point := pointer_position(event)
+	if not point.is_finite():
+		return Vector2.INF
+	var remaster_enabled := viewport_size == PalPresentationMetrics.REMASTER_LOGICAL_SIZE
+	if remaster_enabled and not reject_outside:
+		return point - Vector2(PalPresentationMetrics.REMASTER_CLASSIC_OFFSET)
+	return PalPresentationMetrics.logical_to_classic_ui(point, remaster_enabled)
+
+
 ## 多点触摸保留 Godot 指针编号；鼠标固定使用零号指针。
 static func pointer_index(event: InputEvent) -> int:
 	if event is InputEventScreenTouch or event is InputEventScreenDrag:

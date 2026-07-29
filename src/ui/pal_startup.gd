@@ -400,7 +400,7 @@ func _advance_splash_tick() -> void:
 
 func _input(event: InputEvent) -> void:
 	if MobileInput.is_primary_press(event):
-		if _handle_primary_press(MobileInput.pointer_position(event)):
+		if _handle_primary_press(MobileInput.classic_pointer_position(event, get_viewport().size)):
 			var input_viewport := get_viewport()
 			if input_viewport != null:
 				input_viewport.set_input_as_handled()

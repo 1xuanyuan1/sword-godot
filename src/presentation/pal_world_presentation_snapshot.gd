@@ -19,6 +19,12 @@ var viewport_position: Vector2i = Vector2i.ZERO
 var camera_offset: Vector2i = Vector2i.ZERO
 ## 经典与高清 Camera2D 共用的 PAL 世界中心。
 var camera_center_pal: Vector2i = Vector2i.ZERO
+## 当前 TileMap 配置实际绘制的逻辑视野大小。
+var logical_view_size: Vector2i = PalPresentationMetrics.CLASSIC_CONTENT_SIZE
+## 当前逻辑视野左上角对应的 PAL 世界坐标；重制模式比经典 viewport 向左上扩展 (32,8)。
+var render_viewport_position: Vector2i = Vector2i.ZERO
+## 320×200 经典 UI/画面核心在当前逻辑视野中的偏移。
+var classic_content_offset: Vector2i = Vector2i.ZERO
 ## 最多三名玩家队员。
 var party: Array = []
 ## 0098 设置的最多两名跟随者。

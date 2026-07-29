@@ -60,7 +60,7 @@ flowchart LR
 
 ## 启动与场景加载
 
-1. Godot 从 `scenes/presentation_shell.tscn` 启动 1920×1080 展示壳，再在 320×200 SubViewport 中加载 `scenes/main.tscn` 的正式 `PalStartup`；已有生成内容时依次播放商标 RNG #6、山水/仙鹤/题字动画，再显示“新的故事／旧的回忆”标题菜单。
+1. Godot 从 `scenes/presentation_shell.tscn` 启动 1920×1080 展示壳。经典模式使用 320×200 SubViewport；`--pal-remaster-2d` 使用 384×216 SubViewport，并把非地图场景固定在中央 `(32,8,320,200)` 核心区。`scenes/main.tscn` 的正式 `PalStartup` 在该核心区依次播放商标 RNG #6、山水/仙鹤/题字动画，再显示“新的故事／旧的回忆”标题菜单。
 2. 本地内容缺失时自动切换到 `scenes/import_lab.tscn`；用户选择本机数据目录后，`PalDataImporter` 只读原始文件并写入被忽略的 `generated/pal/`，F10 也可主动进入该开发入口。
 3. “新的故事”直接建立新会话；“旧的回忆”复用 `PalGameMenu` 的 100 槽原版 UI，只把确认的槽位写入一次性 `PalStartupRequest`。
 4. 进入探索场景时，`PalContentDatabase.load_generated()` 读取结构化内容，`GameSession.reset_new_game()` 先建立安全默认状态。

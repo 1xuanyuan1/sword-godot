@@ -23,6 +23,7 @@ static func build(
 	snapshot.palette_index = session.palette_index
 	snapshot.night_palette = session.night_palette
 	snapshot.viewport_position = session.viewport_position
+	snapshot.render_viewport_position = session.viewport_position + camera_offset
 	snapshot.camera_offset = camera_offset
 	snapshot.camera_center_pal = session.viewport_position + camera_offset + PalPresentationMetrics.CLASSIC_CONTENT_SIZE / 2
 	if database == null or database.player_roles == null:

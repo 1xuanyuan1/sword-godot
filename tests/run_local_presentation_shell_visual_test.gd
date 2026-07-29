@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 使用真实窗口检查 1920×1080 Shell、320×200 经典回退和 3D 运行时退役。
+## 使用真实窗口检查 1920×1080 Shell、384×216 重制视野和中央 320×200 经典 UI 核心。
 extends SceneTree
 
 const OUTPUT_PATH := "res://generated/pal/visual_tests/presentation_shell_1080p.png"
@@ -30,8 +30,12 @@ func _run() -> void:
 		_fail("3D 世界应已退役，并保留高清 2D HUD 承载节点")
 		return
 	shell.set_presentation_mode(PalPresentationShell.MODE_REMASTER_2D)
-	if not container.visible or not is_equal_approx(container.modulate.a, 1.0) or shell.remaster_renderer_ready():
-		_fail("高清 2D 渲染器未就绪时必须保持经典回退可见")
+	var viewport := shell.get_node_or_null("ClassicViewportContainer/ClassicViewport") as SubViewport
+	if not container.visible or not is_equal_approx(container.modulate.a, 1.0) or not shell.remaster_renderer_ready():
+		_fail("高清 2D 模式必须保持正式 TileMap/经典内容回退可见")
+		return
+	if Rect2(container.position, container.size) != Rect2(0, 0, 1920, 1080) or viewport == null or viewport.size != Vector2i(384, 216):
+		_fail("重制视野没有按 384×216 的 5 倍整数比例铺满 1080p")
 		return
 	var image := root.get_texture().get_image()
 	if image == null or image.get_size() != PalPresentationMetrics.DEFAULT_REMASTER_CANVAS_SIZE:

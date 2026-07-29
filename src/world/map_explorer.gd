@@ -12,6 +12,7 @@ const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
+const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
 const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
 const RETURN_TO_LAB_KEYCODE := KEY_F10
 const FIELD_MAGIC_STAGE_USE := 0
@@ -25,6 +26,7 @@ var _map_data: PalMapData
 var _scene_events: Array[PalEventObject] = []
 var _tile_world: PalTileMapWorld
 var _ui_layer: CanvasLayer
+var _ui_root: Control
 var _status: Label
 var _location_toast: PanelContainer
 var _location_toast_label: Label
@@ -70,6 +72,17 @@ var _pending_location_toast: String = ""
 var _script_camera_offset: Vector2i = Vector2i.ZERO
 var _resume_rng_after_fade_in: bool = false
 var _screen_shake_serial: int = 0
+var _remaster_canvas_enabled: bool = false
+
+
+## 由 PalPresentationShell 调用；地图使用完整 384×216，经典 UI 固定在中央 320×200。
+func set_remaster_canvas_enabled(enabled: bool) -> void:
+	_remaster_canvas_enabled = enabled
+	if _tile_world != null:
+		_tile_world.set_presentation_mode(
+			PalTileMapWorld.PRESENTATION_REMASTER_2D if enabled else PalTileMapWorld.PRESENTATION_CLASSIC
+		)
+	_update_presentation_layout()
 
 
 func _ready() -> void:
@@ -148,6 +161,9 @@ func _build_interface() -> void:
 
 	_tile_world = PalTileMapWorld.new()
 	_tile_world.name = "PalTileMapWorld"
+	_tile_world.set_presentation_mode(
+		PalTileMapWorld.PRESENTATION_REMASTER_2D if _remaster_canvas_enabled else PalTileMapWorld.PRESENTATION_CLASSIC
+	)
 	add_child(_tile_world)
 
 	# Camera2D 会变换默认世界画布。HUD 必须放在独立 CanvasLayer 中，
@@ -156,20 +172,26 @@ func _build_interface() -> void:
 	_ui_layer.name = "HudLayer"
 	_ui_layer.layer = 10
 	add_child(_ui_layer)
+	_ui_root = Control.new()
+	_ui_root.name = "ClassicUiRoot"
+	_ui_root.size = Vector2(PresentationMetrics.CLASSIC_CONTENT_SIZE)
+	_ui_root.clip_contents = true
+	_ui_layer.add_child(_ui_root)
+	_update_presentation_layout()
 
 	var status_background := ColorRect.new()
 	status_background.name = "StatusBackground"
 	status_background.color = Color(0.02, 0.03, 0.06, 0.82)
 	status_background.position = Vector2(3, 3)
 	status_background.size = Vector2(314, 20)
-	_ui_layer.add_child(status_background)
+	_ui_root.add_child(status_background)
 	_status = Label.new()
 	_status.name = "StatusLabel"
 	_status.position = Vector2(6, 5)
 	_status.size = Vector2(308, 17)
 	_status.add_theme_font_size_override("font_size", 8)
 	_status.add_theme_color_override("font_color", Color("f8fafc"))
-	_ui_layer.add_child(_status)
+	_ui_root.add_child(_status)
 
 	# 地点提示独立于 PalDialogBox，避免场景进入脚本立刻播放对话时互相覆盖。
 	_location_toast = PanelContainer.new()
@@ -194,7 +216,7 @@ func _build_interface() -> void:
 	_location_toast_label.add_theme_color_override("font_color", Color.WHITE)
 	_location_toast.add_child(_location_toast_label)
 	_location_toast.hide()
-	_ui_layer.add_child(_location_toast)
+	_ui_root.add_child(_location_toast)
 
 	# FBP 过场图位于世界和普通 HUD 之上、剧情对话框之下；这样黑屏叙述仍可显示文字。
 	_fbp_layer = ColorRect.new()
@@ -211,32 +233,32 @@ func _build_interface() -> void:
 	_fbp_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_fbp_layer.add_child(_fbp_view)
 	_fbp_layer.hide()
-	_ui_layer.add_child(_fbp_layer)
+	_ui_root.add_child(_fbp_layer)
 
 	_ending_player = PalEndingPlayer.new()
 	_ending_player.name = "EndingPlayer"
 	_ending_player.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_ending_player.playback_finished.connect(_on_ending_playback_finished)
-	_ui_layer.add_child(_ending_player)
+	_ui_root.add_child(_ending_player)
 
 	# RNG 覆盖普通地图 HUD，但保留后续对话层在其上方，以兼容电影字幕叠加。
 	_rng_player = PalRngPlayer.new()
 	_rng_player.name = "RngPlayer"
 	_rng_player.playback_finished.connect(_on_rng_playback_finished)
-	_ui_layer.add_child(_rng_player)
+	_ui_root.add_child(_rng_player)
 
 	_mobile_controls = PalMobileControls.new()
 	_mobile_controls.name = "MobileControls"
 	_mobile_controls.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_mobile_controls.menu_requested.connect(_on_mobile_menu_requested)
 	_mobile_controls.interact_requested.connect(_on_mobile_interact_requested)
-	_ui_layer.add_child(_mobile_controls)
+	_ui_root.add_child(_mobile_controls)
 
 	_dialog_box = PalDialogBox.new()
 	_dialog_box.name = "DialogBox"
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_dialog_box.advance_requested.connect(_on_dialog_advance_requested)
-	_ui_layer.add_child(_dialog_box)
+	_ui_root.add_child(_dialog_box)
 
 	_game_menu = PalGameMenu.new()
 	_game_menu.name = "GameMenu"
@@ -250,14 +272,14 @@ func _build_interface() -> void:
 	_game_menu.shop_closed.connect(_on_shop_closed)
 	_game_menu.load_menu_cancelled.connect(_on_load_menu_cancelled)
 	_game_menu.quit_requested.connect(_on_quit_requested)
-	_ui_layer.add_child(_game_menu)
+	_ui_root.add_child(_game_menu)
 
 	_battle_view = PalBattlePreview.new()
 	_battle_view.name = "BattleView"
 	_battle_view.lab_mode = false
 	_battle_view.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_battle_view.battle_finished.connect(_on_battle_finished)
-	_ui_layer.add_child(_battle_view)
+	_ui_root.add_child(_battle_view)
 
 	# PAL 的调色板渐隐应覆盖地图、人物和 HUD；放在 HUD 最后保证转场期间不会露出对话框。
 	_fade_overlay = ColorRect.new()
@@ -267,7 +289,16 @@ func _build_interface() -> void:
 	_fade_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_fade_overlay.modulate.a = 0.0
 	_fade_overlay.visible = false
-	_ui_layer.add_child(_fade_overlay)
+	_ui_root.add_child(_fade_overlay)
+
+
+func _update_presentation_layout() -> void:
+	if _ui_root == null:
+		return
+	_ui_root.position = Vector2(
+		PresentationMetrics.REMASTER_CLASSIC_OFFSET if _remaster_canvas_enabled else Vector2i.ZERO
+	)
+	_ui_root.size = Vector2(PresentationMetrics.CLASSIC_CONTENT_SIZE)
 
 
 func _process(delta: float) -> void:

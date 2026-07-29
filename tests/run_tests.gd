@@ -381,11 +381,23 @@ func _test_runtime_paths() -> void:
 
 func _test_presentation_metrics() -> void:
 	_expect(PresentationMetrics.CLASSIC_CONTENT_SIZE == Vector2i(320, 200), "presentation keeps the original PAL content size as the pixel baseline")
+	_expect(PresentationMetrics.REMASTER_LOGICAL_SIZE == Vector2i(384, 216), "2D remaster expands the logical map view to 384x216")
+	_expect(PresentationMetrics.REMASTER_CLASSIC_OFFSET == Vector2i(32, 8), "classic UI stays centered in the remaster logical view")
 	_expect(PresentationMetrics.DEFAULT_REMASTER_CANVAS_SIZE == Vector2i(1920, 1080), "presentation defines the 1080p remaster canvas without changing classic source assets")
 	_expect(PresentationMetrics.classic_content_rect(Vector2i(1280, 800)) == Rect2i(0, 0, 1280, 800), "4x remaster canvas fits the classic content exactly")
 	_expect(PresentationMetrics.classic_content_rect(Vector2i(1920, 1080)) == Rect2i(160, 40, 1600, 1000), "widescreen output centers the largest integer-scaled classic content region")
+	_expect(PresentationMetrics.remaster_content_rect(Vector2i(1920, 1080)) == Rect2i(0, 0, 1920, 1080), "384x216 remaster view maps to exact 5x 1080p output")
+	_expect(PresentationMetrics.output_to_classic_ui(Vector2(160, 40), Vector2i(1920, 1080), true) == Vector2.ZERO, "1080p input divides by five and removes the 32x8 classic UI offset")
+	_expect(PresentationMetrics.output_to_classic_ui(Vector2(1755, 1035), Vector2i(1920, 1080), true) == Vector2(319, 199), "1080p input maps the last classic UI pixel without stretching")
+	_expect(not PresentationMetrics.output_to_classic_ui(Vector2(20, 20), Vector2i(1920, 1080), true).is_finite(), "remaster margin clicks cannot hit the classic UI")
 	_expect(PresentationMetrics.safe_ui_rect(Vector2i(1920, 1080)) == Rect2i(64, 64, 1792, 952), "1080p HUD keeps the 64px safe margin")
 	_expect(PresentationMetrics.dialog_rect(Vector2i(1920, 1080)) == Rect2i(64, 716, 1792, 300), "1080p dialogue reserves the bottom 300px inside the safe area")
+	var tile_world := PalTileMapWorld.new()
+	tile_world.set_presentation_mode(PalTileMapWorld.PRESENTATION_REMASTER_2D)
+	_expect(tile_world.logical_view_size() == Vector2i(384, 216) and tile_world.classic_content_offset() == Vector2i(32, 8), "TileMap remaster configuration shares the 384x216 metrics")
+	tile_world.set_presentation_mode(PalTileMapWorld.PRESENTATION_CLASSIC)
+	_expect(tile_world.logical_view_size() == Vector2i(320, 200) and tile_world.classic_content_offset() == Vector2i.ZERO, "TileMap classic configuration remains unchanged")
+	tile_world.free()
 
 
 func _test_world_presentation() -> void:
@@ -411,6 +423,7 @@ func _test_world_presentation() -> void:
 	var events: Array[PalEventObject] = [event]
 	var snapshot := PresentationBuilder.build(database, session, events, 12, 1, true)
 	_expect(snapshot.party.size() == 1 and snapshot.events.size() == 1, "shared presentation snapshot contains party and visible events")
+	_expect(snapshot.viewport_position == Vector2i.ZERO and snapshot.render_viewport_position == Vector2i.ZERO and snapshot.camera_center_pal == Vector2i(160, 100), "shared presentation snapshot preserves the classic camera center")
 	_expect(snapshot.party[0].frame_index == 10, "shared presentation builder selects the SDLPal three-frame walk phase once")
 	_expect(snapshot.events[0].frame_index == 8, "shared presentation builder applies the event three-frame remap before direction offset")
 	_expect(snapshot.party[0].pal_world_position == Vector2i(160, 112), "snapshot actor keeps the authoritative PAL world position")
@@ -2151,15 +2164,18 @@ func _test_explorer_hud_canvas_layer() -> void:
 	var explorer: Control = explorer_script.new()
 	explorer._build_interface()
 	_expect(explorer._ui_layer is CanvasLayer and explorer._ui_layer.layer > 0, "explorer HUD uses an independent foreground CanvasLayer")
-	_expect(explorer._status.get_parent() == explorer._ui_layer, "status label stays outside the Camera2D world canvas")
-	_expect(explorer._location_toast.get_parent() == explorer._ui_layer and explorer._location_toast.position == Vector2(104, 28) and explorer._location_toast.size == Vector2(112, 24), "scene location toast stays centered below the HUD status line")
-	_expect(explorer._fbp_layer.get_parent() == explorer._ui_layer and explorer._fbp_layer.get_index() > explorer._location_toast.get_index() and explorer._fbp_layer.get_index() < explorer._dialog_box.get_index(), "FBP cutscene layer covers world HUD while keeping narrative dialog visible")
-	_expect(explorer._mobile_controls.get_parent() == explorer._ui_layer and explorer._mobile_controls.get_index() > explorer._rng_player.get_index() and explorer._mobile_controls.get_index() < explorer._dialog_box.get_index(), "mobile exploration controls use the HUD CanvasLayer below dialogue and modal menus")
-	_expect(explorer._dialog_box.get_parent() == explorer._ui_layer, "dialog stays outside the Camera2D world canvas")
-	_expect(explorer._game_menu.get_parent() == explorer._ui_layer, "game menu stays outside the Camera2D world canvas")
+	_expect(explorer._ui_root.get_parent() == explorer._ui_layer and explorer._ui_root.size == Vector2(320, 200), "explorer keeps classic UI in one fixed-size root on the HUD CanvasLayer")
+	_expect(explorer._status.get_parent() == explorer._ui_root, "status label stays outside the Camera2D world canvas")
+	_expect(explorer._location_toast.get_parent() == explorer._ui_root and explorer._location_toast.position == Vector2(104, 28) and explorer._location_toast.size == Vector2(112, 24), "scene location toast stays centered below the HUD status line")
+	_expect(explorer._fbp_layer.get_parent() == explorer._ui_root and explorer._fbp_layer.get_index() > explorer._location_toast.get_index() and explorer._fbp_layer.get_index() < explorer._dialog_box.get_index(), "FBP cutscene layer covers world HUD while keeping narrative dialog visible")
+	_expect(explorer._mobile_controls.get_parent() == explorer._ui_root and explorer._mobile_controls.get_index() > explorer._rng_player.get_index() and explorer._mobile_controls.get_index() < explorer._dialog_box.get_index(), "mobile exploration controls use the HUD CanvasLayer below dialogue and modal menus")
+	_expect(explorer._dialog_box.get_parent() == explorer._ui_root, "dialog stays outside the Camera2D world canvas")
+	_expect(explorer._game_menu.get_parent() == explorer._ui_root, "game menu stays outside the Camera2D world canvas")
 	_expect(explorer._game_menu.quit_requested.is_connected(explorer._on_quit_requested), "system menu routes its quit request through the explorer application exit handler")
-	_expect(explorer._rng_player.get_parent() == explorer._ui_layer, "RNG cutscene player stays on the foreground HUD canvas")
-	_expect(explorer._fade_overlay.get_parent() == explorer._ui_layer and explorer._fade_overlay.get_index() > explorer._battle_view.get_index() and explorer._fade_overlay.get_index() > explorer._location_toast.get_index(), "screen fade covers the complete world, location toast and HUD during scene transitions")
+	_expect(explorer._rng_player.get_parent() == explorer._ui_root, "RNG cutscene player stays on the foreground HUD canvas")
+	_expect(explorer._fade_overlay.get_parent() == explorer._ui_root and explorer._fade_overlay.get_index() > explorer._battle_view.get_index() and explorer._fade_overlay.get_index() > explorer._location_toast.get_index(), "screen fade covers the complete classic UI core during scene transitions")
+	explorer.set_remaster_canvas_enabled(true)
+	_expect(explorer._ui_root.position == Vector2(32, 8) and explorer._tile_world.logical_view_size() == Vector2i(384, 216), "remaster exploration expands only the TileMap view and offsets the classic UI core")
 	explorer._fade_overlay.visible = true
 	explorer._fade_overlay.modulate.a = 1.0
 	explorer._screen_fade_active = false
@@ -2448,6 +2464,10 @@ func _test_mobile_touch_controls() -> void:
 	touch_press.position = Vector2(120, 100)
 	touch_press.pressed = true
 	_expect(PalMobileInput.is_primary_press(touch_press) and PalMobileInput.pointer_index(touch_press) == 7 and PalMobileInput.pointer_position(touch_press) == Vector2(120, 100), "mobile input preserves touch pointer identity and 320x200 viewport coordinates")
+	touch_press.position = Vector2(40, 20)
+	_expect(PalMobileInput.classic_pointer_position(touch_press, Vector2i(384, 216)) == Vector2(8, 12), "remaster global touch input removes the 32x8 classic UI offset")
+	touch_press.position = Vector2(10, 4)
+	_expect(not PalMobileInput.classic_pointer_position(touch_press, Vector2i(384, 216)).is_finite(), "touches in the remaster-only margin cannot activate classic controls")
 	var controls := PalMobileControls.new()
 	controls.force_touch_ui = true
 	controls._ready()

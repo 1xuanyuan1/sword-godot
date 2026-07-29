@@ -81,9 +81,9 @@ func _input(event: InputEvent) -> void:
 		return
 	var handled := false
 	if MobileInput.is_primary_press(event):
-		handled = handle_pointer_press(MobileInput.pointer_position(event), MobileInput.pointer_index(event))
+		handled = handle_pointer_press(MobileInput.classic_pointer_position(event, get_viewport().size), MobileInput.pointer_index(event))
 	elif MobileInput.is_primary_drag(event):
-		handled = handle_pointer_drag(MobileInput.pointer_position(event), MobileInput.pointer_index(event))
+		handled = handle_pointer_drag(MobileInput.classic_pointer_position(event, get_viewport().size, false), MobileInput.pointer_index(event))
 	elif MobileInput.is_primary_release(event):
 		handled = handle_pointer_release(MobileInput.pointer_index(event))
 	if handled:

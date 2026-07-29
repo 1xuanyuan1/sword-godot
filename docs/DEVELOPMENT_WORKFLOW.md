@@ -6,6 +6,8 @@
 /Applications/Godot.app/Contents/MacOS/Godot --path .
 ```
 
+追加 `-- --pal-remaster-2d` 可启用 384×216 的纯 2D 重制视野；在 1920×1080 下按 5 倍整数显示，经典 UI 仍位于中央 320×200 核心区。
+
 首次运行会自动进入资源实验室；选择本机合法取得的 `Data` 目录并执行导入。导入器只读取源目录，所有产物写入 `generated/pal/`。
 已有生成内容时正式入口会播放商标与山水标题片头，然后显示“新的故事／旧的回忆”；后者打开正式 100 槽页，启动读档仍会重新校验内容指纹与校验和。F10 可从正式入口或探索场景进入资源实验室。
 
@@ -350,6 +352,13 @@ Headless 路径会逐帧解压并应用全部 12 段／1464 帧，验证脚本�
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --path . \
   --script res://tests/run_local_tilemap_visual_test.gd
+```
+
+Map 012 的 384×216 重制视野、中央 UI 核心和 1920×1080 截图门禁：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path . \
+  --script res://tests/run_local_map012_remaster_2d_visual_test.gd
 ```
 
 macOS Metal 在单一窗口连续销毁大量 SubViewport 后若停止派发 `frame_post_draw`，可用名称筛选逐个运行，不得改用 `--headless` 代替真实像素验收：

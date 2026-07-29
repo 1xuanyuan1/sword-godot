@@ -289,7 +289,9 @@ func _input(event: InputEvent) -> void:
 	if _script_dialog_box != null and _script_dialog_box.visible:
 		return
 	var input_viewport := get_viewport()
-	if _handle_pointer_press(MobileInput.pointer_position(event)) and input_viewport != null:
+	if input_viewport == null:
+		return
+	if _handle_pointer_press(MobileInput.classic_pointer_position(event, input_viewport.size)):
 		input_viewport.set_input_as_handled()
 
 

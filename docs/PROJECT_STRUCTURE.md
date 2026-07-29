@@ -86,7 +86,8 @@ sword/
 - `tests/run_save_system_tests.gd`：CI 使用合成内容验证版本、校验、损坏诊断和完整会话往返。
 - `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
 - `tests/run_local_tilemap_inventory_test.gd`：Headless 遍历全部本机有效地图和场景引用，验证正式 TileMapLayer 资源结构。
-- `tests/run_local_presentation_shell_visual_test.gd`：使用真实窗口渲染器输出 1920×1080 Shell 截图，验证 3D 退役和高清 2D 未就绪时的经典安全回退。
+- `tests/run_local_presentation_shell_visual_test.gd`：使用真实窗口渲染器输出 1920×1080 Shell 截图，验证经典与 384×216 重制模式切换。
+- `tests/run_local_map012_remaster_2d_visual_test.gd`：真实窗口验证 Map 012 的 384×216 TileMap 视野与中央 320×200 UI 核心。
 - `tests/support/`：只供测试使用的 CPU 地图／场景像素基准，不被正式游戏或导入器引用。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。

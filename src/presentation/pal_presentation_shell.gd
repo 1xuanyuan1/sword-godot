@@ -1,7 +1,7 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 1920×1080 正式展示壳：运行 320×200 经典 SubViewport，并承载逐步接入的高清 2D 世界与 HUD。
-## 在高清 2D 渲染器完成前，重制模式必须安全回退经典画面。
+## 1920×1080 正式展示壳：经典模式运行 320×200，重制模式运行 384×216 的纯 2D SubViewport。
+## 非地图场景仍固定在重制视野中央的 320×200 核心区，避免菜单、RNG 与过场被拉伸。
 class_name PalPresentationShell
 extends Control
 
@@ -45,7 +45,7 @@ func _ready() -> void:
 			push_error("无法打开经典启动场景 %s：%s" % [opening_scene, error_string(result)])
 
 
-## 在 Shell 的 320×200 SubViewport 中替换经典场景；供 PalSceneRouter 调用。
+## 在 Shell 的 2D SubViewport 中替换场景；供 PalSceneRouter 调用。
 func open_classic_scene(scene_path: String) -> Error:
 	var packed := ResourceLoader.load(scene_path, "PackedScene", ResourceLoader.CACHE_MODE_REUSE) as PackedScene
 	if packed == null:
@@ -58,6 +58,7 @@ func open_classic_scene(scene_path: String) -> Error:
 		_classic_scene.queue_free()
 	_classic_scene = instance
 	_classic_viewport.add_child(instance)
+	_layout_classic_scene()
 	return OK
 
 
@@ -75,6 +76,8 @@ func _update_presentation_layers() -> void:
 		_classic_background.visible = true
 	if _remaster_hud != null:
 		_remaster_hud.visible = false
+	_update_classic_rect()
+	_layout_classic_scene()
 
 
 func presentation_mode() -> int:
@@ -82,7 +85,7 @@ func presentation_mode() -> int:
 
 
 func remaster_renderer_ready() -> bool:
-	return false
+	return _mode == MODE_REMASTER_2D and _classic_viewport != null and _classic_viewport.size == PalPresentationMetrics.REMASTER_LOGICAL_SIZE
 
 
 func _notification(what: int) -> void:
@@ -122,6 +125,35 @@ func _update_classic_rect() -> void:
 	var output_size := Vector2i(roundi(size.x), roundi(size.y))
 	if output_size.x <= 0 or output_size.y <= 0:
 		output_size = PalPresentationMetrics.DEFAULT_REMASTER_CANVAS_SIZE
-	var classic_rect := PalPresentationMetrics.classic_content_rect(output_size)
-	_classic_container.position = Vector2(classic_rect.position)
-	_classic_container.size = Vector2(classic_rect.size)
+	var content_rect := (
+		PalPresentationMetrics.remaster_content_rect(output_size)
+		if _mode == MODE_REMASTER_2D
+		else PalPresentationMetrics.classic_content_rect(output_size)
+	)
+	_classic_container.position = Vector2(content_rect.position)
+	_classic_container.size = Vector2(content_rect.size)
+	var logical_size := PalPresentationMetrics.logical_size(_mode == MODE_REMASTER_2D)
+	_classic_container.stretch_shrink = maxi(1, content_rect.size.x / logical_size.x)
+
+
+## 地图探索场景主动消费 384×216 视野；其余经典场景只占中央 320×200 核心区。
+func _layout_classic_scene() -> void:
+	if _classic_scene == null:
+		return
+	var remaster_enabled := _mode == MODE_REMASTER_2D
+	var uses_world_canvas := _classic_scene.has_method("set_remaster_canvas_enabled")
+	if uses_world_canvas:
+		_classic_scene.call("set_remaster_canvas_enabled", remaster_enabled)
+	var scene_position := Vector2.ZERO
+	var scene_size := Vector2(PalPresentationMetrics.CLASSIC_CONTENT_SIZE)
+	if remaster_enabled and uses_world_canvas:
+		scene_size = Vector2(PalPresentationMetrics.REMASTER_LOGICAL_SIZE)
+	elif remaster_enabled:
+		scene_position = Vector2(PalPresentationMetrics.REMASTER_CLASSIC_OFFSET)
+	if _classic_scene is Control:
+		var control := _classic_scene as Control
+		control.set_anchors_and_offsets_preset(Control.PRESET_TOP_LEFT)
+		control.position = scene_position
+		control.size = scene_size
+	elif _classic_scene is Node2D:
+		(_classic_scene as Node2D).position = scene_position

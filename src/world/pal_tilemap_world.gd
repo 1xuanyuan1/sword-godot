@@ -12,9 +12,11 @@ const COLLECTIBLE_MARKER_SHADER: Shader = preload("res://shaders/collectible_mar
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
 const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
-const VIEWPORT_SIZE := PresentationMetrics.CLASSIC_CONTENT_SIZE
 const COLLECTIBLE_MARKER_SIZE := 9
 const SPRITELESS_COLLECTIBLE_HEIGHT := 10
+
+const PRESENTATION_CLASSIC := 0
+const PRESENTATION_REMASTER_2D := 1
 
 ## TileMap 正式路径完成一帧同步后发出经典与高清 2D 共用的展示快照。
 signal presentation_snapshot_ready(snapshot: PalWorldPresentationSnapshot)
@@ -52,6 +54,31 @@ var _wave_amplitude: int = 0
 var _wave_progression: int = 0
 var _wave_phase: float = 0.0
 var _wave_frame_accumulator: float = 0.0
+var _presentation_mode: int = PRESENTATION_CLASSIC
+var _logical_view_size: Vector2i = PresentationMetrics.CLASSIC_CONTENT_SIZE
+var _classic_content_offset: Vector2i = Vector2i.ZERO
+
+
+## 切换经典 320×200 或重制 384×216 视野；世界坐标、相机中心和选帧规则保持不变。
+func set_presentation_mode(mode: int) -> void:
+	_presentation_mode = PRESENTATION_REMASTER_2D if mode == PRESENTATION_REMASTER_2D else PRESENTATION_CLASSIC
+	var remaster_enabled := _presentation_mode == PRESENTATION_REMASTER_2D
+	_logical_view_size = PresentationMetrics.logical_size(remaster_enabled)
+	_classic_content_offset = PresentationMetrics.REMASTER_CLASSIC_OFFSET if remaster_enabled else Vector2i.ZERO
+	if _wave_overlay != null:
+		_wave_overlay.size = Vector2(_logical_view_size)
+
+
+func presentation_mode() -> int:
+	return _presentation_mode
+
+
+func logical_view_size() -> Vector2i:
+	return _logical_view_size
+
+
+func classic_content_offset() -> Vector2i:
+	return _classic_content_offset
 
 
 ## 载入指定 `map_number` 的原始 MAP/GOP 和生成的 TileMapLayer PackedScene。
@@ -125,8 +152,10 @@ func sync_world(session: GameSession, events: Array[PalEventObject], camera_offs
 			var sprite_number := _database.player_roles.scene_sprite_for(leader_role)
 			error_message = "主角 MGO Sprite %d 加载失败：%s" % [sprite_number, leader_sprite.error_message]
 			return false
-	var render_viewport := session.viewport_position + camera_offset
-	_camera.position = Vector2(render_viewport) + Vector2(VIEWPORT_SIZE) / 2.0
+	var classic_viewport := session.viewport_position + camera_offset
+	var render_viewport := classic_viewport - _classic_content_offset
+	# 即使逻辑视野扩大，PAL 的电影镜头中心仍由原 320×200 中心决定。
+	_camera.position = Vector2(classic_viewport) + Vector2(PresentationMetrics.CLASSIC_CONTENT_SIZE) / 2.0
 	_wave_overlay.position = Vector2(render_viewport)
 	_clear_sort_items()
 	latest_snapshot = PresentationBuilder.build(
@@ -139,6 +168,9 @@ func sync_world(session: GameSession, events: Array[PalEventObject], camera_offs
 		camera_offset,
 		Callable(self, "is_map_blocked")
 	)
+	latest_snapshot.logical_view_size = _logical_view_size
+	latest_snapshot.render_viewport_position = render_viewport
+	latest_snapshot.classic_content_offset = _classic_content_offset
 	var scene_items := _build_scene_items(latest_snapshot, session, events, render_viewport)
 	var expanded := PalSceneLayout.expanded_draw_items(_map_data, _tile_sprite, render_viewport, scene_items)
 	for item in expanded:
@@ -255,7 +287,7 @@ func _ensure_runtime_nodes() -> void:
 	if _wave_overlay == null:
 		_wave_overlay = ColorRect.new()
 		_wave_overlay.name = "ScreenWaveOverlay"
-		_wave_overlay.size = Vector2(VIEWPORT_SIZE)
+		_wave_overlay.size = Vector2(_logical_view_size)
 		_wave_overlay.color = Color.WHITE
 		_wave_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		_wave_overlay.z_index = 1000
@@ -331,7 +363,7 @@ func _build_scene_items(snapshot: PalWorldPresentationSnapshot, session: GameSes
 
 
 func _outside_viewport(screen_position: Vector2i, width: int, height: int) -> bool:
-	return screen_position.x < -width or screen_position.x > VIEWPORT_SIZE.x + width or screen_position.y < -height or screen_position.y > VIEWPORT_SIZE.y + height
+	return screen_position.x < -width or screen_position.x > _logical_view_size.x + width or screen_position.y < -height or screen_position.y > _logical_view_size.y + height
 
 
 func _player_sprite_for_role(role_index: int) -> PalSprite:
