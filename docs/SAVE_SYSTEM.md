@@ -12,6 +12,75 @@
 
 存档位于 `user://saves/slot_001.json` 至 `slot_100.json`。macOS 默认对应 `~/Library/Application Support/Godot/app_userdata/Sword Godot Study Port/saves/`，Windows 默认对应 `%APPDATA%\Godot\app_userdata\Sword Godot Study Port\saves\`；实际路径以 Godot 的 `user://` 为准。
 
+## 把桌面存档导入 Web
+
+桌面、Android 和 Web 使用同一份版本化 JSON 存档格式。只要 `format_version` 和 PAL 内容指纹一致，桌面端的 `slot_NNN.json` 可以在 Web 端继续读取。Web 存档存在当前网页来源的 IndexedDB，不是普通的本地文件。
+
+当前项目名下，Web 端 `user://saves/` 的真实 IDBFS 路径是：
+
+```text
+/userfs/godot/app_userdata/Sword Godot Study Port/saves/
+```
+
+下面是尚未提供游戏内导入界面时的开发者手动方法：
+
+1. 打开 Web 游戏和浏览器开发者工具。
+2. 在 Console 顶部把执行上下文切换到真正运行 Godot 画布的 iframe。执行 `typeof engine` 应返回 `"object"`，`document.querySelector("#canvas")?.tagName` 应返回 `"CANVAS"`。
+3. 选择一个尚未使用的目标槽位，修改下面脚本中的 `slot`，再在 Console 执行整段脚本。脚本使用 IndexedDB `put`，如果目标槽位已存在，会直接覆盖它。
+
+```javascript
+(() => {
+  const slot = "010";
+  const savePath =
+    `/userfs/godot/app_userdata/Sword Godot Study Port/saves/slot_${slot}.json`;
+
+  const input = document.createElement("input");
+  input.type = "file";
+  input.accept = ".json";
+
+  input.onchange = async () => {
+    try {
+      const file = input.files[0];
+      if (!file) return;
+
+      const contents = new Uint8Array(await file.arrayBuffer());
+      const db = await new Promise((resolve, reject) => {
+        const request = indexedDB.open("/userfs");
+        request.onsuccess = () => resolve(request.result);
+        request.onerror = () => reject(request.error);
+      });
+
+      if (!db.objectStoreNames.contains("FILE_DATA")) {
+        throw new Error("Godot IndexedDB 中不存在 FILE_DATA");
+      }
+
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction("FILE_DATA", "readwrite");
+        transaction.objectStore("FILE_DATA").put(
+          { timestamp: new Date(), mode: 33206, contents },
+          savePath
+        );
+        transaction.oncomplete = resolve;
+        transaction.onerror = () => reject(transaction.error);
+        transaction.onabort = () => reject(transaction.error);
+      });
+
+      db.close();
+      console.log(`已导入 Web 存档：${savePath}`);
+      setTimeout(() => location.reload(), 300);
+    } catch (error) {
+      console.error("Web 存档导入失败：", error);
+    }
+  };
+
+  input.click();
+})();
+```
+
+脚本会在 IndexedDB 事务完成后自动刷新当前 Godot iframe。刷新后从“读取存档”打开对应槽位。不要把文件写到 `/userfs/saves/`；该路径不是本项目的 `user://saves/`，游戏不会扫描其中的文件。
+
+Web 存档与网页来源、浏览器及当前用户配置绑定。更换域名、使用另一个浏览器配置或清理站点数据后，IndexedDB 中的存档不会自动迁移。
+
 ## 保存范围
 
 `PalSaveManager` 保存并恢复以下状态：
