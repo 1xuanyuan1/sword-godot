@@ -376,6 +376,21 @@ python3 tools/validate_pal_map_tileset.py \
 
 初始五倍图集只承担结构完整的兼容底稿。美术生产按原 GOP `source_frame_index` 逐帧替换已审核图块；未精修帧保持最近邻兼容图块，不得把整张概念图直接接成可行走地图，也不得改变 MAP、阻挡、逻辑高度或事件坐标。
 
+图片模型批量精修图块时，先把明确的 GOP 帧排成固定 1536×1024 绿幕制作板，再把生成结果写入新的图集版本。写回器永远复用原 GOP Alpha；模型扩大的轮廓会被裁掉，仍为绿幕的内部像素会保留原图，避免绿色接缝。不得覆盖已有版本目录：
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tools/export_pal_map_tile_batch.gd -- \
+  --tileset=/private/v001/pal-map-tileset.json --frames=0,1,2,3 \
+  --out=/private/source/batch_00_reference.png
+
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tools/apply_pal_map_tile_batch.gd -- \
+  --tileset=/private/v001/pal-map-tileset.json \
+  --mapping=/private/source/batch_00_reference.json \
+  --generated=/private/candidates/batch_00_gpt_image.png --out=/private/v002
+```
+
 macOS Metal 在单一窗口连续销毁大量 SubViewport 后若停止派发 `frame_post_draw`，可用名称筛选逐个运行，不得改用 `--headless` 代替真实像素验收：
 
 ```bash
