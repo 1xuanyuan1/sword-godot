@@ -2270,17 +2270,29 @@ func _test_game_menu_inventory() -> void:
 	menu._confirm_selection()
 	_expect(menu._system_item_enabled(4), "system quit entry uses the normal enabled color")
 	_expect(quit_requests[0] == 1 and not menu.visible, "system quit entry closes the menu and requests application exit")
-	_expect(menu._main_item_count() == 4, "non-Toy builds keep the original four-item classic main menu")
+	_expect(menu._main_item_count() == 4 and menu._system_item_count() == 5, "non-Toy builds keep the original four-item main menu and five-item system menu")
 	menu.configure_toy_features(true, "Toy connected")
-	_expect(menu._main_item_count() == 6, "Toy builds expose cloud saves and leaderboards as two peer entries without changing non-Web menus")
-	_expect(PalGameMenu.TOY_MAIN_LABELS == ["云端存档", "排行榜"] and PalGameMenu.TOY_ACTION_LABELS == ["上传此存档", "下载到本地"], "Toy cloud and leaderboard labels stay separate and avoid unsupported slot glyphs")
+	_expect(menu._main_item_count() == 4 and menu._system_item_count() == 7, "Toy builds keep the classic main menu and add cloud saves and leaderboards to the system submenu")
+	_expect(PalGameMenu.TOY_SYSTEM_LABELS == ["云端存档", "排行榜"] and PalGameMenu.TOY_ACTION_LABELS == ["上传此存档", "下载到本地"], "Toy system entries and cloud actions use separate explicit labels")
 	var cloud_state_requests := [0]
 	menu.toy_cloud_state_requested.connect(func() -> void: cloud_state_requests[0] += 1)
-	menu.open_toy(false)
-	_expect(menu.visible and menu.current_page == PalGameMenu.Page.TOY and cloud_state_requests[0] == 1, "Toy cloud page refreshes its manifest when opened")
+	menu.open_main()
+	menu._main_selection = 3
+	menu._confirm_selection()
+	menu._system_selection = 4
+	menu._confirm_selection()
+	_expect(menu.visible and menu.current_page == PalGameMenu.Page.TOY and cloud_state_requests[0] == 1, "Toy system cloud entry opens the cloud page and refreshes its manifest")
 	menu._save_slot_selection = 0
-	_expect(menu._toy_slot_label() == "本地存档 001  前  后", "Toy cloud slot navigation uses supported bitmap words instead of browser-dependent arrow symbols")
+	_expect(menu._toy_slot_label() == "本地存档 001", "Toy cloud slot label names the current local save")
 	menu.notify_toy_cloud_info({"saved_at": "2026-07-22 13:49:05", "source_slot": 9}, "")
+	menu._move_selection(Vector2i(-1, 0))
+	_expect(menu._save_slot_selection == 0, "Toy cloud previous arrow stays disabled at the first local save")
+	menu._move_selection(Vector2i(1, 0))
+	_expect(menu._save_slot_selection == 1 and menu._toy_slot_label() == "本地存档 002", "Toy cloud next arrow advances to the next local save without wrapping")
+	menu._save_slot_selection = PalSaveManager.SLOT_COUNT - 1
+	menu._move_selection(Vector2i(1, 0))
+	_expect(menu._save_slot_selection == PalSaveManager.SLOT_COUNT - 1, "Toy cloud next arrow stays disabled at the final local save")
+	menu._save_slot_selection = 0
 	var cloud_uploads: Array[int] = []
 	menu.toy_cloud_upload_requested.connect(func(slot: int) -> void: cloud_uploads.append(slot))
 	menu._toy_selection = 0
@@ -2302,14 +2314,15 @@ func _test_game_menu_inventory() -> void:
 	var rank_requests: Array[int] = []
 	menu.toy_rank_requested.connect(func(board: int) -> void: rank_requests.append(board))
 	menu.go_back()
-	menu._main_selection = 5
+	_expect(menu.current_page == PalGameMenu.Page.SYSTEM, "Toy cloud page returns to the system submenu")
+	menu._system_selection = 5
 	menu._confirm_selection()
-	_expect(menu.current_page == PalGameMenu.Page.TOY_RANK and rank_requests == [1], "Toy main menu opens the peer leaderboard entry and requests its data")
+	_expect(menu.current_page == PalGameMenu.Page.TOY_RANK and rank_requests == [1], "Toy system leaderboard entry opens the leaderboard and requests its data")
 	menu._toy_busy = true
 	menu._move_selection(Vector2i(1, 0))
 	_expect(menu._toy_rank_board == 2 and rank_requests == [1, 2], "Toy leaderboard keyboard navigation switches boards even while a preview request is busy")
 	menu.go_back()
-	_expect(menu.current_page == PalGameMenu.Page.MAIN, "Toy leaderboard returns to the same-level main menu")
+	_expect(menu.current_page == PalGameMenu.Page.SYSTEM, "Toy leaderboard returns to the system submenu")
 	var score_session := GameSession.new()
 	score_session.role_levels = PackedInt32Array([12, 10, 8, 1, 1, 1])
 	score_session.party_roles = PackedInt32Array([0, 1, 2])

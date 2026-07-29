@@ -62,11 +62,13 @@ enum Page {
 
 const MAIN_MENU_POSITION := Vector2i(3, 37)
 const MOBILE_BACK_RECT := Rect2(276, 2, 40, 30)
-const MAIN_ITEM_POSITIONS := [Vector2i(16, 50), Vector2i(16, 68), Vector2i(16, 86), Vector2i(16, 104), Vector2i(16, 122), Vector2i(16, 140)]
-const TOY_MAIN_LABELS := ["云端存档", "排行榜"]
+const MAIN_ITEM_POSITIONS := [Vector2i(16, 50), Vector2i(16, 68), Vector2i(16, 86), Vector2i(16, 104)]
 const INVENTORY_ACTION_POSITION := Vector2i(30, 60)
 const SYSTEM_MENU_POSITION := Vector2i(40, 60)
 const SYSTEM_ITEM_POSITIONS := [Vector2i(53, 72), Vector2i(53, 90), Vector2i(53, 108), Vector2i(53, 126), Vector2i(53, 144)]
+const TOY_SYSTEM_MENU_POSITION := Vector2i(40, 24)
+const TOY_SYSTEM_ITEM_POSITIONS := [Vector2i(53, 36), Vector2i(53, 54), Vector2i(53, 72), Vector2i(53, 90), Vector2i(53, 108), Vector2i(53, 126), Vector2i(53, 144)]
+const TOY_SYSTEM_LABELS := ["云端存档", "排行榜"]
 const VOLUME_VALUE_X := 170
 const VOLUME_STEP := 10
 const SAVE_SLOT_BOX_POSITION := Vector2i(184, 7)
@@ -76,6 +78,11 @@ const SAVE_SLOT_COUNT_POSITION_X := 276
 const SAVE_DETAIL_TEXT_WIDTH := 136
 const SAVE_DETAIL_PARTY_POSITION := Vector2i(12, 92)
 const SAVE_DETAIL_PARTY_SPACING := 28
+const TOY_SLOT_PREVIOUS_POSITION := Vector2i(20, 63)
+const TOY_SLOT_LABEL_POSITION := Vector2i(38, 61)
+const TOY_SLOT_NEXT_POSITION := Vector2i(148, 63)
+const TOY_SLOT_PREVIOUS_HITBOX := Rect2i(12, 52, 24, 27)
+const TOY_SLOT_NEXT_HITBOX := Rect2i(140, 52, 24, 27)
 const TOY_ACTION_POSITIONS := [Vector2i(38, 101), Vector2i(38, 127)]
 const TOY_ACTION_LABELS := ["上传此存档", "下载到本地"]
 const TOY_RANK_NAMES := ["逍遥等级", "队伍等级", "最高金钱"]
@@ -223,18 +230,20 @@ func configure_save_slots(summaries: Array[Dictionary], current_slot: int = 1) -
 	queue_redraw()
 
 
-## 显示或隐藏主菜单的 Toy 云端入口，并更新能力诊断文字。
+## 显示或隐藏系统菜单的 Toy 云端入口，并更新能力诊断文字。
 func configure_toy_features(available: bool, message: String = "") -> void:
 	_toy_features_available = available
 	if not message.is_empty():
 		_toy_status = message
-	if not available and _main_selection >= 4:
+	if _main_selection >= MAIN_ITEM_POSITIONS.size():
 		_main_selection = 3
+	if not available and _system_selection >= SYSTEM_ITEM_POSITIONS.size():
+		_system_selection = SYSTEM_ITEM_POSITIONS.size() - 1
 	if not available and current_page in [Page.TOY, Page.TOY_RANK, Page.TOY_CONFIRM]:
 		if _close_toy_on_cancel:
 			close_menu()
 		else:
-			current_page = Page.MAIN
+			current_page = Page.SYSTEM
 	queue_redraw()
 
 
@@ -273,7 +282,7 @@ func open_toy(close_on_cancel: bool = false) -> void:
 	toy_cloud_state_requested.emit()
 
 
-## 打开与云存档同级的 Toy 排行榜页；标题页可选择取消后直接关闭。
+## 打开 Toy 排行榜页；标题页可选择取消后直接关闭。
 func open_toy_rank(close_on_cancel: bool = false) -> void:
 	if database == null or session == null or not _toy_features_available:
 		return
@@ -462,13 +471,13 @@ func go_back() -> void:
 			if _close_toy_on_cancel:
 				close_menu()
 			else:
-				current_page = Page.MAIN
+				current_page = Page.SYSTEM
 				queue_redraw()
 		Page.TOY_RANK:
 			if _close_toy_on_cancel:
 				close_menu()
 			else:
-				current_page = Page.MAIN
+				current_page = Page.SYSTEM
 				queue_redraw()
 		Page.TOY_CONFIRM:
 			_toy_pending_action = ""
@@ -540,14 +549,16 @@ func _gui_input(event: InputEvent) -> void:
 					_confirm_selection()
 					break
 		Page.SYSTEM:
-			for index in range(SYSTEM_ITEM_POSITIONS.size()):
-				if Rect2i(SYSTEM_ITEM_POSITIONS[index] - Vector2i(3, 2), Vector2i(140, 18)).has_point(point):
+			for index in range(_system_item_count()):
+				if Rect2i(_system_item_position(index) - Vector2i(3, 2), Vector2i(140, 18)).has_point(point):
 					_system_selection = index
 					_confirm_selection()
 					break
 		Page.TOY:
-			if Rect2i(Vector2i(20, 55), Vector2i(280, 24)).has_point(point):
-				_save_slot_selection = posmod(_save_slot_selection + (1 if point.x >= 160 else -1), PalSaveManager.SLOT_COUNT)
+			if TOY_SLOT_PREVIOUS_HITBOX.has_point(point):
+				_save_slot_selection = maxi(0, _save_slot_selection - 1)
+			elif TOY_SLOT_NEXT_HITBOX.has_point(point):
+				_save_slot_selection = mini(PalSaveManager.SLOT_COUNT - 1, _save_slot_selection + 1)
 			else:
 				for index in range(TOY_ACTION_POSITIONS.size()):
 					if Rect2i(TOY_ACTION_POSITIONS[index] - Vector2i(4, 3), Vector2i(220, 20)).has_point(point):
@@ -679,7 +690,7 @@ func _draw_main_menu() -> void:
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _main_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
-		_draw_pal_text(database.get_word(3 + index) if index < 4 else TOY_MAIN_LABELS[index - 4], MAIN_ITEM_POSITIONS[index], _palette_color(color_index), true)
+		_draw_pal_text(database.get_word(3 + index), MAIN_ITEM_POSITIONS[index], _palette_color(color_index), true)
 
 
 func _draw_inventory_action() -> void:
@@ -948,21 +959,43 @@ func _draw_role_condition_icon(condition: Dictionary, position: Vector2i) -> voi
 
 
 func _draw_system_menu() -> void:
-	# 官方系统菜单位于 (40,60)。本项目在原五行布局右侧追加百分比数字，
-	# 保留经典窗口与点阵字，而不引入不协调的现代滑块控件。
-	_draw_classic_box(SYSTEM_MENU_POSITION, 4, 8, 0, 6)
-	for index in range(SYSTEM_ITEM_POSITIONS.size()):
+	# 非 Toy 环境保持官方 (40,60) 五行布局；Toy 环境向上扩展两行云功能，
+	# 并继续把“结束游戏”放在最后。音量仍使用原版黄色数字而非现代滑块。
+	_draw_classic_box(_system_menu_position(), _system_item_count() - 1, 8, 0, 6)
+	for index in range(_system_item_count()):
 		var enabled := _system_item_enabled(index)
 		var color_index := COLOR_NORMAL if enabled else COLOR_INACTIVE
 		if index == _system_selection:
 			color_index = _selected_color_index() if enabled else COLOR_SELECTED_INACTIVE
-		_draw_pal_text(database.get_word(11 + index), SYSTEM_ITEM_POSITIONS[index], _palette_color(color_index), true)
-	_draw_number(session.music_volume, 3, Vector2i(VOLUME_VALUE_X, SYSTEM_ITEM_POSITIONS[2].y + 4), 19)
-	_draw_number(session.sound_volume, 3, Vector2i(VOLUME_VALUE_X, SYSTEM_ITEM_POSITIONS[3].y + 4), 19)
+		_draw_pal_text(_system_item_label(index), _system_item_position(index), _palette_color(color_index), true)
+	_draw_number(session.music_volume, 3, Vector2i(VOLUME_VALUE_X, _system_item_position(2).y + 4), 19)
+	_draw_number(session.sound_volume, 3, Vector2i(VOLUME_VALUE_X, _system_item_position(3).y + 4), 19)
+
+
+func _system_menu_position() -> Vector2i:
+	return TOY_SYSTEM_MENU_POSITION if _toy_features_available else SYSTEM_MENU_POSITION
+
+
+func _system_item_position(index: int) -> Vector2i:
+	return TOY_SYSTEM_ITEM_POSITIONS[index] if _toy_features_available else SYSTEM_ITEM_POSITIONS[index]
+
+
+func _system_item_count() -> int:
+	return TOY_SYSTEM_ITEM_POSITIONS.size() if _toy_features_available else SYSTEM_ITEM_POSITIONS.size()
+
+
+func _system_item_label(index: int) -> String:
+	if index < 4:
+		return database.get_word(11 + index)
+	if _toy_features_available:
+		if index < 6:
+			return TOY_SYSTEM_LABELS[index - 4]
+		return database.get_word(15)
+	return database.get_word(15)
 
 
 func _system_item_enabled(index: int) -> bool:
-	return index >= 0 and index < SYSTEM_ITEM_POSITIONS.size()
+	return index >= 0 and index < _system_item_count()
 
 
 func _move_selection(direction: Vector2i) -> void:
@@ -993,7 +1026,7 @@ func _move_selection(direction: Vector2i) -> void:
 			if direction.x != 0 and _system_selection in [2, 3]:
 				_change_selected_volume(direction.x * VOLUME_STEP)
 			elif direction.y != 0:
-				_system_selection = posmod(_system_selection + direction.y, SYSTEM_ITEM_POSITIONS.size())
+				_system_selection = posmod(_system_selection + direction.y, _system_item_count())
 		Page.STATUS:
 			if not session.party_roles.is_empty():
 				var delta := direction.x if direction.x != 0 else direction.y
@@ -1021,7 +1054,7 @@ func _move_selection(direction: Vector2i) -> void:
 			if _toy_busy:
 				return
 			if direction.x != 0:
-				_save_slot_selection = posmod(_save_slot_selection + direction.x, PalSaveManager.SLOT_COUNT)
+				_save_slot_selection = clampi(_save_slot_selection + direction.x, 0, PalSaveManager.SLOT_COUNT - 1)
 			elif direction.y != 0:
 				_toy_selection = posmod(_toy_selection + direction.y, TOY_ACTION_POSITIONS.size())
 		Page.TOY_RANK:
@@ -1055,10 +1088,6 @@ func _confirm_selection() -> void:
 				_action_selection = 1
 			elif _main_selection == 3:
 				current_page = Page.SYSTEM
-			elif _main_selection == 4:
-				open_toy(false)
-			elif _main_selection == 5:
-				open_toy_rank(false)
 		Page.INVENTORY_ACTION:
 			_inventory_for_equipment = _action_selection == 0
 			_inventory_return_page = Page.INVENTORY_ACTION
@@ -1083,7 +1112,11 @@ func _confirm_selection() -> void:
 			elif _system_selection == 3:
 				session.set_sound_volume(GameSession.AUDIO_VOLUME_MAX if session.sound_volume == 0 else 0)
 				audio_settings_changed.emit(session.music_volume, session.sound_volume)
-			elif _system_selection == 4:
+			elif _toy_features_available and _system_selection == 4:
+				open_toy(false)
+			elif _toy_features_available and _system_selection == 5:
+				open_toy_rank(false)
+			elif _system_selection == _system_item_count() - 1:
 				close_menu()
 				quit_requested.emit()
 		Page.STATUS:
@@ -1137,7 +1170,9 @@ func _draw_toy_page() -> void:
 	if not _toy_cloud_metadata.is_empty():
 		cloud_label = "云端：%s" % _format_save_time(str(_toy_cloud_metadata.get("saved_at", "")))
 	_draw_pal_text(cloud_label, Vector2i(20, 38), _palette_color(COLOR_NORMAL), true)
-	_draw_pal_text(_toy_slot_label(), Vector2i(20, 61), _palette_color(COLOR_CONFIRMED), true)
+	_draw_toy_slot_arrow(TOY_SLOT_PREVIOUS_POSITION, true, _save_slot_selection > 0)
+	_draw_pal_text(_toy_slot_label(), TOY_SLOT_LABEL_POSITION, _palette_color(COLOR_CONFIRMED), true)
+	_draw_toy_slot_arrow(TOY_SLOT_NEXT_POSITION, false, _save_slot_selection < PalSaveManager.SLOT_COUNT - 1)
 	for index in range(TOY_ACTION_LABELS.size()):
 		var enabled := not _toy_busy
 		if index == 0:
@@ -1168,7 +1203,19 @@ func _toy_confirmation_text() -> String:
 
 
 func _toy_slot_label() -> String:
-	return "本地存档 %03d  前  后" % (_save_slot_selection + 1)
+	return "本地存档 %03d" % (_save_slot_selection + 1)
+
+
+func _draw_toy_slot_arrow(position: Vector2i, points_left: bool, enabled: bool) -> void:
+	var color := _palette_color(COLOR_CONFIRMED if enabled else COLOR_INACTIVE)
+	var points: Array[Vector2i] = []
+	if points_left:
+		points = [position + Vector2i(7, 0), position + Vector2i(1, 6), position + Vector2i(7, 12)]
+	else:
+		points = [position + Vector2i(1, 0), position + Vector2i(7, 6), position + Vector2i(1, 12)]
+	for index in range(points.size() - 1):
+		draw_line(Vector2(points[index] + Vector2i.ONE), Vector2(points[index + 1] + Vector2i.ONE), Color(0, 0, 0, 0.9), 2.0, false)
+		draw_line(Vector2(points[index]), Vector2(points[index + 1]), color, 2.0, false)
 
 
 func _draw_toy_rank_page() -> void:
@@ -1192,7 +1239,7 @@ func _draw_toy_rank_page() -> void:
 
 
 func _main_item_count() -> int:
-	return 6 if _toy_features_available else 4
+	return MAIN_ITEM_POSITIONS.size()
 
 
 func _draw_confirmation() -> void:

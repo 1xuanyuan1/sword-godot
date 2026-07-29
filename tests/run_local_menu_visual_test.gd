@@ -165,7 +165,8 @@ func _init() -> void:
 	menu.queue_redraw()
 	await process_frame
 	await process_frame
-	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_system_audio.png"))
+	var classic_system_image := viewport.get_texture().get_image()
+	classic_system_image.save_png(output_dir.path_join("classic_system_audio.png"))
 	var save_summaries: Array[Dictionary] = []
 	for slot in range(1, PalSaveManager.SLOT_COUNT + 1):
 		save_summaries.append({"slot": slot, "exists": false, "can_load": false, "save_count": 0, "saved_at": "", "scene_index": -1, "map_number": 0, "party": [], "error": ""})
@@ -189,19 +190,21 @@ func _init() -> void:
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_save_slots.png"))
 	menu.configure_toy_features(true, "Toy 云存档与排行榜已连接")
 	menu.open_main()
-	menu._main_selection = 4
+	menu._main_selection = 3
+	menu._confirm_selection()
+	menu._system_selection = 4
 	await process_frame
 	await process_frame
-	var toy_main_image := viewport.get_texture().get_image()
-	if toy_main_image.save_png(output_dir.path_join("classic_toy_main_menu.png")) != OK:
-		printerr("FAIL: 无法写入 Toy 同级主菜单截图")
+	var toy_system_image := viewport.get_texture().get_image()
+	if toy_system_image.save_png(output_dir.path_join("classic_toy_system_menu.png")) != OK:
+		printerr("FAIL: 无法写入 Toy 系统菜单截图")
 		quit(1)
 		return
-	if _pixel_difference_in_rect(classic_main_image, toy_main_image, Rect2i(0, 35, 100, 130)) < 200:
-		printerr("FAIL: Toy 主菜单没有形成同级的云端存档与排行榜入口")
+	if _pixel_difference_in_rect(classic_system_image, toy_system_image, Rect2i(35, 20, 165, 175)) < 200:
+		printerr("FAIL: Toy 系统菜单没有显示云端存档与排行榜入口")
 		quit(1)
 		return
-	menu.open_toy(false)
+	menu._confirm_selection()
 	menu.notify_toy_cloud_info({}, "预览模式：正式页面将连接云存档")
 	await process_frame
 	await process_frame
@@ -210,6 +213,19 @@ func _init() -> void:
 		printerr("FAIL: 无法写入 Toy 云存档页截图")
 		quit(1)
 		return
+	menu._move_selection(Vector2i(1, 0))
+	await process_frame
+	await process_frame
+	var toy_cloud_next_image := viewport.get_texture().get_image()
+	if menu._toy_slot_label() != "本地存档 002" or toy_cloud_next_image.save_png(output_dir.path_join("classic_toy_cloud_002.png")) != OK:
+		printerr("FAIL: Toy 云存档右箭头没有切到本地存档 002")
+		quit(1)
+		return
+	if _pixel_difference_in_rect(toy_cloud_image, toy_cloud_next_image, Rect2i(15, 56, 150, 22)) < 10:
+		printerr("FAIL: Toy 云存档首槽左箭头状态或存档编号没有随右移更新")
+		quit(1)
+		return
+	menu._move_selection(Vector2i(-1, 0))
 	menu._toy_selection = 0
 	menu._confirm_selection()
 	await process_frame
@@ -224,7 +240,9 @@ func _init() -> void:
 		quit(1)
 		return
 	menu.go_back()
-	menu.open_toy_rank(false)
+	menu.go_back()
+	menu._system_selection = 5
+	menu._confirm_selection()
 	menu._toy_busy = true
 	menu._move_selection(Vector2i(1, 0))
 	if menu._toy_rank_board != 2:
@@ -243,7 +261,7 @@ func _init() -> void:
 		printerr("FAIL: Toy 云存档页与排行榜页没有形成有效的像素差异")
 		quit(1)
 		return
-	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 同级主菜单、云存档、确认框与可切换空排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 扩展系统菜单、云存档、确认框与可切换空排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
 		field_magic_id,
 		session.attack_strength_for(0),
 		session.magic_strength_for(0),

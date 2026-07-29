@@ -39,6 +39,21 @@ keywords:
 
 ---
 
+### [FT-086] [change] 将游戏内 Toy 入口移入系统菜单
+
+- **关联需求**: M3 经典系统菜单、M5 Toy Web 发布质量
+- **关联 TODO**: 无
+- **功能描述**: 游戏内主菜单恢复原版“状态、仙术、物品、系统”四项；Toy SDK 可用时，系统窗向上扩展并在“结束游戏”之前增加“云端存档、排行榜”，两页取消后都返回系统窗。标题菜单继续保留云存档与排行榜的直接入口。云存档槽位导航同步改为两侧常驻像素箭头，第一槽禁用左箭头、第一百槽禁用右箭头，键盘和触摸均按单槽移动且不跨首尾循环。
+- **涉及文件**:
+  - `src/ui/pal_game_menu.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `docs/SAVE_SYSTEM.md`
+  - `docs/CLASSIC_UI.md`
+  - `.yulia/kb/changelog/changelog.md`
+
+---
+
 ## 2026-07-23
 
 ### [FT-079] [refactor] 退役正式运行中的 CPU 地图渲染器
