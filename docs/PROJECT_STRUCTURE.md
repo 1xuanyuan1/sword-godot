@@ -66,7 +66,7 @@ sword/
 
 ### `src/ui`
 
-只负责屏幕控件和输入反馈。`PalStartup` 使用原版 RNG、FBP、MGO、点阵字和 RIX 编排正式片头与标题菜单，缺少本地内容时才转入资源实验室；`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备、系统和启动读档页。它们读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalClassicFont` 先使用原版字形，再从提交到仓库的 GNU Unifont 16×16 子集补齐简体 UI 点阵，最后才对补充字库也没有的字符复用繁体点阵；三层都走相同的调色板、阴影和整数缩放。构建时无法预知的 Toy 玩家昵称由 `PalWebTextRenderer` 使用浏览器 Canvas 系统字体生成 16px 字形并二值化抗锯齿透明度，既不会因为 Godot Web fallback 缺少中文而显示方框，也不会在 320×200 画面放大后出现灰边模糊。`PalRngPlayer` 从压缩归档流式播放脚本指定的帧区间，复用 RG8 纹理和调色板 Shader，并以完成信号解除 VM 的剧情等待。
+只负责屏幕控件和输入反馈。`PalStartup` 使用原版 RNG、FBP、MGO、点阵字和 RIX 编排正式片头与标题菜单，缺少本地内容时才转入资源实验室；`PalGameMenu` 使用原版资源绘制状态、场外仙术、物品、装备、系统和启动读档页。它们读取内容数据库与会话，但场外仙术只发出类型化使用请求，不自行推进 ScriptVM 或扣除 MP。`PalClassicFont` 先使用原版字形，再从提交到仓库的 GNU Unifont 16×16 子集补齐简体 UI 点阵，最后才对补充字库也没有的字符复用繁体点阵；三层都走相同的调色板、阴影和整数缩放。构建时无法预知的 Toy 玩家昵称由 `PalWebTextRenderer` 使用浏览器 Canvas 系统字体生成 400 字重的 16px 字形，并以 alpha 128 二值化抗锯齿透明度；既不会因为 Godot Web fallback 缺少中文而显示方框，也不会在 320×200 画面放大后出现灰边模糊或粗笔画粘连。`PalRngPlayer` 从压缩归档流式播放脚本指定的帧区间，复用 RG8 纹理和调色板 Shader，并以完成信号解除 VM 的剧情等待。
 
 ### `src/debug`
 

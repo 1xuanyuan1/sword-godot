@@ -141,12 +141,12 @@ func _test_web_text_pixelation() -> void:
 		1,
 		false,
 		Image.FORMAT_RGBA8,
-		PackedByteArray([40, 80, 120, 95, 20, 60, 100, 96])
+		PackedByteArray([40, 80, 120, 127, 20, 60, 100, 128])
 	)
-	WebTextRenderer._pixelate_image(image, 96)
+	WebTextRenderer._pixelate_image(image)
 	_expect(
 		image.get_data() == PackedByteArray([255, 255, 255, 0, 255, 255, 255, 255]),
-		"browser nickname textures replace antialiased alpha with hard white pixels at the configured threshold"
+		"browser nickname textures use the default alpha-128 boundary to produce hard white pixels without thickening strokes"
 	)
 
 

@@ -5,9 +5,9 @@
 class_name PalWebTextRenderer
 extends RefCounted
 
-const FONT_CSS := '600 16px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif'
+const FONT_CSS := '400 16px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif'
 const TEXTURE_HEIGHT := 20
-const ALPHA_THRESHOLD := 96
+const ALPHA_THRESHOLD := 128
 
 const RENDER_SCRIPT_TEMPLATE := """
 (() => {
