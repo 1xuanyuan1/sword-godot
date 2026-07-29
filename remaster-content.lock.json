@@ -1,6 +1,11 @@
 {
   "schema_version": "1.0.0",
   "asset_repository": "sword-assets",
-  "asset_commit": "7b65195b571cac18dd8020db8734944153306498",
-  "manifests": []
+  "asset_commit": "eb08b76bcf2d5c0d026856da58e9fc9fe58a728a",
+  "manifests": [
+    {
+      "path": "manifests/art/chapter_01_li_xiaoyao.v1.json",
+      "sha256": "3821ee9c1205df207647f53370b3b681e639e92b7809c2572fb6166ed45fefe8"
+    }
+  ]
 }
