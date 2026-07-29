@@ -59,7 +59,7 @@ MiniMax 当前只生产第一章：
 - [x] 退役 3D 原型并恢复纯 2D Compatibility 路径。
 - [x] 安装并锁定 2DCS、Sprite Video Lab 与 XSXB Frame Tuner Lite。
 - [x] 完成 384×216、5 倍输出和经典 UI 输入映射。
-- [ ] 完成地图 TileSet、人物 Atlas、校验器和缺失回退。
+- [x] 完成地图 TileSet、人物 Atlas、校验器和缺失回退。
 - [ ] 完成李逍遥四方向基准与 Map 012 客栈垂直切片。
 - [ ] 完成第一章视觉资源、三条样音、全章 TTS 和真实运行验收。
 - [ ] 按章节完成第二至十八章视觉重制。

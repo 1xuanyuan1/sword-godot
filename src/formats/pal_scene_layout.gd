@@ -20,6 +20,12 @@ class DrawItem:
 	var draw_offset_y: int = 0
 	var draw_kind: int = DRAW_KIND_SCENE
 	var source_object_id: int = 0
+	## 高清 2D 运行时可替换贴图，但仍沿用本项的基准 Y、逻辑层和覆盖候选。
+	var remaster_texture: Texture2D
+	var remaster_scale: float = 1.0
+	var remaster_position: Vector2 = Vector2.INF
+	## 覆盖块对应的 GOP 帧编号；普通人物保持 -1。
+	var map_sprite_index: int = -1
 
 	func _init(source_frame: PalIndexedImage, source_x: int, source_baseline_y: int, source_layer: int, source_draw_offset_y: int = 0, source_draw_kind: int = DRAW_KIND_SCENE, source_id: int = 0) -> void:
 		frame = source_frame
@@ -122,12 +128,14 @@ static func _append_cover_tiles(draw_items: Array, source_item: DrawItem, map_da
 					var tile_frame := RleDecoder.decode(tile_sprite.get_frame(frame_index))
 					if not tile_frame.is_valid():
 						continue
-					draw_items.append(DrawItem.new(
+					var cover_item := DrawItem.new(
 						tile_frame,
 						tile_x * 32 + tile_half * 16 - 16 - viewport_position.x,
 						tile_y * 16 + tile_half * 8 + 7 + layer + tile_height * 8 - viewport_position.y,
 						tile_height * 8 + layer
-					))
+					)
+					cover_item.map_sprite_index = frame_index
+					draw_items.append(cover_item)
 
 
 static func _trunc_div(numerator: int, denominator: int) -> int:

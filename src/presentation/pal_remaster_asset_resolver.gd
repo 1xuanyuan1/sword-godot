@@ -59,7 +59,8 @@ func reload() -> bool:
 	error_message = ""
 	var success := true
 	var private_roots := PackedStringArray(["user://remaster/assets"])
-	if Engine.is_editor_hint():
+	# Private 仓在公开导出中被排除；本地项目运行时若目录存在则允许直接预览。
+	if Engine.is_editor_hint() or DirAccess.open("res://sword-assets") != null:
 		private_roots.append("res://sword-assets")
 	for configured_root in _additional_remaster_roots:
 		if configured_root not in private_roots:
@@ -200,6 +201,11 @@ func set_additional_remaster_roots(roots: PackedStringArray) -> bool:
 ## 自动测试可关闭预期的回退警告；正式运行默认每个失败原因只提示一次。
 func set_failure_warnings_enabled(enabled: bool) -> void:
 	_failure_warnings_enabled = enabled
+
+
+## 子清单或关联图片校验失败时沿用“一条原因只告警一次”的回退通道。
+func report_invalid_asset(path: String, reason: String) -> void:
+	_report_once(path, reason)
 
 
 func _candidate_from_asset(raw: Dictionary, pack_root: String, pack_id: String) -> Candidate:

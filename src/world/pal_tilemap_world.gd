@@ -12,6 +12,8 @@ const COLLECTIBLE_MARKER_SHADER: Shader = preload("res://shaders/collectible_mar
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
 const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
+const RemasterMapTileset := preload("res://src/presentation/pal_remaster_map_tileset.gd")
+const RemasterSpriteAtlas := preload("res://src/presentation/pal_remaster_sprite_atlas.gd")
 const COLLECTIBLE_MARKER_SIZE := 9
 const SPRITELESS_COLLECTIBLE_HEIGHT := 10
 
@@ -34,6 +36,8 @@ var _tile_sprite: PalSprite
 var _map_instance: Node2D
 var _static_bottom: TileMapLayer
 var _static_top: TileMapLayer
+var _cover_bottom: TileMapLayer
+var _cover_top: TileMapLayer
 var _sort_root: Node2D
 var _camera: Camera2D
 var _effect_root: Node2D
@@ -57,6 +61,12 @@ var _wave_frame_accumulator: float = 0.0
 var _presentation_mode: int = PRESENTATION_CLASSIC
 var _logical_view_size: Vector2i = PresentationMetrics.CLASSIC_CONTENT_SIZE
 var _classic_content_offset: Vector2i = Vector2i.ZERO
+var _classic_tile_set: TileSet
+var _remaster_resolver: PalRemasterAssetResolver
+var _remaster_resolver_loaded: bool = false
+var _remaster_map_tileset: RefCounted
+var _remaster_map_active: bool = false
+var _remaster_actor_atlases: Dictionary = {}
 
 
 ## 切换经典 320×200 或重制 384×216 视野；世界坐标、相机中心和选帧规则保持不变。
@@ -67,6 +77,8 @@ func set_presentation_mode(mode: int) -> void:
 	_classic_content_offset = PresentationMetrics.REMASTER_CLASSIC_OFFSET if remaster_enabled else Vector2i.ZERO
 	if _wave_overlay != null:
 		_wave_overlay.size = Vector2(_logical_view_size)
+	if loaded_map_number >= 0:
+		_apply_map_presentation()
 
 
 func presentation_mode() -> int:
@@ -79,6 +91,19 @@ func logical_view_size() -> Vector2i:
 
 func classic_content_offset() -> Vector2i:
 	return _classic_content_offset
+
+
+func remaster_map_active() -> bool:
+	return _remaster_map_active
+
+
+## 测试、MOD 预览或宿主可注入已配置解析器；正式运行默认按固定目录自动加载。
+func set_remaster_asset_resolver(resolver: PalRemasterAssetResolver) -> void:
+	_remaster_resolver = resolver
+	_remaster_resolver_loaded = resolver != null
+	_remaster_actor_atlases.clear()
+	if loaded_map_number >= 0:
+		_apply_map_presentation()
 
 
 ## 载入指定 `map_number` 的原始 MAP/GOP 和生成的 TileMapLayer PackedScene。
@@ -113,11 +138,13 @@ func load_map(database: PalContentDatabase, map_number: int) -> bool:
 	_map_instance = instance
 	_static_bottom = bottom
 	_static_top = top
-	for cover_name in ["CoverBottom", "CoverTop"]:
-		var cover := _map_instance.get_node_or_null(cover_name) as TileMapLayer
+	_cover_bottom = _map_instance.get_node_or_null("CoverBottom") as TileMapLayer
+	_cover_top = _map_instance.get_node_or_null("CoverTop") as TileMapLayer
+	for cover in [_cover_bottom, _cover_top]:
 		if cover != null:
 			# 当前启用逐像素兼容 Sprite 覆盖层；节点保留给后续纯 TileMap Y 排序对照。
 			cover.hide()
+	_classic_tile_set = _static_bottom.tile_set
 	_static_bottom.material = _palette_material
 	_static_top.material = _palette_material
 	_effect_root.add_child(_map_instance)
@@ -127,6 +154,7 @@ func load_map(database: PalContentDatabase, map_number: int) -> bool:
 	_event_sprites.clear()
 	_reported_block_mismatches.clear()
 	_clear_sort_items()
+	_apply_map_presentation()
 	return true
 
 
@@ -174,6 +202,7 @@ func sync_world(session: GameSession, events: Array[PalEventObject], camera_offs
 	var scene_items := _build_scene_items(latest_snapshot, session, events, render_viewport)
 	var expanded := PalSceneLayout.expanded_draw_items(_map_data, _tile_sprite, render_viewport, scene_items)
 	for item in expanded:
+		_apply_remaster_cover(item, session.night_palette)
 		_add_draw_item(item, render_viewport)
 	presentation_snapshot_ready.emit(latest_snapshot)
 	return true
@@ -203,6 +232,7 @@ func is_map_blocked(world_position: Vector2i) -> bool:
 func reset_sprite_cache() -> void:
 	_event_sprites.clear()
 	_texture_cache.clear()
+	_remaster_actor_atlases.clear()
 
 
 ## 为高清 2D Sprite 提供与正式 TileMap 完全相同的经典 MGO 回退帧。
@@ -324,6 +354,7 @@ func _update_palette(index: int, night: bool) -> bool:
 	var texture := ImageTexture.create_from_image(image)
 	_palette_material.set_shader_parameter("palette_texture", texture)
 	_palette_key = key
+	_update_remaster_map_palette(night)
 	return true
 
 
@@ -335,14 +366,18 @@ func _build_scene_items(snapshot: PalWorldPresentationSnapshot, session: GameSes
 		var frame := _decode_frame(sprite, actor.frame_index)
 		if not frame.is_valid():
 			continue
-		result.append(PalSceneLayout.player_item(frame, actor.pal_world_position - render_viewport, actor.scene_layer))
+		var item := PalSceneLayout.player_item(frame, actor.pal_world_position - render_viewport, actor.scene_layer)
+		_apply_remaster_actor(item, actor, sprite, render_viewport)
+		result.append(item)
 
 	for raw_actor in snapshot.followers:
 		var actor: PalPresentationActor = raw_actor
 		var sprite := _event_sprite(actor.sprite_number)
 		var frame := _decode_frame(sprite, actor.frame_index)
 		if frame.is_valid():
-			result.append(PalSceneLayout.player_item(frame, actor.pal_world_position - render_viewport, actor.scene_layer))
+			var item := PalSceneLayout.player_item(frame, actor.pal_world_position - render_viewport, actor.scene_layer)
+			_apply_remaster_actor(item, actor, sprite, render_viewport)
+			result.append(item)
 
 	var events_by_id: Dictionary = {}
 	for event in events:
@@ -352,7 +387,9 @@ func _build_scene_items(snapshot: PalWorldPresentationSnapshot, session: GameSes
 		var frame := _decode_frame(_event_sprite(actor.sprite_number), actor.frame_index)
 		var screen_position: Vector2i = actor.pal_world_position - render_viewport
 		if frame.is_valid() and not _outside_viewport(screen_position, frame.width, frame.height):
-			result.append(PalSceneLayout.event_item(frame, screen_position, actor.scene_layer))
+			var item := PalSceneLayout.event_item(frame, screen_position, actor.scene_layer)
+			_apply_remaster_actor(item, actor, _event_sprite(actor.sprite_number), render_viewport)
+			result.append(item)
 		var event: PalEventObject = events_by_id.get(actor.source_object_id)
 		if event != null and _collectible_markers_enabled and _collectible_classifier.is_available(event, session):
 			var source_height := frame.height if frame.is_valid() else SPRITELESS_COLLECTIBLE_HEIGHT
@@ -364,6 +401,138 @@ func _build_scene_items(snapshot: PalWorldPresentationSnapshot, session: GameSes
 
 func _outside_viewport(screen_position: Vector2i, width: int, height: int) -> bool:
 	return screen_position.x < -width or screen_position.x > _logical_view_size.x + width or screen_position.y < -height or screen_position.y > _logical_view_size.y + height
+
+
+func _apply_map_presentation() -> void:
+	_restore_classic_map_tileset()
+	if _presentation_mode != PRESENTATION_REMASTER_2D or loaded_map_number < 0 or _map_data == null or _tile_sprite == null:
+		return
+	_ensure_remaster_resolver()
+	if _remaster_resolver == null:
+		return
+	var resolved := _remaster_resolver.resolve("map/%03d/tileset" % loaded_map_number, "map_tileset")
+	if resolved == null:
+		return
+	var candidate := RemasterMapTileset.new()
+	if not candidate.load_manifest(resolved.path, loaded_map_number, _tile_sprite.frame_count(), _required_map_frame_indices()):
+		_remaster_resolver.report_invalid_asset(resolved.path, candidate.error_message)
+		return
+	var tile_set := PalTileSetBuilder.build_remaster_tileset(_map_data, candidate.source_frame_count, candidate.active_atlas_texture(_palette_key.ends_with(":1")))
+	if tile_set == null:
+		_remaster_resolver.report_invalid_asset(resolved.path, "无法构建等价 5 倍 TileSet")
+		return
+	_remaster_map_tileset = candidate
+	for layer in [_static_bottom, _static_top, _cover_bottom, _cover_top]:
+		if layer != null:
+			layer.tile_set = tile_set
+			layer.scale = Vector2.ONE / float(RemasterMapTileset.SCALE)
+	_static_bottom.material = null
+	_static_top.material = null
+	_remaster_map_active = true
+
+
+func _restore_classic_map_tileset() -> void:
+	_remaster_map_active = false
+	_remaster_map_tileset = null
+	if _classic_tile_set == null:
+		return
+	for layer in [_static_bottom, _static_top, _cover_bottom, _cover_top]:
+		if layer != null:
+			layer.tile_set = _classic_tile_set
+			layer.scale = Vector2.ONE
+	if _static_bottom != null:
+		_static_bottom.material = _palette_material
+	if _static_top != null:
+		_static_top.material = _palette_material
+
+
+func _required_map_frame_indices() -> PackedInt32Array:
+	var indices: Dictionary = {}
+	var frame_count := _tile_sprite.frame_count()
+	var fallback_index := PalMapData.bottom_sprite_index(_map_data.tile_value(0, 0, 0))
+	if fallback_index >= 0 and fallback_index < frame_count:
+		indices[fallback_index] = true
+	for map_y in range(PalMapData.HEIGHT):
+		for map_x in range(PalMapData.WIDTH):
+			for half in range(PalMapData.HALVES):
+				var value := _map_data.tile_value(map_x, map_y, half)
+				var bottom_index := PalMapData.bottom_sprite_index(value)
+				if bottom_index >= 0 and bottom_index < frame_count:
+					indices[bottom_index] = true
+				elif fallback_index >= 0 and fallback_index < frame_count:
+					indices[fallback_index] = true
+				var top_index := PalMapData.top_sprite_index(value)
+				if top_index >= 0 and top_index < frame_count:
+					indices[top_index] = true
+	var result := PackedInt32Array()
+	for raw_index in indices:
+		result.append(int(raw_index))
+	result.sort()
+	return result
+
+
+func _ensure_remaster_resolver() -> void:
+	if _remaster_resolver == null:
+		_remaster_resolver = PalRemasterAssetResolver.new()
+	if not _remaster_resolver_loaded:
+		_remaster_resolver.reload()
+		_remaster_resolver_loaded = true
+
+
+func _apply_remaster_actor(item: PalSceneLayout.DrawItem, actor: PalPresentationActor, sprite: PalSprite, render_viewport: Vector2i) -> void:
+	if _presentation_mode != PRESENTATION_REMASTER_2D or item == null or actor == null or sprite == null or not sprite.is_valid():
+		return
+	var atlas = _remaster_actor_atlas(actor, sprite.frame_count())
+	if atlas == null:
+		return
+	var frame = atlas.frame(actor.frame_index)
+	if frame == null or frame.texture == null:
+		return
+	var target_screen := Vector2(actor.pal_world_position - render_viewport)
+	var item_anchor := Vector2(item.x, item.baseline_y)
+	item.remaster_texture = frame.texture
+	item.remaster_scale = 1.0 / float(RemasterSpriteAtlas.SCALE)
+	item.remaster_position = target_screen - item_anchor - Vector2(frame.pivot) * item.remaster_scale
+
+
+func _remaster_actor_atlas(actor: PalPresentationActor, frame_count: int):
+	_ensure_remaster_resolver()
+	if _remaster_resolver == null:
+		return null
+	var cache_key := "%s:%d:%d" % [actor.logical_id, actor.sprite_number, frame_count]
+	if _remaster_actor_atlases.has(cache_key):
+		var cached = _remaster_actor_atlases[cache_key]
+		return cached if cached is RefCounted and cached.get_script() == RemasterSpriteAtlas else null
+	var resolved := _remaster_resolver.resolve(actor.logical_id, "field_sprite")
+	if resolved == null:
+		_remaster_actor_atlases[cache_key] = false
+		return null
+	var atlas := RemasterSpriteAtlas.new()
+	if not atlas.load_manifest(resolved.path, actor.sprite_number, frame_count):
+		_remaster_resolver.report_invalid_asset(resolved.path, atlas.error_message)
+		_remaster_actor_atlases[cache_key] = false
+		return null
+	_remaster_actor_atlases[cache_key] = atlas
+	return atlas
+
+
+func _apply_remaster_cover(item: PalSceneLayout.DrawItem, night: bool) -> void:
+	if not _remaster_map_active or _remaster_map_tileset == null or item == null or item.map_sprite_index < 0:
+		return
+	var texture: Texture2D = _remaster_map_tileset.frame_texture(item.map_sprite_index, night)
+	if texture == null:
+		return
+	item.remaster_texture = texture
+	item.remaster_scale = 1.0 / float(RemasterMapTileset.SCALE)
+	item.remaster_position = Vector2(0, -item.frame.height - item.logical_layer + item.draw_offset_y)
+
+
+func _update_remaster_map_palette(night: bool) -> void:
+	if not _remaster_map_active or _remaster_map_tileset == null or _static_bottom == null or _static_bottom.tile_set == null:
+		return
+	var source := _static_bottom.tile_set.get_source(PalTileSetBuilder.ATLAS_SOURCE_ID) as TileSetAtlasSource
+	if source != null:
+		source.texture = _remaster_map_tileset.active_atlas_texture(night)
 
 
 func _player_sprite_for_role(role_index: int) -> PalSprite:
@@ -387,7 +556,7 @@ func _decode_frame(sprite: PalSprite, frame_index: int) -> PalIndexedImage:
 
 
 func _add_draw_item(item: PalSceneLayout.DrawItem, viewport_position: Vector2i) -> void:
-	var texture := _texture_for_frame(item.frame)
+	var texture := item.remaster_texture if item.remaster_texture != null else _texture_for_frame(item.frame)
 	if texture == null:
 		return
 	var anchor := Node2D.new()
@@ -396,10 +565,12 @@ func _add_draw_item(item: PalSceneLayout.DrawItem, viewport_position: Vector2i) 
 		anchor.name = "CollectibleMarker_%d" % item.source_object_id
 	var sprite := Sprite2D.new()
 	sprite.centered = false
-	sprite.position = Vector2(0, -item.frame.height - item.logical_layer + item.draw_offset_y)
+	sprite.position = item.remaster_position if item.remaster_position.is_finite() else Vector2(0, -item.frame.height - item.logical_layer + item.draw_offset_y)
+	sprite.scale = Vector2(item.remaster_scale, item.remaster_scale)
 	sprite.texture = texture
 	sprite.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
-	sprite.material = _collectible_marker_material if item.draw_kind == PalSceneLayout.DRAW_KIND_COLLECTIBLE_MARKER else _palette_material
+	if item.remaster_texture == null:
+		sprite.material = _collectible_marker_material if item.draw_kind == PalSceneLayout.DRAW_KIND_COLLECTIBLE_MARKER else _palette_material
 	anchor.add_child(sprite)
 	_sort_root.add_child(anchor)
 

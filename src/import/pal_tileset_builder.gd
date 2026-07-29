@@ -12,6 +12,7 @@ const ATLAS_COLUMNS := 32
 const ATLAS_SOURCE_ID := 0
 const LAYER_BOTTOM := 0
 const LAYER_TOP := 1
+const SCALE_REMASTER := 5
 # SDLPal 在地图外复用 (0,0,0) 底层图块；该范围足以覆盖越界的 320×200 视口。
 const VIEWPORT_PADDING_X := 12
 const VIEWPORT_PADDING_Y := 15
@@ -36,6 +37,60 @@ static func map_cell_to_pal_half(cell: Vector2i) -> Vector3i:
 static func build_tileset(map_data: PalMapData, tile_sprite: PalSprite) -> TileSet:
 	var bundle := _build_bundle(map_data, tile_sprite)
 	return bundle.get("tile_set") as TileSet
+
+
+## 使用按原 GOP 帧编号重新排布的 5 倍 RGBA 图集构建等价 TileSet。
+## TileMapLayer 在运行时缩放 0.2，因此碰撞、自定义数据、单元中心和 Y 排序仍使用 PAL 逻辑坐标。
+static func build_remaster_tileset(map_data: PalMapData, source_frame_count: int, atlas_texture: Texture2D) -> TileSet:
+	if map_data == null or not map_data.is_valid() or source_frame_count <= 0 or atlas_texture == null:
+		return null
+	const hd_tile_size := Vector2i(160, 80)
+	var expected_rows := ceili(source_frame_count / float(ATLAS_COLUMNS))
+	if atlas_texture.get_width() < ATLAS_COLUMNS * hd_tile_size.x or atlas_texture.get_height() < expected_rows * hd_tile_size.y:
+		return null
+	var tile_set := TileSet.new()
+	tile_set.tile_size = hd_tile_size
+	tile_set.tile_shape = TileSet.TILE_SHAPE_ISOMETRIC
+	tile_set.tile_layout = TileSet.TILE_LAYOUT_DIAMOND_DOWN
+	tile_set.tile_offset_axis = TileSet.TILE_OFFSET_AXIS_HORIZONTAL
+	_add_custom_data_layer(tile_set, "pal_layer", TYPE_INT)
+	_add_custom_data_layer(tile_set, "pal_sprite_index", TYPE_INT)
+	_add_custom_data_layer(tile_set, "pal_blocked", TYPE_BOOL)
+	_add_custom_data_layer(tile_set, "pal_height", TYPE_INT)
+	var atlas_source := TileSetAtlasSource.new()
+	atlas_source.texture = atlas_texture
+	atlas_source.texture_region_size = hd_tile_size
+	for frame_index in range(source_frame_count):
+		atlas_source.create_tile(_atlas_coords(frame_index))
+	tile_set.add_source(atlas_source, ATLAS_SOURCE_ID)
+
+	var alternatives: Dictionary = {}
+	var fallback_bottom_index := PalMapData.bottom_sprite_index(map_data.tile_value(0, 0, 0))
+	if fallback_bottom_index < 0 or fallback_bottom_index >= source_frame_count:
+		return null
+	for map_y in range(PalMapData.HEIGHT):
+		for map_x in range(PalMapData.WIDTH):
+			for half in range(PalMapData.HALVES):
+				var value := map_data.tile_value(map_x, map_y, half)
+				var bottom_index := PalMapData.bottom_sprite_index(value)
+				if bottom_index < 0 or bottom_index >= source_frame_count:
+					bottom_index = fallback_bottom_index
+				var bottom_key := _alternative_key(LAYER_BOTTOM, bottom_index, PalMapData.is_blocked(value), PalMapData.tile_height(value, false))
+				if not alternatives.has(bottom_key):
+					var alternative := _create_alternative(atlas_source, bottom_index, LAYER_BOTTOM, PalMapData.is_blocked(value), PalMapData.tile_height(value, false), SCALE_REMASTER)
+					if alternative < 0:
+						return null
+					alternatives[bottom_key] = alternative
+				var top_index := PalMapData.top_sprite_index(value)
+				if top_index < 0 or top_index >= source_frame_count:
+					continue
+				var top_key := _alternative_key(LAYER_TOP, top_index, false, PalMapData.tile_height(value, true))
+				if not alternatives.has(top_key):
+					var alternative := _create_alternative(atlas_source, top_index, LAYER_TOP, false, PalMapData.tile_height(value, true), SCALE_REMASTER)
+					if alternative < 0:
+						return null
+					alternatives[top_key] = alternative
+	return tile_set
 
 
 ## 生成一张地图的外部 TileSet 和包含四个 TileMapLayer 的 PackedScene。
@@ -258,7 +313,7 @@ static func _create_layer(layer_name: String, tile_set: TileSet, z: int, y_sorte
 	return layer
 
 
-static func _create_alternative(source: TileSetAtlasSource, sprite_index: int, layer: int, blocked: bool, height: int) -> int:
+static func _create_alternative(source: TileSetAtlasSource, sprite_index: int, layer: int, blocked: bool, height: int, pixel_scale: int = 1) -> int:
 	var coords := _atlas_coords(sprite_index)
 	var alternative_id := source.create_alternative_tile(coords)
 	if alternative_id < 0:
@@ -271,7 +326,7 @@ static func _create_alternative(source: TileSetAtlasSource, sprite_index: int, l
 	tile_data.set_custom_data("pal_blocked", blocked)
 	tile_data.set_custom_data("pal_height", height)
 	# SDLPal 覆盖块的基准 Y 为单元中心 + 7 + 图层 + 逻辑高度×8。
-	tile_data.y_sort_origin = 7 + layer + height * 8
+	tile_data.y_sort_origin = (7 + layer + height * 8) * pixel_scale
 	return alternative_id
 
 

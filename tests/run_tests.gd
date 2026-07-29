@@ -12,6 +12,8 @@ const MapExplorer := preload("res://src/world/map_explorer.gd")
 const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
 const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
 const RemasterAssetResolver := preload("res://src/presentation/pal_remaster_asset_resolver.gd")
+const RemasterMapTileset := preload("res://src/presentation/pal_remaster_map_tileset.gd")
+const RemasterSpriteAtlas := preload("res://src/presentation/pal_remaster_sprite_atlas.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -34,6 +36,7 @@ func _init() -> void:
 	_test_presentation_metrics()
 	_test_world_presentation()
 	_test_remaster_asset_resolver()
+	_test_remaster_asset_contracts()
 	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
@@ -531,6 +534,69 @@ func _test_remaster_asset_resolver() -> void:
 	_expect(resolver.add_remaster_manifest_data(map_manifest, "res://"), "resolver indexes an approved 2D map tileset")
 	var map_asset = resolver.resolve("map/012/tileset", "map_tileset")
 	_expect(map_asset != null and map_asset.type == "map_tileset", "resolver returns the canonical map tileset type")
+
+
+func _test_remaster_asset_contracts() -> void:
+	var root_path := "user://remaster_contract_test"
+	var absolute_root := ProjectSettings.globalize_path(root_path)
+	DirAccess.make_dir_recursive_absolute(absolute_root)
+	var sprite_image := Image.create(16, 10, false, Image.FORMAT_RGBA8)
+	sprite_image.fill(Color.TRANSPARENT)
+	sprite_image.fill_rect(Rect2i(1, 1, 6, 8), Color.WHITE)
+	sprite_image.fill_rect(Rect2i(9, 1, 6, 8), Color("c04040"))
+	_expect(sprite_image.save_png(absolute_root.path_join("actor.png")) == OK, "sprite atlas fixture writes a PNG")
+	var sprite_data := {
+		"schema_version": "1.0.0",
+		"source_sprite_number": 7,
+		"source_frame_count": 2,
+		"scale": 5,
+		"image": "actor.png",
+		"canvas_size": [8, 10],
+		"frames": [
+			{"source_frame_index": 0, "rect": [0, 0, 8, 10], "pivot": [4, 9], "alpha_bounds": [1, 1, 6, 8], "duration_ms": 100},
+			{"source_frame_index": 1, "rect": [8, 0, 8, 10], "pivot": [4, 9], "alpha_bounds": [1, 1, 6, 8], "duration_ms": 120},
+		],
+	}
+	var sprite_atlas := RemasterSpriteAtlas.new()
+	_expect(sprite_atlas.load_data(sprite_data, root_path, 7, 2), "sprite atlas accepts complete one-to-one source frame mappings")
+	var second_frame = sprite_atlas.frame(1)
+	_expect(second_frame != null and second_frame.texture != null and second_frame.pivot == Vector2i(4, 9), "sprite atlas exposes the approved frame texture and shared foot pivot")
+	var incomplete_sprite := sprite_data.duplicate(true)
+	incomplete_sprite["frames"].remove_at(1)
+	_expect(not RemasterSpriteAtlas.new().load_data(incomplete_sprite, root_path, 7, 2), "an incomplete character atlas falls back as one whole character")
+
+	var map_image := Image.create(320, 80, false, Image.FORMAT_RGBA8)
+	map_image.fill(Color.TRANSPARENT)
+	map_image.fill_rect(Rect2i(0, 0, 160, 75), Color("604020"))
+	map_image.fill_rect(Rect2i(160, 0, 160, 75), Color("806040"))
+	_expect(map_image.save_png(absolute_root.path_join("map.png")) == OK, "map tileset fixture writes a PNG")
+	var map_data_contract := {
+		"schema_version": "1.0.0",
+		"map_number": 12,
+		"source_frame_count": 3,
+		"scale": 5,
+		"tile_cell_px": [160, 80],
+		"content_px": [160, 75],
+		"image": "map.png",
+		"night_image": null,
+		"frames": [
+			{"source_frame_index": 0, "rect": [0, 0, 160, 80]},
+			{"source_frame_index": 1, "rect": [160, 0, 160, 80]},
+		],
+	}
+	var map_atlas := RemasterMapTileset.new()
+	_expect(map_atlas.load_data(map_data_contract, root_path, 12, 3, PackedInt32Array([0, 1])), "map tileset accepts coverage of every frame actually referenced by a map")
+	_expect(map_atlas.atlas_texture != null and map_atlas.frame_texture(1) != null, "map tileset repacks source-indexed 160x80 frames for TileMap consumption")
+	_expect(not RemasterMapTileset.new().load_data(map_data_contract, root_path, 12, 3, PackedInt32Array([0, 2])), "a map tileset missing one referenced GOP frame falls back as a whole map")
+	var synthetic_map_bytes := PackedByteArray()
+	synthetic_map_bytes.resize(PalMapData.BYTE_SIZE)
+	var synthetic_map := PalMapData.from_bytes(synthetic_map_bytes)
+	var hd_tile_set := PalTileSetBuilder.build_remaster_tileset(synthetic_map, 3, map_atlas.atlas_texture)
+	_expect(hd_tile_set != null and hd_tile_set.tile_size == Vector2i(160, 80), "validated map frames build a 5x isometric TileSet without changing MAP semantics")
+
+	DirAccess.remove_absolute(absolute_root.path_join("actor.png"))
+	DirAccess.remove_absolute(absolute_root.path_join("map.png"))
+	DirAccess.remove_absolute(absolute_root)
 
 
 func _test_tilemap_runtime_retirement() -> void:

@@ -22,7 +22,7 @@ SCHEMA_VERSION = "1.0.0"
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 PACK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 ASSET_ID_RE = re.compile(
-    r"^(map/[^/]+/environment|character/[^/]+/field|portrait/[^/]+/[^/]+|"
+    r"^(map/[^/]+/tileset|character/[^/]+/field|portrait/[^/]+/[^/]+|"
     r"battlefield/[^/]+|battle/[^/]+/[^/]+|cutscene/[^/]+/[^/]+|"
     r"voice/[^/]+|ui/[^/]+)$"
 )
@@ -151,7 +151,7 @@ def validate_asset_manifest(data: dict[str, Any], root: Path | None) -> None:
 
     ids: set[str] = set()
     allowed_types = {
-        "environment", "field_sprite", "portrait", "battlefield",
+        "map_tileset", "field_sprite", "portrait", "battlefield",
         "battle_action", "cutscene", "voice", "ui_theme",
     }
     statuses = {"draft", "generated", "technical_review", "approved", "rejected"}

@@ -69,6 +69,8 @@ flowchart LR
 7. `PalTileMapWorld` 实例化该 `map_number` 对应的 TileMap 场景；多个剧情场景可以复用同一地图资源。
 8. `ScriptVM` 通过信号请求重绘、对话、人物动作或场景切换。
 
+重制模式在正式 TileMap 场景载入后，通过 `PalRemasterAssetResolver` 查找 `map/{id}/tileset` 与 `character/{id}/field`。`PalRemasterMapTileset` 只有在该地图实际引用的 GOP 帧全部存在时才创建 160×80 TileSet；`PalRemasterSpriteAtlas` 只有在原 MGO 帧一一映射、统一画布与 pivot 均有效时才替换人物。任一子清单、PNG、帧覆盖或尺寸校验失败都会按整张地图/整个人物回退经典资源，事件、阻挡、选帧与 Y 排序仍由同一 TileMap 和展示快照负责。
+
 系统菜单保存时，`PalSaveManager` 从 `GameSession` 和运行时内容数据库复制队伍、背包、装备、Scene、EventObject 与脚本游标，再写入 `user://saves/`。读档先验证格式、内容指纹和 SHA-256，随后恢复会话与可变剧情数据，由装备管理器重建派生属性、地图层重载场景但不重跑进入脚本。完整边界见[Godot 版本化存档系统](SAVE_SYSTEM.md)。
 
 `PalTileMapWorld.load_map()` 在场景载入时实例化生成的 PackedScene；`sync_world()` 先通过 `PalWorldPresentationBuilder` 生成共享快照，再由快照更新相机和动态 Sprite。后续高清配置继续消费同一快照和 `PalSceneLayout`，不得复制人物选帧、坐标、碰撞或事件规则。`MapExplorer` 只走 TileMap 权威路径，不再创建隐藏 CPU 画布、整屏 RGBA 纹理或运行时后端开关。
