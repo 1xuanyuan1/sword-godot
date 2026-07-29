@@ -1,11 +1,15 @@
 {
   "schema_version": "1.0.0",
   "asset_repository": "sword-assets",
-  "asset_commit": "eb08b76bcf2d5c0d026856da58e9fc9fe58a728a",
+  "asset_commit": "98a721656a10179bdf0f52e40a99c40416ec1182",
   "manifests": [
     {
       "path": "manifests/art/chapter_01_li_xiaoyao.v1.json",
       "sha256": "3821ee9c1205df207647f53370b3b681e639e92b7809c2572fb6166ed45fefe8"
+    },
+    {
+      "path": "manifests/art/chapter_01_map_012.v1.json",
+      "sha256": "ccb6275247a56d7993de953e2da6875ba695394b07c92d4d408bf320d9cb856b"
     }
   ]
 }
