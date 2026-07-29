@@ -33,6 +33,16 @@ func _run() -> void:
 	var viewport := shell.get_node_or_null("ClassicViewportContainer/ClassicViewport") as SubViewport
 	var explorer := viewport.get_node_or_null("MapExplorer") if viewport != null else null
 	var world: PalTileMapWorld = explorer._tile_world if explorer != null else null
+	var has_private_preview := FileAccess.file_exists("res://sword-assets/manifests/remaster/chapter_01_map_012.v1.json")
+	if world != null and has_private_preview:
+		var preview_resolver := PalRemasterAssetResolver.new()
+		preview_resolver.set_unapproved_preview_enabled(true)
+		preview_resolver.set_failure_warnings_enabled(false)
+		if not preview_resolver.reload():
+			_fail("Map 012 私有高清资源预览清单无法加载：%s" % preview_resolver.error_message)
+			return
+		world.set_remaster_asset_resolver(preview_resolver)
+		world.sync_world(explorer._session, explorer._scene_events, explorer._script_camera_offset)
 	var snapshot: PalWorldPresentationSnapshot = world.latest_snapshot if world != null else null
 	if viewport == null or viewport.size != Vector2i(384, 216):
 		_fail("Map 012 重制 SubViewport 不是 384×216")
@@ -58,6 +68,9 @@ func _run() -> void:
 		return
 	if world == null or world.loaded_map_number != 12 or world.presentation_mode() != PalTileMapWorld.PRESENTATION_REMASTER_2D:
 		_fail("Map 012 没有使用正式 PalTileMapWorld 重制配置")
+		return
+	if has_private_preview and not world.remaster_map_active():
+		_fail("Map 012 私有 TileSet 没有通过正式 PalTileMapWorld 校验并启用")
 		return
 	var sync_ok := true
 	if snapshot == null:
