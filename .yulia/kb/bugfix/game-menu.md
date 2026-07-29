@@ -93,6 +93,24 @@ keywords:
 
 ---
 
+### [BF-056] Toy 排行榜动态昵称放大后灰边模糊
+
+- **来源**: 用户正式页面试玩反馈
+- **关联需求**: M5 Toy Web 发布质量
+- **问题描述**: 浏览器 Canvas 生成的 14px 系统字体纹理保留了字体抗锯齿的半透明边缘；Godot 再把 320×200 游戏画面整数放大到全屏时，灰边和单像素阴影一同被放大，因此动态昵称明显比周围硬边点阵文字更糊。
+- **涉及文件**:
+  - `src/ui/pal_web_text_renderer.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `tests/run_tests.gd`
+  - `assets/ui/PAL_SIMPLIFIED_FONT.md`
+  - `docs/SAVE_SYSTEM.md`
+  - `docs/PROJECT_STRUCTURE.md`
+  - `.yulia/kb/bugfix/game-menu.md`
+- **修复内容**: 浏览器系统字体提升为 600 字重的 16px 字形；PNG 载入 Godot 后统一转换为 RGBA8，并以透明度阈值 96 把每个像素二值化为纯透明或纯白，再沿用最近邻、调色板着色和单像素阴影绘制。新增合成图像边界测试，确保阈值两侧分别得到 0／255 alpha，避免抗锯齿灰边重新进入放大链路。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-22
 
 ### [BF-048] 战斗与场外异常状态图标带方形黑底

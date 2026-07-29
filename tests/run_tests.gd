@@ -8,6 +8,7 @@ const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
+const WebTextRenderer := preload("res://src/ui/pal_web_text_renderer.gd")
 const MapExplorer := preload("res://src/world/map_explorer.gd")
 const ToyService := preload("res://src/platform/pal_toy_service.gd")
 
@@ -38,6 +39,7 @@ func _init() -> void:
 	_test_content_structures()
 	_test_collectible_classifier()
 	_test_classic_font_aliases()
+	_test_web_text_pixelation()
 	_test_role_condition_display()
 	_test_explorer_manual_search()
 	_test_explorer_touch_scan()
@@ -131,6 +133,21 @@ func _test_classic_font_aliases() -> void:
 	_expect(atlas_texture != null and atlas_texture.get_size() == Vector2(2, 2), "classic font loads runtime-generated raw atlas without import metadata")
 	atlas_texture = null
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(atlas_path))
+
+
+func _test_web_text_pixelation() -> void:
+	var image := Image.create_from_data(
+		2,
+		1,
+		false,
+		Image.FORMAT_RGBA8,
+		PackedByteArray([40, 80, 120, 95, 20, 60, 100, 96])
+	)
+	WebTextRenderer._pixelate_image(image, 96)
+	_expect(
+		image.get_data() == PackedByteArray([255, 255, 255, 0, 255, 255, 255, 255]),
+		"browser nickname textures replace antialiased alpha with hard white pixels at the configured threshold"
+	)
 
 
 func _test_role_condition_display() -> void:

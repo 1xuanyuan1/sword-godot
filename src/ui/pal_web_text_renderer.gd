@@ -5,8 +5,9 @@
 class_name PalWebTextRenderer
 extends RefCounted
 
-const FONT_CSS := '14px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif'
-const TEXTURE_HEIGHT := 18
+const FONT_CSS := '600 16px "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif'
+const TEXTURE_HEIGHT := 20
+const ALPHA_THRESHOLD := 96
 
 const RENDER_SCRIPT_TEMPLATE := """
 (() => {
@@ -68,7 +69,25 @@ static func render(text: String, maximum_width: int) -> Dictionary:
 	var image := Image.new()
 	if image.load_png_from_buffer(Marshalls.base64_to_raw(encoded)) != OK or image.is_empty():
 		return {}
+	_pixelate_image(image)
 	return {
 		"text": str(result.get("text", text)),
 		"texture": ImageTexture.create_from_image(image),
 	}
+
+
+## 把浏览器字体的抗锯齿灰边转为硬边像素，避免随 320×200 画面放大后发糊。
+static func _pixelate_image(image: Image, alpha_threshold: int = ALPHA_THRESHOLD) -> void:
+	if image == null or image.is_empty():
+		return
+	image.convert(Image.FORMAT_RGBA8)
+	var width := image.get_width()
+	var height := image.get_height()
+	var pixels := image.get_data()
+	var threshold := clampi(alpha_threshold, 0, 255)
+	for alpha_index in range(3, pixels.size(), 4):
+		pixels[alpha_index - 3] = 255
+		pixels[alpha_index - 2] = 255
+		pixels[alpha_index - 1] = 255
+		pixels[alpha_index] = 255 if pixels[alpha_index] >= threshold else 0
+	image.set_data(width, height, false, Image.FORMAT_RGBA8, pixels)
