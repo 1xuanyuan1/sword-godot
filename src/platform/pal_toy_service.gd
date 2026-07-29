@@ -270,7 +270,13 @@ func download_save() -> void:
 ## 读取指定榜位的总榜前五名和当前用户名次。
 func request_rank(board: int) -> void:
 	board = clampi(board, 1, 3)
-	if not _available or not _rank_supported:
+	if not _available:
+		rank_received.emit(board, [], {}, "Toy 排行榜不可用")
+		return
+	if _preview_host:
+		rank_received.emit(board, [], {}, "预览模式：正式页面将显示排行榜")
+		return
+	if not _rank_supported:
 		rank_received.emit(board, [], {}, "Toy 排行榜不可用")
 		return
 	_rank_callback = JavaScriptBridge.create_callback(_on_rank_result)

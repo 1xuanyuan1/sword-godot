@@ -49,9 +49,17 @@ async function prepareProjectConfig() {
 async function preparePalBitmapFont() {
   const metadataPath = join(projectDir, 'generated/pal/content/text/font_glyphs.json')
   const atlasPath = join(projectDir, 'generated/pal/content/text/font_atlas.png')
+  const supplementalMetadataPath = join(projectDir, 'assets/ui/pal_simplified_glyphs.json')
+  const supplementalAtlasPath = join(projectDir, 'assets/ui/pal_simplified_font.png')
   const classicFontPath = join(projectDir, 'src/ui/pal_classic_font.gd')
   const metadata = JSON.parse(await readFile(metadataPath, 'utf8'))
-  const glyphs = { ...metadata.glyphs }
+  const supplementalMetadata = JSON.parse(await readFile(supplementalMetadataPath, 'utf8'))
+  const glyphs = Object.fromEntries(
+    Object.entries(metadata.glyphs).map(([character, values]) => [character, [...values, 0]]),
+  )
+  for (const [character, values] of Object.entries(supplementalMetadata.glyphs)) {
+    if (!glyphs[character] && isGlyphRect(values)) glyphs[character] = [...values, 2]
+  }
   const classicFontSource = await readFile(classicFontPath, 'utf8')
   const aliasesMatch = classicFontSource.match(/const GLYPH_ALIASES := \{([\s\S]*?)\n\}/)
   if (!aliasesMatch) throw new Error(`无法读取简繁字形兼容表：${classicFontPath}`)
@@ -69,8 +77,7 @@ async function preparePalBitmapFont() {
   }
 
   const entries = Object.entries(glyphs)
-    .filter(([character, values]) => [...character].length === 1 && isGlyphRect(values))
-    .map(([character, values]) => [character, [...values, 0]])
+    .filter(([character, values]) => [...character].length === 1 && isPagedGlyph(values))
   entries.push(
     ['▼', [0, 0, 16, 16, 1]],
     ['▶', [16, 0, 16, 16, 1]],
@@ -79,9 +86,10 @@ async function preparePalBitmapFont() {
     .sort(([left], [right]) => left.codePointAt(0) - right.codePointAt(0))
   const lines = [
     'info face="PAL Classic" size=16 bold=0 italic=0 charset="" unicode=1 stretchH=100 smooth=0 aa=0 padding=0,0,0,0 spacing=0,0 outline=0',
-    'common lineHeight=16 base=15 scaleW=512 scaleH=1344 pages=2 packed=0',
+    'common lineHeight=16 base=15 scaleW=512 scaleH=1344 pages=3 packed=0',
     'page id=0 file="pal_font.png"',
     'page id=1 file="pal_font_symbols.png"',
+    'page id=2 file="pal_simplified_font.png"',
     `chars count=${entries.length}`,
   ]
   for (const [character, [x, y, width, height, page]] of entries) {
@@ -92,6 +100,7 @@ async function preparePalBitmapFont() {
   await writeFile(join(buildResourceDir, 'pal_font.fnt'), `${lines.join('\n')}\n`)
   await copyFile(atlasPath, join(buildResourceDir, 'pal_font.png'))
   await writeFile(join(buildResourceDir, 'pal_font_symbols.png'), createSymbolAtlasPng())
+  await copyFile(supplementalAtlasPath, join(buildResourceDir, 'pal_simplified_font.png'))
   await writeFile(join(buildResourceDir, 'eva_web_font_bootstrap.gd'), `extends Node
 
 func _enter_tree() -> void:
@@ -167,6 +176,10 @@ func _export_file(path: String, _type: String, _features: PackedStringArray) -> 
 
 function isGlyphRect(value) {
   return Array.isArray(value) && value.length === 4 && value.every(Number.isInteger)
+}
+
+function isPagedGlyph(value) {
+  return Array.isArray(value) && value.length === 5 && value.every(Number.isInteger)
 }
 
 function createSymbolAtlasPng() {

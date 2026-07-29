@@ -115,13 +115,13 @@ func _test_classic_font_aliases() -> void:
 		"數": [112, 0, 16, 15],
 		"據": [128, 0, 16, 15],
 		"錢": [144, 0, 16, 15],
+		"預": [160, 0, 16, 15],
 	}
 	var resolved := PalClassicFont.with_compatibility_aliases(original)
-	_expect(resolved.get("戏") == original["戲"] and resolved.get("档") == original["檔"], "classic font maps simplified game/save labels to original Big5 bitmap glyphs")
-	_expect(resolved.get("栈") == original["棧"] and resolved.get("间") == original["間"], "classic font maps simplified location labels without falling back to a system font")
-	_expect(resolved.get("败") == original["敗"], "classic font maps simplified battle failure text to the original Big5 bitmap glyph")
-	_expect(resolved.get("级") == original["級"] and resolved.get("暂") == original["暫"], "classic font maps Toy leaderboard level and empty-state labels to Big5 glyphs")
-	_expect(resolved.get("数") == original["數"] and resolved.get("据") == original["據"] and resolved.get("钱") == original["錢"], "classic font maps Toy leaderboard data and cash labels to Big5 glyphs")
+	_expect(resolved.has("戏") and resolved["戏"] != original["戲"] and int(resolved["戏"][0]) >= PalClassicFont.BASE_ATLAS_WIDTH, "classic font prefers the committed simplified bitmap supplement over a traditional alias")
+	_expect(resolved.has("档") and resolved.has("栈") and resolved.has("间") and resolved.has("败"), "classic font supplement covers simplified game, location and battle labels")
+	_expect(resolved.has("级") and resolved.has("暂") and resolved.has("数") and resolved.has("据") and resolved.has("钱"), "classic font supplement covers simplified Toy leaderboard labels")
+	_expect(resolved.has("预") and resolved.has("览") and resolved.has("页") and resolved.has("槽"), "classic font supplement covers preview and save-navigation characters absent from the Big5 atlas")
 	_expect(not original.has("戏") and not original.has("档"), "classic font compatibility does not mutate imported glyph metadata")
 	var atlas_path := "user://pal_classic_font_atlas_test.png"
 	var atlas_image := Image.create(2, 2, false, Image.FORMAT_RGBA8)
@@ -2278,8 +2278,9 @@ func _test_game_menu_inventory() -> void:
 	menu.toy_cloud_state_requested.connect(func() -> void: cloud_state_requests[0] += 1)
 	menu.open_toy(false)
 	_expect(menu.visible and menu.current_page == PalGameMenu.Page.TOY and cloud_state_requests[0] == 1, "Toy cloud page refreshes its manifest when opened")
-	menu.notify_toy_cloud_info({"saved_at": "2026-07-22 13:49:05", "source_slot": 9}, "")
 	menu._save_slot_selection = 0
+	_expect(menu._toy_slot_label() == "本地存档 001  前  后", "Toy cloud slot navigation uses supported bitmap words instead of browser-dependent arrow symbols")
+	menu.notify_toy_cloud_info({"saved_at": "2026-07-22 13:49:05", "source_slot": 9}, "")
 	var cloud_uploads: Array[int] = []
 	menu.toy_cloud_upload_requested.connect(func(slot: int) -> void: cloud_uploads.append(slot))
 	menu._toy_selection = 0
@@ -2304,6 +2305,9 @@ func _test_game_menu_inventory() -> void:
 	menu._main_selection = 5
 	menu._confirm_selection()
 	_expect(menu.current_page == PalGameMenu.Page.TOY_RANK and rank_requests == [1], "Toy main menu opens the peer leaderboard entry and requests its data")
+	menu._toy_busy = true
+	menu._move_selection(Vector2i(1, 0))
+	_expect(menu._toy_rank_board == 2 and rank_requests == [1, 2], "Toy leaderboard keyboard navigation switches boards even while a preview request is busy")
 	menu.go_back()
 	_expect(menu.current_page == PalGameMenu.Page.MAIN, "Toy leaderboard returns to the same-level main menu")
 	var score_session := GameSession.new()
@@ -2315,7 +2319,11 @@ func _test_game_menu_inventory() -> void:
 	var preview_availability: Array = []
 	preview_service.availability_changed.connect(func(available: bool, message: String) -> void: preview_availability.append([available, message]))
 	preview_service._on_availability_result([JSON.stringify({"success": true, "preview": true, "cloud": false, "rank": false, "closeBrowser": false})])
-	_expect(preview_service.is_available() and preview_availability.back()[0] == true and "预览模式" in preview_availability.back()[1], "Toy preview keeps the complete cloud UI visible while explaining that real storage starts on the formal page")
+	_expect(preview_service.is_available() and preview_availability.back()[0] == true and "预览模式" in preview_availability.back()[1], "Toy preview keeps the complete cloud UI visible while explaining that real storage starts on the formal build")
+	var preview_ranks: Array = []
+	preview_service.rank_received.connect(func(board: int, entries: Array, mine: Dictionary, message: String) -> void: preview_ranks.append([board, entries, mine, message]))
+	preview_service.request_rank(2)
+	_expect(preview_ranks.size() == 1 and preview_ranks[0][0] == 2 and "预览模式" in preview_ranks[0][3], "Toy preview completes leaderboard requests locally instead of waiting on a missing formal Toy ID")
 	preview_service.free()
 	menu.free()
 

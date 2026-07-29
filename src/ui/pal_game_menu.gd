@@ -1025,7 +1025,7 @@ func _move_selection(direction: Vector2i) -> void:
 			elif direction.y != 0:
 				_toy_selection = posmod(_toy_selection + direction.y, TOY_ACTION_POSITIONS.size())
 		Page.TOY_RANK:
-			if not _toy_busy and direction.x != 0:
+			if direction.x != 0:
 				_toy_rank_board = posmod(_toy_rank_board - 1 + direction.x, 3) + 1
 				_toy_busy = true
 				_toy_status = "正在读取排行榜…"
@@ -1137,7 +1137,7 @@ func _draw_toy_page() -> void:
 	if not _toy_cloud_metadata.is_empty():
 		cloud_label = "云端：%s" % _format_save_time(str(_toy_cloud_metadata.get("saved_at", "")))
 	_draw_pal_text(cloud_label, Vector2i(20, 38), _palette_color(COLOR_NORMAL), true)
-	_draw_pal_text("本地存档 %03d  ◀  ▶" % (_save_slot_selection + 1), Vector2i(20, 61), _palette_color(COLOR_CONFIRMED), true)
+	_draw_pal_text(_toy_slot_label(), Vector2i(20, 61), _palette_color(COLOR_CONFIRMED), true)
 	for index in range(TOY_ACTION_LABELS.size()):
 		var enabled := not _toy_busy
 		if index == 0:
@@ -1165,6 +1165,10 @@ func _draw_toy_confirmation() -> void:
 
 func _toy_confirmation_text() -> String:
 	return "上传并覆盖云存档？" if _toy_pending_action == "upload" else "下载并覆盖本地存档 %03d？" % (_save_slot_selection + 1)
+
+
+func _toy_slot_label() -> String:
+	return "本地存档 %03d  前  后" % (_save_slot_selection + 1)
 
 
 func _draw_toy_rank_page() -> void:

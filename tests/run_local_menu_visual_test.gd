@@ -202,11 +202,7 @@ func _init() -> void:
 		quit(1)
 		return
 	menu.open_toy(false)
-	menu.notify_toy_cloud_info({
-		"saved_at": "2026-07-29 20:30:00",
-		"source_slot": 1,
-		"scene_index": 0,
-	}, "")
+	menu.notify_toy_cloud_info({}, "预览模式：正式页面将连接云存档")
 	await process_frame
 	await process_frame
 	var toy_cloud_image := viewport.get_texture().get_image()
@@ -229,7 +225,13 @@ func _init() -> void:
 		return
 	menu.go_back()
 	menu.open_toy_rank(false)
-	menu.notify_toy_rank(1, [], {}, "")
+	menu._toy_busy = true
+	menu._move_selection(Vector2i(1, 0))
+	if menu._toy_rank_board != 2:
+		printerr("FAIL: 排行榜忙碌时无法从逍遥等级切换到队伍等级")
+		quit(1)
+		return
+	menu.notify_toy_rank(2, [], {}, "预览模式：正式页面将显示排行榜")
 	await process_frame
 	await process_frame
 	var toy_rank_image := viewport.get_texture().get_image()
@@ -241,7 +243,7 @@ func _init() -> void:
 		printerr("FAIL: Toy 云存档页与排行榜页没有形成有效的像素差异")
 		quit(1)
 		return
-	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 同级主菜单、云存档、确认框与空排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 同级主菜单、云存档、确认框与可切换空排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
 		field_magic_id,
 		session.attack_strength_for(0),
 		session.magic_strength_for(0),

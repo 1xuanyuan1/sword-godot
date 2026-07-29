@@ -51,6 +51,29 @@ keywords:
 
 ---
 
+### [BF-054] Toy 预览文案、存档导航与排行榜切换异常
+
+- **来源**: 用户检查 Toy 更新预览反馈
+- **关联需求**: M5 Toy Web 发布质量
+- **问题描述**: BF-053 修复后，预览提示“预览模式：正式页面将连接云存档”仍包含原版点阵图集不存在的“覽／頁”，即使把“预”映射为“預”也无法完整显示；本地存档编号后的 `◀` 又依赖浏览器回退字体，Web 包中显示成方框乱码。预览页没有正式 Toy ID，首次读取排行榜可能长期停在忙碌状态，而键盘左右切榜原先又被忙碌状态禁用，导致一直停留在“逍遥等级”。
+- **涉及文件**:
+  - `src/platform/pal_toy_service.gd`
+  - `src/ui/pal_classic_font.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `assets/ui/pal_simplified_font.png`
+  - `assets/ui/pal_simplified_glyphs.json`
+  - `assets/ui/PAL_SIMPLIFIED_FONT.md`
+  - `tools/build_pal_simplified_font.mjs`
+  - `tools/prepare_eva_web_project.mjs`
+  - `tests/run_tests.gd`
+  - `tests/run_local_menu_visual_test.gd`
+  - `docs/SAVE_SYSTEM.md`
+  - `.yulia/kb/bugfix/game-menu.md`
+- **修复内容**: 新增从 GNU Unifont 17.0.03 提取的 16×16 简体点阵子集，运行时和 EVA Web 默认字体都按“原版字形 → 简体补充点阵 → 繁体兼容”的顺序解析，保留“预览模式”等简体文案并统一调色板、阴影和整数缩放。存档编号后的浏览器符号改为点阵文字“前／后”。预览环境的排行榜请求直接返回空榜提示，左右键无论网络忙碌与否都先切换当前榜位；合成与真实窗口回归覆盖预览提示、存档导航和忙碌时切榜。
+- **状态**: ✅ 已修复
+
+---
+
 ## 2026-07-22
 
 ### [BF-048] 战斗与场外异常状态图标带方形黑底
