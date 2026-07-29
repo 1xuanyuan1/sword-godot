@@ -37,6 +37,7 @@ var _typing_time_budget: float = 0.0
 var _current_character_delay: float = DEFAULT_CHARACTER_DELAY_SECONDS
 var _pending_pause_seconds: float = 0.0
 var _typing: bool = false
+var _remaster_canvas_enabled: bool = false
 
 
 func _ready() -> void:
@@ -89,6 +90,21 @@ func handle_primary_press() -> bool:
 	else:
 		advance_requested.emit()
 	return true
+
+
+## Toast 的文字由外层 Presentation Shell 以输出分辨率镜像；这里仍保留原节点负责状态和输入。
+func set_remaster_canvas_enabled(enabled: bool) -> void:
+	_remaster_canvas_enabled = enabled
+	if _toast_panel != null:
+		_toast_panel.modulate.a = 0.0 if enabled else 1.0
+
+
+func remaster_toast_state() -> Dictionary:
+	return {
+		"visible": visible and _position_mode == 3,
+		"text": _full_text,
+		"visible_characters": _visible_characters,
+	}
 
 
 ## 开始新的对话上下文并清空旧页面；位置模式与 SDLPal 对话操作码一致。
@@ -290,6 +306,7 @@ func _build_interface() -> void:
 	toast_style.content_margin_right = 6
 	toast_style.content_margin_bottom = 4
 	_toast_panel.add_theme_stylebox_override("panel", toast_style)
+	_toast_panel.modulate.a = 0.0 if _remaster_canvas_enabled else 1.0
 	add_child(_toast_panel)
 	_toast_message = _create_message_label(true)
 	_toast_panel.add_child(_toast_message)

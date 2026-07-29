@@ -18,6 +18,13 @@ var _classic_container: SubViewportContainer
 var _classic_viewport: SubViewport
 var _classic_scene: Node
 var _remaster_hud: CanvasLayer
+var _remaster_hud_root: Control
+var _remaster_status_background: ColorRect
+var _remaster_status_label: Label
+var _remaster_location_toast: PanelContainer
+var _remaster_location_label: Label
+var _remaster_dialog_toast: PanelContainer
+var _remaster_dialog_message: RichTextLabel
 var _classic_background: ColorRect
 var _mode: int = MODE_CLASSIC
 
@@ -75,9 +82,10 @@ func _update_presentation_layers() -> void:
 	if _classic_background != null:
 		_classic_background.visible = true
 	if _remaster_hud != null:
-		_remaster_hud.visible = false
+		_remaster_hud.visible = _mode == MODE_REMASTER_2D
 	_update_classic_rect()
 	_layout_classic_scene()
+	_sync_remaster_hud()
 
 
 func presentation_mode() -> int:
@@ -91,6 +99,10 @@ func remaster_renderer_ready() -> bool:
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_RESIZED and _classic_container != null:
 		_update_classic_rect()
+
+
+func _process(_delta: float) -> void:
+	_sync_remaster_hud()
 
 
 func _build_shell() -> void:
@@ -118,7 +130,90 @@ func _build_shell() -> void:
 	_remaster_hud.name = "RemasterHud"
 	_remaster_hud.layer = 20
 	add_child(_remaster_hud)
+	_build_remaster_hud()
 	_update_classic_rect()
+
+
+## 顶部状态和地点名不进入 384×216 SubViewport，直接按输出分辨率绘制，避免小字号先栅格化再放大。
+func _build_remaster_hud() -> void:
+	_remaster_hud_root = Control.new()
+	_remaster_hud_root.name = "NativeHudRoot"
+	_remaster_hud_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_remaster_hud_root.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_remaster_hud.add_child(_remaster_hud_root)
+
+	_remaster_status_background = ColorRect.new()
+	_remaster_status_background.name = "StatusBackground"
+	_remaster_status_background.color = Color(0.02, 0.03, 0.06, 0.82)
+	_remaster_status_background.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_remaster_hud_root.add_child(_remaster_status_background)
+	_remaster_status_label = Label.new()
+	_remaster_status_label.name = "StatusLabel"
+	_remaster_status_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_remaster_status_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_remaster_status_label.add_theme_font_size_override("font_size", 40)
+	_remaster_status_label.add_theme_color_override("font_color", Color("f8fafc"))
+	_remaster_status_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.8))
+	_remaster_status_label.add_theme_constant_override("outline_size", 2)
+	_remaster_hud_root.add_child(_remaster_status_label)
+
+	_remaster_location_toast = PanelContainer.new()
+	_remaster_location_toast.name = "LocationToast"
+	_remaster_location_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var location_style := StyleBoxFlat.new()
+	location_style.bg_color = Color(0, 0, 0, 0.88)
+	location_style.border_color = Color("d6a85f")
+	location_style.set_border_width_all(5)
+	location_style.corner_radius_top_left = 10
+	location_style.corner_radius_top_right = 10
+	location_style.corner_radius_bottom_left = 10
+	location_style.corner_radius_bottom_right = 10
+	_remaster_location_toast.add_theme_stylebox_override("panel", location_style)
+	_remaster_location_label = Label.new()
+	_remaster_location_label.name = "LocationLabel"
+	_remaster_location_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_remaster_location_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_remaster_location_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_remaster_location_label.add_theme_font_size_override("font_size", 50)
+	_remaster_location_label.add_theme_color_override("font_color", Color.WHITE)
+	_remaster_location_label.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_remaster_location_label.add_theme_constant_override("outline_size", 3)
+	_remaster_location_toast.add_child(_remaster_location_label)
+	_remaster_location_toast.hide()
+	_remaster_hud_root.add_child(_remaster_location_toast)
+
+	_remaster_dialog_toast = PanelContainer.new()
+	_remaster_dialog_toast.name = "DialogToast"
+	_remaster_dialog_toast.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var dialog_toast_style := StyleBoxFlat.new()
+	dialog_toast_style.bg_color = Color(0, 0, 0, 0.94)
+	dialog_toast_style.corner_radius_top_left = 10
+	dialog_toast_style.corner_radius_top_right = 10
+	dialog_toast_style.corner_radius_bottom_left = 10
+	dialog_toast_style.corner_radius_bottom_right = 10
+	dialog_toast_style.content_margin_left = 30
+	dialog_toast_style.content_margin_top = 20
+	dialog_toast_style.content_margin_right = 30
+	dialog_toast_style.content_margin_bottom = 20
+	_remaster_dialog_toast.add_theme_stylebox_override("panel", dialog_toast_style)
+	_remaster_dialog_message = RichTextLabel.new()
+	_remaster_dialog_message.name = "Message"
+	_remaster_dialog_message.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_remaster_dialog_message.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_remaster_dialog_message.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_remaster_dialog_message.autowrap_mode = TextServer.AUTOWRAP_ARBITRARY
+	_remaster_dialog_message.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_remaster_dialog_message.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_remaster_dialog_message.scroll_active = false
+	_remaster_dialog_message.bbcode_enabled = false
+	_remaster_dialog_message.clip_contents = true
+	_remaster_dialog_message.add_theme_font_size_override("normal_font_size", 40)
+	_remaster_dialog_message.add_theme_color_override("default_color", Color.WHITE)
+	_remaster_dialog_message.add_theme_color_override("font_outline_color", Color(0, 0, 0, 0.9))
+	_remaster_dialog_message.add_theme_constant_override("outline_size", 3)
+	_remaster_dialog_toast.add_child(_remaster_dialog_message)
+	_remaster_dialog_toast.hide()
+	_remaster_hud_root.add_child(_remaster_dialog_toast)
 
 
 func _update_classic_rect() -> void:
@@ -134,6 +229,53 @@ func _update_classic_rect() -> void:
 	_classic_container.size = Vector2(content_rect.size)
 	var logical_size := PalPresentationMetrics.logical_size(_mode == MODE_REMASTER_2D)
 	_classic_container.stretch_shrink = maxi(1, content_rect.size.x / logical_size.x)
+	_layout_remaster_hud(content_rect)
+
+
+func _layout_remaster_hud(content_rect: Rect2i) -> void:
+	if _remaster_hud_root == null:
+		return
+	var scale := float(content_rect.size.x) / float(PalPresentationMetrics.REMASTER_LOGICAL_SIZE.x)
+	var core_origin := Vector2(content_rect.position) + Vector2(PalPresentationMetrics.REMASTER_CLASSIC_OFFSET) * scale
+	_remaster_status_background.position = core_origin + Vector2(3, 3) * scale
+	_remaster_status_background.size = Vector2(314, 20) * scale
+	_remaster_status_label.position = core_origin + Vector2(6, 5) * scale
+	_remaster_status_label.size = Vector2(308, 17) * scale
+	_remaster_status_label.add_theme_font_size_override("font_size", maxi(8, roundi(8.0 * scale)))
+	_remaster_status_label.add_theme_constant_override("outline_size", maxi(1, roundi(0.4 * scale)))
+	_remaster_location_toast.position = core_origin + Vector2(104, 28) * scale
+	_remaster_location_toast.size = Vector2(112, 24) * scale
+	_remaster_location_toast.custom_minimum_size = Vector2(112, 24) * scale
+	_remaster_location_label.add_theme_font_size_override("font_size", maxi(10, roundi(10.0 * scale)))
+	_remaster_location_label.add_theme_constant_override("outline_size", maxi(1, roundi(0.6 * scale)))
+	_remaster_dialog_toast.position = core_origin + Vector2(72, 84) * scale
+	_remaster_dialog_toast.size = Vector2(176, 32) * scale
+	_remaster_dialog_toast.custom_minimum_size = Vector2(176, 32) * scale
+	_remaster_dialog_message.add_theme_font_size_override("normal_font_size", maxi(8, roundi(8.0 * scale)))
+	_remaster_dialog_message.add_theme_constant_override("outline_size", maxi(1, roundi(0.6 * scale)))
+
+
+func _sync_remaster_hud() -> void:
+	if _remaster_hud == null or _remaster_status_background == null:
+		return
+	var available := _mode == MODE_REMASTER_2D and _classic_scene != null and _classic_scene.has_method("remaster_hud_state")
+	if not available:
+		_remaster_status_background.hide()
+		_remaster_status_label.hide()
+		_remaster_location_toast.hide()
+		_remaster_dialog_toast.hide()
+		return
+	var state: Dictionary = _classic_scene.call("remaster_hud_state")
+	var status_visible := bool(state.get("status_visible", false))
+	_remaster_status_background.visible = status_visible
+	_remaster_status_label.visible = status_visible
+	_remaster_status_label.text = str(state.get("status_text", ""))
+	_remaster_status_label.add_theme_color_override("font_color", state.get("status_color", Color("f8fafc")) as Color)
+	_remaster_location_toast.visible = bool(state.get("location_visible", false))
+	_remaster_location_label.text = str(state.get("location_text", ""))
+	_remaster_dialog_toast.visible = bool(state.get("dialog_toast_visible", false))
+	_remaster_dialog_message.text = str(state.get("dialog_toast_text", ""))
+	_remaster_dialog_message.visible_characters = int(state.get("dialog_toast_visible_characters", -1))
 
 
 ## 地图探索场景主动消费 384×216 视野；其余经典场景只占中央 320×200 核心区。

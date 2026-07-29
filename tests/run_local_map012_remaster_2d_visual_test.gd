@@ -40,6 +40,22 @@ func _run() -> void:
 	if explorer == null or explorer._ui_root.position != Vector2(32, 8) or explorer._ui_root.size != Vector2(320, 200):
 		_fail("Map 012 经典 UI 核心没有固定在 (32,8,320,200)")
 		return
+	var native_status := shell.get_node_or_null("RemasterHud/NativeHudRoot/StatusLabel") as Label
+	var native_location := shell.get_node_or_null("RemasterHud/NativeHudRoot/LocationToast") as PanelContainer
+	var native_dialog_toast := shell.get_node_or_null("RemasterHud/NativeHudRoot/DialogToast") as PanelContainer
+	var native_dialog_message := shell.get_node_or_null("RemasterHud/NativeHudRoot/DialogToast/Message") as RichTextLabel
+	if native_status == null or native_status.text != explorer._status.text or native_status.get_theme_font_size("font_size") != 40:
+		_fail("Map 012 状态文字没有转到 1080p 原生 HUD")
+		return
+	if native_location == null or explorer._location_toast.modulate.a > 0.0:
+		_fail("Map 012 地点提示没有切换到原生 HUD 路径")
+		return
+	if native_dialog_toast == null or native_dialog_message == null or not native_dialog_toast.visible or native_dialog_message.text.is_empty() or native_dialog_message.get_theme_font_size("normal_font_size") != 40:
+		_fail("Map 012 剧情 Toast 没有转到 1080p 原生 HUD")
+		return
+	if explorer._dialog_box._toast_panel.modulate.a > 0.0:
+		_fail("Map 012 低分辨率剧情 Toast 仍在重复绘制")
+		return
 	if world == null or world.loaded_map_number != 12 or world.presentation_mode() != PalTileMapWorld.PRESENTATION_REMASTER_2D:
 		_fail("Map 012 没有使用正式 PalTileMapWorld 重制配置")
 		return

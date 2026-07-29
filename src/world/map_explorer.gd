@@ -27,6 +27,7 @@ var _scene_events: Array[PalEventObject] = []
 var _tile_world: PalTileMapWorld
 var _ui_layer: CanvasLayer
 var _ui_root: Control
+var _status_background: ColorRect
 var _status: Label
 var _location_toast: PanelContainer
 var _location_toast_label: Label
@@ -82,7 +83,32 @@ func set_remaster_canvas_enabled(enabled: bool) -> void:
 		_tile_world.set_presentation_mode(
 			PalTileMapWorld.PRESENTATION_REMASTER_2D if enabled else PalTileMapWorld.PRESENTATION_CLASSIC
 		)
+	if _dialog_box != null:
+		_dialog_box.set_remaster_canvas_enabled(enabled)
 	_update_presentation_layout()
+
+
+## Presentation Shell 读取这份轻量状态，在输出画布原生分辨率重画容易发虚的小字号 HUD。
+func remaster_hud_state() -> Dictionary:
+	var covered := (
+		(_fbp_layer != null and _fbp_layer.visible)
+		or (_ending_player != null and _ending_player.visible)
+		or (_rng_player != null and _rng_player.visible)
+		or (_game_menu != null and _game_menu.visible)
+		or (_battle_view != null and _battle_view.visible)
+		or (_fade_overlay != null and _fade_overlay.visible)
+	)
+	var dialog_toast := _dialog_box.remaster_toast_state() if _dialog_box != null else {}
+	return {
+		"status_text": _status.text if _status != null else "",
+		"status_color": _status.get_theme_color("font_color") if _status != null else Color("f8fafc"),
+		"status_visible": _status != null and _status.visible and not covered,
+		"location_text": _location_toast_label.text if _location_toast_label != null else "",
+		"location_visible": _location_toast != null and _location_toast.visible and not covered,
+		"dialog_toast_text": str(dialog_toast.get("text", "")),
+		"dialog_toast_visible_characters": int(dialog_toast.get("visible_characters", -1)),
+		"dialog_toast_visible": bool(dialog_toast.get("visible", false)) and not covered,
+	}
 
 
 func _ready() -> void:
@@ -179,12 +205,12 @@ func _build_interface() -> void:
 	_ui_layer.add_child(_ui_root)
 	_update_presentation_layout()
 
-	var status_background := ColorRect.new()
-	status_background.name = "StatusBackground"
-	status_background.color = Color(0.02, 0.03, 0.06, 0.82)
-	status_background.position = Vector2(3, 3)
-	status_background.size = Vector2(314, 20)
-	_ui_root.add_child(status_background)
+	_status_background = ColorRect.new()
+	_status_background.name = "StatusBackground"
+	_status_background.color = Color(0.02, 0.03, 0.06, 0.82)
+	_status_background.position = Vector2(3, 3)
+	_status_background.size = Vector2(314, 20)
+	_ui_root.add_child(_status_background)
 	_status = Label.new()
 	_status.name = "StatusLabel"
 	_status.position = Vector2(6, 5)
@@ -257,6 +283,7 @@ func _build_interface() -> void:
 	_dialog_box = PalDialogBox.new()
 	_dialog_box.name = "DialogBox"
 	_dialog_box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_dialog_box.set_remaster_canvas_enabled(_remaster_canvas_enabled)
 	_dialog_box.advance_requested.connect(_on_dialog_advance_requested)
 	_ui_root.add_child(_dialog_box)
 
@@ -299,6 +326,13 @@ func _update_presentation_layout() -> void:
 		PresentationMetrics.REMASTER_CLASSIC_OFFSET if _remaster_canvas_enabled else Vector2i.ZERO
 	)
 	_ui_root.size = Vector2(PresentationMetrics.CLASSIC_CONTENT_SIZE)
+	var low_resolution_alpha := 0.0 if _remaster_canvas_enabled else 1.0
+	if _status_background != null:
+		_status_background.modulate.a = low_resolution_alpha
+	if _status != null:
+		_status.modulate.a = low_resolution_alpha
+	if _location_toast != null:
+		_location_toast.modulate.a = low_resolution_alpha
 
 
 func _process(delta: float) -> void:
