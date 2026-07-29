@@ -4,6 +4,7 @@
 extends SceneTree
 
 const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
+const ToyService := preload("res://src/platform/pal_toy_service.gd")
 
 var _failures: Array[String] = []
 
@@ -45,6 +46,17 @@ func _init() -> void:
 	_expect(metadata.get("can_load") == true and metadata.get("scene_index") == 1 and metadata.get("map_number") == 12, "slot metadata exposes scene and map: %s" % [metadata])
 	var party: Array = metadata.get("party", [])
 	_expect(party.size() == 2 and party[0].get("role_index") == 0 and party[0].get("level") == 8 and party[1].get("role_index") == 1, "slot metadata preserves party members and levels")
+	var exported_save := manager.export_slot_text(100)
+	_expect(not exported_save.is_empty(), "validated save text can be exported for cloud storage")
+	var cloud_payload := ToyService.build_cloud_payload(exported_save, 100)
+	var cloud_chunks: Array = cloud_payload.get("chunks", [])
+	_expect(bool(cloud_payload.get("success", false)) and not cloud_chunks.is_empty() and cloud_chunks.size() <= ToyService.CLOUD_MAX_CHUNKS, "cloud save gzip payload fits the Toy key limit")
+	var cloud_decoded := ToyService.decode_cloud_payload("".join(cloud_chunks), cloud_payload.get("manifest", {}))
+	_expect(bool(cloud_decoded.get("success", false)) and str(cloud_decoded.get("save_text", "")) == exported_save, "cloud save gzip and Base64 protocol round-trips exact JSON text")
+	var bad_manifest: Dictionary = cloud_payload.get("manifest", {}).duplicate(true)
+	bad_manifest["sha256"] = "0".repeat(64)
+	_expect(not bool(ToyService.decode_cloud_payload("".join(cloud_chunks), bad_manifest).get("success", false)), "cloud save SHA-256 rejects a tampered manifest")
+	_expect(manager.import_slot_text(99, exported_save) and manager.slot_metadata(99).get("can_load") == true, "validated cloud save text imports atomically into a different local slot")
 
 	# 污染所有关键值后读档；完整往返应恢复会话、剧情对象和脚本游标。
 	session.scene_index = 0
@@ -129,7 +141,7 @@ func _init() -> void:
 	for slot in range(1, PalSaveManager.SLOT_COUNT + 1):
 		manager.delete_slot(slot)
 	if _failures.is_empty():
-		print("PASS: 28 versioned save-system checks")
+		print("PASS: 33 versioned save-system checks")
 		quit(0)
 	else:
 		for failure in _failures:

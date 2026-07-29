@@ -13,6 +13,32 @@ keywords:
 
 ## 变更记录
 
+## 2026-07-29
+
+### [FT-085] [feat] 接入 Toy 云存档与排行榜
+
+- **关联需求**: M3 版本化存档、M5 Web 发布质量
+- **关联 TODO**: 无
+- **功能描述**: Web 发布页接入官方 Toy JS SDK，在标题与游戏内经典菜单增加能力可用时才显示的云端入口。受 128 个 key、单值 1KB 限制，完整版本化 JSON 使用 gzip + Base64 和 960 字符分块保存为一个跨设备云槽；数据块先写、清单最后发布，下载时依次验证协议、大小、SHA-256、存档版本、内容指纹和载荷后原子覆盖玩家确认的本地槽位。新增李逍遥最高等级、当前队伍等级总和与最高持有金钱三个永久总榜，并在本地保存或云端上传后上报历史最高分。同步封装 Toy 容器关闭能力，并明确用户资料、作者互动、媒体与未文档化能力的后续取舍。
+- **涉及文件**:
+  - `export_presets.cfg`
+  - `src/game/pal_save_manager.gd`
+  - `src/platform/pal_toy_service.gd`
+  - `src/platform/pal_toy_coordinator.gd`
+  - `src/ui/pal_game_menu.gd`
+  - `src/ui/pal_startup.gd`
+  - `src/world/map_explorer.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_save_system_tests.gd`
+  - `tests/run_local_save_system_test.gd`
+  - `tests/run_toy_bridge_test.mjs`
+  - `tests/run_local_menu_visual_test.gd`
+  - `README.md`
+  - `docs/SAVE_SYSTEM.md`
+  - `.yulia/kb/changelog/changelog.md`
+
+---
+
 ## 2026-07-23
 
 ### [FT-079] [refactor] 退役正式运行中的 CPU 地图渲染器

@@ -184,7 +184,38 @@ func _init() -> void:
 	await process_frame
 	await process_frame
 	viewport.get_texture().get_image().save_png(output_dir.path_join("classic_save_slots.png"))
-	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页与 100 槽存档页视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
+	menu.configure_toy_features(true, "Toy 云存档与排行榜已连接")
+	menu.open_toy(false)
+	menu.notify_toy_cloud_info({
+		"saved_at": "2026-07-29 20:30:00",
+		"source_slot": 1,
+		"scene_index": 0,
+	}, "")
+	await process_frame
+	await process_frame
+	var toy_cloud_image := viewport.get_texture().get_image()
+	if toy_cloud_image.save_png(output_dir.path_join("classic_toy_cloud.png")) != OK:
+		printerr("FAIL: 无法写入 Toy 云存档页截图")
+		quit(1)
+		return
+	menu.current_page = PalGameMenu.Page.TOY_RANK
+	menu.notify_toy_rank(1, [
+		{"rank": 1, "score": 99, "nickname": "李逍遥"},
+		{"rank": 2, "score": 87, "nickname": "赵灵儿"},
+		{"rank": 3, "score": 72, "nickname": "林月如"},
+	], {"ranked": true, "rank": 8, "score": 42}, "")
+	await process_frame
+	await process_frame
+	var toy_rank_image := viewport.get_texture().get_image()
+	if toy_rank_image.save_png(output_dir.path_join("classic_toy_rank.png")) != OK:
+		printerr("FAIL: 无法写入 Toy 排行榜页截图")
+		quit(1)
+		return
+	if _pixel_difference_in_rect(toy_cloud_image, toy_rank_image, Rect2i(Vector2i.ZERO, Vector2i(320, 200))) < 800:
+		printerr("FAIL: Toy 云存档页与排行榜页没有形成有效的像素差异")
+		quit(1)
+		return
+	print("PASS: 原版主菜单、物品页、装备页、状态页、场外仙术页、系统音量页、100 槽存档页、Toy 云存档与排行榜视觉快照已生成；样板仙术 %d；李逍遥初始属性 攻%d 灵%d 防%d 身%d 逃%d" % [
 		field_magic_id,
 		session.attack_strength_for(0),
 		session.magic_strength_for(0),

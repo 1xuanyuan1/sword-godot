@@ -4,6 +4,8 @@
 ## 测试写入独立的 `user://pal_local_save_system_test/`，不会接触玩家正式存档。
 extends SceneTree
 
+const ToyService := preload("res://src/platform/pal_toy_service.gd")
+
 
 func _init() -> void:
 	var database := PalContentDatabase.new()
@@ -58,10 +60,16 @@ func _init() -> void:
 	valid = valid and event.state == 0 and database.scenes[11].script_on_enter == 0
 	var file := FileAccess.open(manager.slot_path(100), FileAccess.READ)
 	var file_size := file.get_length() if file != null else 0
+	var save_text := manager.export_slot_text(100)
+	var cloud_payload := ToyService.build_cloud_payload(save_text, 100)
+	var cloud_chunks: Array = cloud_payload.get("chunks", [])
+	var cloud_round_trip := ToyService.decode_cloud_payload("".join(cloud_chunks), cloud_payload.get("manifest", {}))
+	valid = valid and bool(cloud_payload.get("success", false)) and cloud_chunks.size() <= ToyService.CLOUD_MAX_CHUNKS
+	valid = valid and bool(cloud_round_trip.get("success", false)) and str(cloud_round_trip.get("save_text", "")) == save_text
 	manager.delete_slot(100)
 	if not valid:
 		printerr("FAIL: 真实资源存档往返状态不一致：%s" % [metadata])
 		quit(1)
 		return
-	print("PASS: 真实资源 100 槽存档往返完成；事件 %d 个，存档 %d 字节" % [database.event_objects.size(), file_size])
+	print("PASS: 真实资源 100 槽存档往返完成；事件 %d 个，存档 %d 字节，Toy 云存档 %d 分块" % [database.event_objects.size(), file_size, cloud_chunks.size()])
 	quit(0)

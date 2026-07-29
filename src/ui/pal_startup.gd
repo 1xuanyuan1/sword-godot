@@ -10,6 +10,7 @@ const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
 
 const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
+const ToyCoordinator := preload("res://src/platform/pal_toy_coordinator.gd")
 const PALETTE_SHADER: Shader = preload("res://shaders/indexed_palette.gdshader")
 
 enum Phase {
@@ -33,7 +34,7 @@ const TITLE_MUSIC := 5
 const OPENING_MENU_MUSIC := 4
 const COLOR_NORMAL := 0x4f
 const COLOR_SELECTED_FIRST := 0xf9
-const MENU_POSITIONS := [Vector2i(125, 95), Vector2i(125, 112)]
+const MENU_POSITIONS := [Vector2i(125, 95), Vector2i(125, 112), Vector2i(125, 129)]
 const REQUIRED_STARTUP_FILES := [
 	"content/battle/backgrounds/038.idx",
 	"content/battle/backgrounds/039.idx",
@@ -53,6 +54,7 @@ var _session := GameSession.new()
 var _save_manager := PalSaveManager.new()
 var _save_menu: PalGameMenu
 var _audio_player: Node
+var _toy_coordinator: PalToyCoordinator
 var _save_system_available: bool = false
 var _startup_ready: bool = false
 var _startup_error_message: String = ""
@@ -111,6 +113,10 @@ func _ready() -> void:
 	_save_menu.configure(_database, _session)
 	if _save_system_available:
 		_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
+	_toy_coordinator = ToyCoordinator.new()
+	_toy_coordinator.name = "PalToyCoordinator"
+	add_child(_toy_coordinator)
+	_toy_coordinator.configure(_save_manager, _save_menu, _session)
 	_load_classic_resources()
 	_audio_player = AudioPlayer.new()
 	_audio_player.name = "PalStartupAudio"
@@ -426,9 +432,9 @@ func _input(event: InputEvent) -> void:
 				return
 			match event.keycode:
 				KEY_UP, KEY_LEFT:
-					menu_selection = posmod(menu_selection - 1, 2)
+					menu_selection = posmod(menu_selection - 1, _opening_menu_item_count())
 				KEY_DOWN, KEY_RIGHT:
-					menu_selection = posmod(menu_selection + 1, 2)
+					menu_selection = posmod(menu_selection + 1, _opening_menu_item_count())
 				KEY_SPACE, KEY_ENTER, KEY_KP_ENTER:
 					_confirm_opening_menu()
 				KEY_ESCAPE:
@@ -453,7 +459,7 @@ func _handle_primary_press(raw_point: Vector2) -> bool:
 	if phase != Phase.OPENING_MENU or _opening_menu_elapsed < OPENING_MENU_FADE_SECONDS:
 		return false
 	var point := Vector2i(raw_point)
-	for index in range(MENU_POSITIONS.size()):
+	for index in range(_opening_menu_item_count()):
 		if Rect2i(MENU_POSITIONS[index] - Vector2i(3, 2), Vector2i(86, 18)).has_point(point):
 			menu_selection = index
 			_confirm_opening_menu()
@@ -479,8 +485,12 @@ func _confirm_opening_menu() -> void:
 	if menu_selection == 0:
 		_start_game(0)
 	elif _save_system_available:
-		_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
-		_save_menu.open_load_slots(true)
+		if menu_selection == 1:
+			_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
+			_save_menu.open_load_slots(true)
+		elif menu_selection == 2 and _toy_coordinator != null and _toy_coordinator.is_available():
+			_save_menu.configure_save_slots(_save_manager.slot_summaries(), _save_manager.current_slot)
+			_save_menu.open_toy(true)
 
 
 func _on_load_slot_requested(slot: int) -> void:
@@ -571,9 +581,13 @@ func _draw_splash() -> void:
 func _draw_opening_menu() -> void:
 	if _opening_menu_texture != null:
 		draw_texture_rect(_opening_menu_texture, Rect2(Vector2.ZERO, size), false)
-	for index in range(2):
+	for index in range(_opening_menu_item_count()):
 		var color_index := COLOR_SELECTED_FIRST + int(Time.get_ticks_msec() / 100) % 6 if index == menu_selection else COLOR_NORMAL
-		_draw_pal_text(_database.get_word(7 + index), MENU_POSITIONS[index], _palette_color(color_index), true)
+		_draw_pal_text(_database.get_word(7 + index) if index < 2 else "云端存档", MENU_POSITIONS[index], _palette_color(color_index), true)
+
+
+func _opening_menu_item_count() -> int:
+	return 3 if _toy_coordinator != null and _toy_coordinator.is_available() else 2
 
 
 func _draw_pal_text(text: String, position: Vector2i, color: Color, shadow: bool = false) -> void:

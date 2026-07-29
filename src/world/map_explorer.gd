@@ -11,6 +11,7 @@ const DebugCheckpoint := preload("res://src/debug/pal_debug_checkpoint.gd")
 const StartupRequest := preload("res://src/game/pal_startup_request.gd")
 const AudioPlayer := preload("res://src/audio/pal_audio_player.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
+const ToyCoordinator := preload("res://src/platform/pal_toy_coordinator.gd")
 const MobileInput := preload("res://src/ui/pal_mobile_input.gd")
 const MENU_KEYCODES := [KEY_ESCAPE, KEY_M, KEY_TAB, KEY_I]
 const RETURN_TO_LAB_KEYCODE := KEY_F10
@@ -38,6 +39,7 @@ var _rng_player: PalRngPlayer
 var _battle_view: PalBattlePreview
 var _ending_player: PalEndingPlayer
 var _audio_player: Node
+var _toy_coordinator: PalToyCoordinator
 var _fade_overlay: ColorRect
 var _fade_tween: Tween
 var _fbp_tween: Tween
@@ -86,6 +88,10 @@ func _ready() -> void:
 	_game_menu.configure(_database, _session)
 	_refresh_save_slot_summaries()
 	_game_menu.audio_settings_changed.connect(_on_audio_settings_changed)
+	_toy_coordinator = ToyCoordinator.new()
+	_toy_coordinator.name = "PalToyCoordinator"
+	add_child(_toy_coordinator)
+	_toy_coordinator.configure(_save_manager, _game_menu, _session)
 	_rng_player.configure(_database, _session)
 	_audio_player = AudioPlayer.new()
 	_audio_player.name = "PalAudioPlayer"
@@ -1076,6 +1082,8 @@ func _on_save_slot_requested(slot: int) -> void:
 		_show_system_toast("保存失败：%s" % _save_manager.error_message)
 		return
 	_refresh_save_slot_summaries()
+	if _toy_coordinator != null:
+		_toy_coordinator.submit_scores()
 	_game_menu.close_menu()
 	_show_system_toast("已保存到存档 %03d" % slot)
 

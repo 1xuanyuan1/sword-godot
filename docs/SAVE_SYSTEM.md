@@ -12,6 +12,24 @@
 
 存档位于 `user://saves/slot_001.json` 至 `slot_100.json`。macOS 默认对应 `~/Library/Application Support/Godot/app_userdata/Sword Godot Study Port/saves/`，Windows 默认对应 `%APPDATA%\Godot\app_userdata\Sword Godot Study Port\saves\`；实际路径以 Godot 的 `user://` 为准。
 
+## Toy 云存档与排行榜
+
+Web 发布页加载官方 Toy JS SDK；SDK 可用时，标题菜单增加“云端存档”，游戏内经典主菜单增加“云端”。桌面和 Android 等非 Toy 容器保持原菜单，不显示不可用入口。
+
+Toy 云存储按“登录用户 + 当前 Toy”隔离并跨设备持久化。受平台最多 128 个 key、单 value 不超过 1024 字节的限制，本项目提供一个独立云端槽位，而不是同步全部 100 个本地槽位：玩家选择任一本地槽上传，或把当前云存档下载到指定本地槽。上传与下载覆盖前都显示确认；下载完成后仍由 `PalSaveManager` 检查格式版本、PAL 内容指纹、载荷校验和及完整运行状态，不兼容或损坏的数据不会覆盖本地存档。
+
+云存档协议把完整 JSON 以 gzip 压缩并转换为 Base64，按 960 字符拆为最多 120 个数据块。数据块键为 `pal-save-v1-000` 起的连续编号，清单键为 `pal-save-v1-manifest`；上传先写数据块、清理旧尾块，最后发布清单。清单记录协议、编码、分块数、原始大小、SHA-256、存档格式版本、内容指纹、保存时间、场景和来源槽位。下载按清单组装后验证协议、大小与 SHA-256，再交给存档管理器原子写入。
+
+排行榜使用三个永久总榜，分数均由当前 `GameSession` 产生：
+
+- 榜位 1：李逍遥达到过的最高等级；
+- 榜位 2：当前不重复队员的等级总和最高值；
+- 榜位 3：持有金钱最高值。
+
+每次本地保存或成功上传云存档后上报三个绝对分数，Toy 服务端只保留历史最高值。榜单页显示各榜前五名和自己的名次；游客可以读取榜单，个人名次与提交成绩需要登录，首次提交按平台规则完成用户数据确认。云存储本身只要求登录，不触发用户资料确认。
+
+其他 SDK 能力中，`closeBrowser` 适合在 B 站 App 内结束游戏；`getUserProfile` 可用于可选头像／昵称个性化，但首次调用会触发平台确认，当前榜单已经直接返回展示信息，因此暂不额外索取。`navigate`、作者资料、作者视频及互动状态适合未来明确配置作者内容后增加社区入口。相册、摄像头、麦克风与本 RPG 核心玩法无关；文档只列出名称而未给出调用契约的 `reportAction` 不接入。
+
 ## 把桌面存档导入 Web
 
 桌面、Android 和 Web 使用同一份版本化 JSON 存档格式。只要 `format_version` 和 PAL 内容指纹一致，桌面端的 `slot_NNN.json` 可以在 Web 端继续读取。Web 存档存在当前网页来源的 IndexedDB，不是普通的本地文件。
@@ -122,7 +140,13 @@ Web 存档与网页来源、浏览器及当前用户配置绑定。更换域名�
   --script res://tests/run_local_save_system_test.gd
 ```
 
-存档页视觉快照包含在 `tests/run_local_menu_visual_test.gd`；输出继续写入被忽略的 `generated/pal/visual_tests/`。
+使用内存 Toy SDK 验证嵌入式 JavaScript 桥接的分块顺序、下载、排行榜、分数上报和容器关闭：
+
+```bash
+node tests/run_toy_bridge_test.mjs
+```
+
+存档、Toy 云端和排行榜页视觉快照包含在 `tests/run_local_menu_visual_test.gd`；输出继续写入被忽略的 `generated/pal/visual_tests/`。
 
 启动页入口、独立取消和正式槽位只读恢复回归：
 

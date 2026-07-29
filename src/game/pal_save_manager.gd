@@ -124,6 +124,50 @@ func load_slot(slot: int, session: GameSession) -> bool:
 	return true
 
 
+## 读取一份已通过格式、指纹和校验和检查的完整存档文本，供云存档上传使用。
+func export_slot_text(slot: int) -> String:
+	error_message = ""
+	if not _validate_slot(slot):
+		return ""
+	var record := _read_record(slot)
+	if not _validate_record(record):
+		return ""
+	var file := FileAccess.open(slot_path(slot), FileAccess.READ)
+	if file == null:
+		error_message = "无法读取存档 %d：%s" % [slot, error_string(FileAccess.get_open_error())]
+		return ""
+	return file.get_as_text()
+
+
+## 校验外部存档文本后原子导入指定槽位；失败时不覆盖已有存档。
+func import_slot_text(slot: int, save_text: String) -> bool:
+	error_message = ""
+	if not _validate_slot(slot):
+		return false
+	var parser := JSON.new()
+	var parse_error := parser.parse(save_text)
+	var record = parser.data if parse_error == OK else null
+	if record is not Dictionary:
+		error_message = "导入内容不是有效 JSON%s" % ["：%s" % parser.get_error_message() if parse_error != OK else ""]
+		return false
+	if not _validate_record(record):
+		return false
+	var absolute_path := ProjectSettings.globalize_path(slot_path(slot))
+	var temporary_path := absolute_path + ".tmp"
+	var file := FileAccess.open(temporary_path, FileAccess.WRITE)
+	if file == null:
+		error_message = "无法创建导入临时文件：%s" % error_string(FileAccess.get_open_error())
+		return false
+	file.store_string(save_text)
+	file.flush()
+	file = null
+	if not _replace_file(temporary_path, absolute_path):
+		return false
+	current_slot = slot
+	_metadata_cache.erase(slot)
+	return true
+
+
 ## 返回 1–100 槽的轻量摘要，供经典菜单分页绘制。
 ## 每项包含是否存在、是否可读、场景、时间和队伍角色/等级，不暴露完整存档内容。
 func slot_summaries() -> Array[Dictionary]:

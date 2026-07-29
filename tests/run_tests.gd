@@ -9,6 +9,7 @@ const PoisonDefinition := preload("res://src/content/pal_poison_definition.gd")
 const CollectibleClassifier := preload("res://src/game/pal_collectible_classifier.gd")
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
 const MapExplorer := preload("res://src/world/map_explorer.gd")
+const ToyService := preload("res://src/platform/pal_toy_service.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -401,6 +402,12 @@ func _test_web_export_uses_formal_startup() -> void:
 		and startup_source.find('event.keycode == KEY_F10 and not OS.has_feature("web")') >= 0
 		and explorer_source.find('event.keycode == RETURN_TO_LAB_KEYCODE and not OS.has_feature("web")') >= 0,
 		"Web release excludes the developer resource lab and disables both F10 entry points",
+	)
+	_expect(
+		preset_source.find("toy-sdk.js") >= 0
+		and FileAccess.file_exists("res://src/platform/pal_toy_service.gd")
+		and FileAccess.file_exists("res://src/platform/pal_toy_coordinator.gd"),
+		"Web export loads the Toy SDK and packages the shared cloud-save/ranking bridge",
 	)
 
 
@@ -2248,6 +2255,41 @@ func _test_game_menu_inventory() -> void:
 	menu._system_selection = 4
 	menu._confirm_selection()
 	_expect(quit_requests[0] == 1 and not menu.visible, "system quit entry closes the menu and requests application exit")
+	_expect(menu._main_item_count() == 4, "non-Toy builds keep the original four-item classic main menu")
+	menu.configure_toy_features(true, "Toy connected")
+	_expect(menu._main_item_count() == 5, "Toy builds expose a fifth cloud entry without changing non-Web menus")
+	var cloud_state_requests := [0]
+	menu.toy_cloud_state_requested.connect(func() -> void: cloud_state_requests[0] += 1)
+	menu.open_toy(false)
+	_expect(menu.visible and menu.current_page == PalGameMenu.Page.TOY and cloud_state_requests[0] == 1, "Toy cloud page refreshes its manifest when opened")
+	menu.notify_toy_cloud_info({"saved_at": "2026-07-22 13:49:05", "source_slot": 9}, "")
+	menu._save_slot_selection = 0
+	var cloud_uploads: Array[int] = []
+	menu.toy_cloud_upload_requested.connect(func(slot: int) -> void: cloud_uploads.append(slot))
+	menu._toy_selection = 0
+	menu._confirm_selection()
+	menu._confirmation_selection = 1
+	menu._confirm_selection()
+	_expect(cloud_uploads == [1] and menu._toy_busy, "Toy cloud upload requires confirmation and emits the selected populated slot")
+	menu.notify_toy_cloud_operation(true, "uploaded")
+	var cloud_downloads: Array[int] = []
+	menu.toy_cloud_download_requested.connect(func(slot: int) -> void: cloud_downloads.append(slot))
+	menu._toy_selection = 1
+	menu._confirm_selection()
+	menu._confirmation_selection = 1
+	menu._confirm_selection()
+	_expect(cloud_downloads == [1] and menu._toy_busy, "Toy cloud download requires confirmation before overwriting a local slot")
+	menu.notify_toy_cloud_operation(true, "downloaded")
+	var rank_requests: Array[int] = []
+	menu.toy_rank_requested.connect(func(board: int) -> void: rank_requests.append(board))
+	menu._toy_selection = 2
+	menu._confirm_selection()
+	_expect(menu.current_page == PalGameMenu.Page.TOY_RANK and rank_requests == [1], "Toy cloud page opens the first leaderboard and requests its data")
+	var score_session := GameSession.new()
+	score_session.role_levels = PackedInt32Array([12, 10, 8, 1, 1, 1])
+	score_session.party_roles = PackedInt32Array([0, 1, 2])
+	score_session.cash = 3456
+	_expect(ToyService.scores_for_session(score_session) == {"1": 12, "2": 30, "3": 3456}, "Toy leaderboard scores map to leader level, active-party total and cash")
 	menu.free()
 
 
