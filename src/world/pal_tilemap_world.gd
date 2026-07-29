@@ -81,18 +81,22 @@ func set_presentation_mode(mode: int) -> void:
 		_apply_map_presentation()
 
 
+## 返回正式 TileMap 世界当前使用的经典或高清 2D 展示配置。
 func presentation_mode() -> int:
 	return _presentation_mode
 
 
+## 返回当前 TileMap Camera2D 的 PAL 逻辑视野尺寸。
 func logical_view_size() -> Vector2i:
 	return _logical_view_size
 
 
+## 返回 320×200 经典核心在当前逻辑视野中的左上偏移。
 func classic_content_offset() -> Vector2i:
 	return _classic_content_offset
 
 
+## 返回当前地图是否已通过完整校验并启用私有高清 TileSet。
 func remaster_map_active() -> bool:
 	return _remaster_map_active
 

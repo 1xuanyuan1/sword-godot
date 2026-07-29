@@ -88,10 +88,12 @@ func _update_presentation_layers() -> void:
 	_sync_remaster_hud()
 
 
+## 返回当前 Presentation Shell 的经典或高清 2D 展示模式。
 func presentation_mode() -> int:
 	return _mode
 
 
+## 返回高清 2D 逻辑视口是否已按 384×216 正确创建。
 func remaster_renderer_ready() -> bool:
 	return _mode == MODE_REMASTER_2D and _classic_viewport != null and _classic_viewport.size == PalPresentationMetrics.REMASTER_LOGICAL_SIZE
 

@@ -99,6 +99,7 @@ func set_remaster_canvas_enabled(enabled: bool) -> void:
 		_toast_panel.modulate.a = 0.0 if enabled else 1.0
 
 
+## 返回供 1080p 原生 HUD 镜像的剧情 Toast 可见状态、正文和逐字进度。
 func remaster_toast_state() -> Dictionary:
 	return {
 		"visible": visible and _position_mode == 3,
