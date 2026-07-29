@@ -35,11 +35,12 @@
         "requested_height": { "const": 1024 },
         "actual_width": { "type": "integer", "minimum": 128 },
         "actual_height": { "type": "integer", "minimum": 128 },
+        "output_path": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))art/runtime/.+\\.(png|webp)$" },
         "background": { "const": "solid_key_color" },
         "key_color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$", "default": "#00FF00" },
         "input_references": {
           "type": "array",
-          "minItems": 2,
+          "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -65,6 +66,10 @@
         {
           "if": { "properties": { "model": { "const": "gpt-image-2" } } },
           "then": { "properties": { "protocol": { "const": "openai-images" } } }
+        },
+        {
+          "if": { "properties": { "review_status": { "enum": ["generated", "technical_review", "approved", "rejected"] } } },
+          "then": { "required": ["actual_width", "actual_height", "output_path", "output_sha256"] }
         }
       ]
     }

@@ -268,7 +268,7 @@ def validate_tts_manifest(data: dict[str, Any], root: Path | None) -> None:
             verify_file(root, output, audio_digest, f"{location}.output_path")
 
 
-def validate_art_manifest(data: dict[str, Any], _root: Path | None) -> None:
+def validate_art_manifest(data: dict[str, Any], root: Path | None) -> None:
     required = {"schema_version", "style_guide_version", "prompts"}
     require_keys(data, "manifest", required, required)
     require_schema_version(data)
@@ -278,11 +278,15 @@ def validate_art_manifest(data: dict[str, Any], _root: Path | None) -> None:
         location = f"manifest.prompts[{index}]"
         prompt = require_object(raw_prompt, location)
         required_prompt = {
-            "id", "asset_id", "phase", "provider", "model", "prompt",
-            "negative_prompt", "width", "height", "background",
-            "source_references", "review_status",
+            "id", "asset_id", "phase", "skill", "skill_mode", "provider",
+            "model", "protocol", "prompt", "negative_prompt",
+            "requested_width", "requested_height", "background",
+            "input_references", "review_status",
         }
-        allowed_prompt = required_prompt | {"seed", "output_sha256", "notes"}
+        allowed_prompt = required_prompt | {
+            "skill_version", "actual_width", "actual_height", "output_path",
+            "key_color", "prompt_version", "output_sha256", "review_notes",
+        }
         require_keys(prompt, location, required_prompt, allowed_prompt)
         prompt_id = require_string(prompt["id"], f"{location}.id")
         if not PACK_ID_RE.fullmatch(prompt_id):
@@ -291,22 +295,87 @@ def validate_art_manifest(data: dict[str, Any], _root: Path | None) -> None:
             fail(f"{location}.id", f"duplicate prompt ID: {prompt_id}")
         prompt_ids.add(prompt_id)
         require_string(prompt["asset_id"], f"{location}.asset_id")
-        require_enum(prompt["phase"], f"{location}.phase", {"concept", "final"})
-        require_string(prompt["provider"], f"{location}.provider")
-        require_enum(prompt["model"], f"{location}.model", {"nano-banana-2", "gpt-image-2"})
+        require_enum(prompt["phase"], f"{location}.phase", {"concept", "pose", "final"})
+        if prompt["skill"] != "2dcs":
+            fail(f"{location}.skill", "must equal 2dcs")
+        if "skill_version" in prompt:
+            require_string(prompt["skill_version"], f"{location}.skill_version")
+        skill_mode = require_enum(prompt["skill_mode"], f"{location}.skill_mode", {"ct", "p", "sq"})
+        if prompt["provider"] != "bitto":
+            fail(f"{location}.provider", "must equal bitto")
+        model = require_enum(prompt["model"], f"{location}.model", {"nano-banana-2", "gpt-image-2"})
+        protocol = require_enum(prompt["protocol"], f"{location}.protocol", {"vertex", "openai-images"})
+        expected_protocol = "vertex" if model == "nano-banana-2" else "openai-images"
+        if protocol != expected_protocol:
+            fail(f"{location}.protocol", f"must equal {expected_protocol} for {model}")
         require_string(prompt["prompt"], f"{location}.prompt")
         require_string(prompt["negative_prompt"], f"{location}.negative_prompt", allow_empty=True)
-        require_integer(prompt["width"], f"{location}.width", 128, 65536)
-        require_integer(prompt["height"], f"{location}.height", 128, 65536)
-        require_enum(prompt["background"], f"{location}.background", {"opaque", "solid_key_color"})
-        require_unique_strings(prompt["source_references"], f"{location}.source_references")
-        status = require_enum(prompt["review_status"], f"{location}.review_status", {"draft", "generated", "approved", "rejected"})
-        if prompt.get("seed") is not None:
-            require_integer(prompt["seed"], f"{location}.seed", -(2**63), 2**63 - 1)
+        if require_integer(prompt["requested_width"], f"{location}.requested_width", 128, 65536) != 1536:
+            fail(f"{location}.requested_width", "must equal 1536")
+        if require_integer(prompt["requested_height"], f"{location}.requested_height", 128, 65536) != 1024:
+            fail(f"{location}.requested_height", "must equal 1024")
+        if prompt["background"] != "solid_key_color":
+            fail(f"{location}.background", "must equal solid_key_color")
+        key_color = prompt.get("key_color", "#00FF00")
+        if not isinstance(key_color, str) or not re.fullmatch(r"#[0-9A-Fa-f]{6}", key_color):
+            fail(f"{location}.key_color", "must be a six-digit RGB color")
+
+        input_references = require_array(prompt["input_references"], f"{location}.input_references")
+        if not input_references:
+            fail(f"{location}.input_references", "must contain at least one ordered input")
+        input_roles: list[str] = []
+        input_orders: list[int] = []
+        for input_index, raw_reference in enumerate(input_references):
+            reference_location = f"{location}.input_references[{input_index}]"
+            reference = require_object(raw_reference, reference_location)
+            reference_keys = {"order", "role", "path", "sha256"}
+            require_keys(reference, reference_location, reference_keys, reference_keys)
+            input_orders.append(require_integer(reference["order"], f"{reference_location}.order", 1, len(input_references)))
+            input_roles.append(require_enum(reference["role"], f"{reference_location}.role", {"appearance", "target_style", "pose"}))
+            input_path = require_relative_path(reference["path"], f"{reference_location}.path")
+            input_digest = require_sha256(reference["sha256"], f"{reference_location}.sha256")
+            verify_file(root, input_path, input_digest, f"{reference_location}.path")
+        if input_orders != list(range(1, len(input_references) + 1)):
+            fail(f"{location}.input_references", "orders must be unique, sequential, and match array order")
+        if skill_mode == "ct" and input_roles != ["appearance", "target_style"]:
+            fail(f"{location}.input_references", "ct requires appearance first and target_style second")
+        if skill_mode == "p" and (input_roles[0] != "appearance" or len(input_roles) < 2 or any(role != "pose" for role in input_roles[1:])):
+            fail(f"{location}.input_references", "p requires appearance first followed by one or more poses")
+        if skill_mode == "sq" and input_roles != ["appearance"]:
+            fail(f"{location}.input_references", "sq requires exactly one appearance input")
+
+        if "prompt_version" in prompt:
+            require_string(prompt["prompt_version"], f"{location}.prompt_version")
+        if "review_notes" in prompt:
+            require_string(prompt["review_notes"], f"{location}.review_notes", allow_empty=True)
+        statuses = {"draft", "generated", "technical_review", "approved", "rejected"}
+        status = require_enum(prompt["review_status"], f"{location}.review_status", statuses)
+        completed = status != "draft"
+        completion_fields = {"actual_width", "actual_height", "output_path", "output_sha256"}
+        if completed:
+            missing_completion = sorted(completion_fields - prompt.keys())
+            if missing_completion:
+                fail(location, f"{status} record is missing: {', '.join(missing_completion)}")
+        if "actual_width" in prompt:
+            actual_width = require_integer(prompt["actual_width"], f"{location}.actual_width", 128, 65536)
+        else:
+            actual_width = 0
+        if "actual_height" in prompt:
+            actual_height = require_integer(prompt["actual_height"], f"{location}.actual_height", 128, 65536)
+        else:
+            actual_height = 0
+        output_path = require_relative_path(prompt["output_path"], f"{location}.output_path") if "output_path" in prompt else ""
+        if output_path and (not output_path.startswith("art/runtime/") or not output_path.lower().endswith((".png", ".webp"))):
+            fail(f"{location}.output_path", "must be an art/runtime PNG or WebP")
+        output_digest = ""
         if prompt.get("output_sha256") is not None:
-            require_sha256(prompt["output_sha256"], f"{location}.output_sha256")
-        elif status in {"generated", "approved"}:
+            output_digest = require_sha256(prompt["output_sha256"], f"{location}.output_sha256")
+        elif completed:
             fail(f"{location}.output_sha256", f"is required when review_status is {status}")
+        if output_path and output_digest:
+            verify_file(root, output_path, output_digest, f"{location}.output_path")
+        if status == "approved" and actual_width * 2 != actual_height * 3:
+            fail(location, "approved 2DCS output must have an exact 3:2 aspect ratio")
 
 
 def validate_mod_manifest(data: dict[str, Any], root: Path | None) -> None:
