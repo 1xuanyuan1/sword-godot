@@ -26,6 +26,7 @@ var texture: Texture2D
 var _frames: Dictionary = {}
 
 
+## 从指定 JSON 清单加载人物图集，并校验 Sprite 编号、帧映射和图片哈希。
 func load_manifest(path: String, expected_sprite_number: int, expected_frame_count: int) -> bool:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
@@ -36,9 +37,10 @@ func load_manifest(path: String, expected_sprite_number: int, expected_frame_cou
 	return load_data(parsed, path.get_base_dir(), expected_sprite_number, expected_frame_count)
 
 
+## 加载已解析的人物图集数据；任一原帧缺失都会拒绝整套高清人物。
 func load_data(data: Dictionary, base_path: String, expected_sprite_number: int, expected_frame_count: int) -> bool:
 	_reset()
-	if not _has_only_keys(data, ["schema_version", "source_sprite_number", "source_frame_count", "scale", "image", "canvas_size", "frames"]):
+	if not _has_only_keys(data, ["schema_version", "source_sprite_number", "source_frame_count", "scale", "image", "image_sha256", "canvas_size", "frames"]):
 		return _fail("人物 Atlas 包含未声明字段")
 	if str(data.get("schema_version", "")) != SCHEMA_VERSION:
 		return _fail("人物 Atlas schema_version 必须为 %s" % SCHEMA_VERSION)
@@ -57,6 +59,9 @@ func load_data(data: Dictionary, base_path: String, expected_sprite_number: int,
 	if not _is_safe_png_path(relative_image):
 		return _fail("人物 Atlas image 必须是安全的相对 PNG 路径")
 	image_path = base_path.path_join(relative_image)
+	var image_sha256 := str(data.get("image_sha256", ""))
+	if not _is_sha256(image_sha256) or _file_sha256(image_path) != image_sha256:
+		return _fail("人物 Atlas 图片 SHA-256 不匹配：%s" % image_path)
 	var image := Image.new()
 	var image_error := image.load(image_path)
 	if image_error != OK or image.is_empty():
@@ -101,6 +106,7 @@ func load_data(data: Dictionary, base_path: String, expected_sprite_number: int,
 	return true
 
 
+## 返回与原 MGO `frame_index` 一一对应的高清人物帧。
 func frame(frame_index: int) -> FrameData:
 	return _frames.get(frame_index) as FrameData
 
@@ -149,6 +155,28 @@ static func _rect(value) -> Rect2i:
 
 static func _is_safe_png_path(path: String) -> bool:
 	return not path.is_empty() and path.to_lower().ends_with(".png") and not path.begins_with("/") and not path.contains("\\") and ".." not in path.split("/", false)
+
+
+static func _is_sha256(value: String) -> bool:
+	if value.length() != 64 or value != value.to_lower():
+		return false
+	for character in value:
+		if character not in "0123456789abcdef":
+			return false
+	return true
+
+
+static func _file_sha256(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var context := HashingContext.new()
+	if context.start(HashingContext.HASH_SHA256) != OK:
+		return ""
+	while file.get_position() < file.get_length():
+		if context.update(file.get_buffer(mini(1024 * 1024, file.get_length() - file.get_position()))) != OK:
+			return ""
+	return context.finish().hex_encode()
 
 
 static func _has_only_keys(data: Dictionary, allowed: Array[String]) -> bool:

@@ -28,6 +28,7 @@ var _frame_textures: Dictionary = {}
 var _night_frame_textures: Dictionary = {}
 
 
+## 从指定 JSON 清单加载地图图集，并校验地图编号、帧数、图片哈希和实际引用覆盖。
 func load_manifest(path: String, expected_map_number: int, expected_frame_count: int, required_frames: PackedInt32Array) -> bool:
 	var file := FileAccess.open(path, FileAccess.READ)
 	if file == null:
@@ -38,9 +39,10 @@ func load_manifest(path: String, expected_map_number: int, expected_frame_count:
 	return load_data(parsed, path.get_base_dir(), expected_map_number, expected_frame_count, required_frames)
 
 
+## 加载已解析的地图图集数据；`base_path` 是关联 PNG 的受信资源根目录。
 func load_data(data: Dictionary, base_path: String, expected_map_number: int, expected_frame_count: int, required_frames: PackedInt32Array) -> bool:
 	_reset()
-	if not _has_only_keys(data, ["schema_version", "map_number", "source_frame_count", "scale", "tile_cell_px", "content_px", "image", "night_image", "frames"]):
+	if not _has_only_keys(data, ["schema_version", "map_number", "source_frame_count", "scale", "tile_cell_px", "content_px", "image", "image_sha256", "night_image", "night_image_sha256", "frames"]):
 		return _fail("地图 TileSet 包含未声明字段")
 	if str(data.get("schema_version", "")) != SCHEMA_VERSION:
 		return _fail("地图 TileSet schema_version 必须为 %s" % SCHEMA_VERSION)
@@ -56,6 +58,9 @@ func load_data(data: Dictionary, base_path: String, expected_map_number: int, ex
 	if not _is_safe_png_path(relative_image):
 		return _fail("地图 TileSet image 必须是安全的相对 PNG 路径")
 	image_path = base_path.path_join(relative_image)
+	var image_sha256 := str(data.get("image_sha256", ""))
+	if not _is_sha256(image_sha256) or _file_sha256(image_path) != image_sha256:
+		return _fail("地图 TileSet 图片 SHA-256 不匹配：%s" % image_path)
 	var source_image := Image.new()
 	if source_image.load(image_path) != OK or source_image.is_empty():
 		return _fail("地图 TileSet 图片无法读取：%s" % image_path)
@@ -65,6 +70,9 @@ func load_data(data: Dictionary, base_path: String, expected_map_number: int, ex
 		if not _is_safe_png_path(relative_night):
 			return _fail("地图 TileSet night_image 必须是安全的相对 PNG 路径")
 		night_image_path = base_path.path_join(relative_night)
+		var night_sha256 := str(data.get("night_image_sha256", ""))
+		if not _is_sha256(night_sha256) or _file_sha256(night_image_path) != night_sha256:
+			return _fail("地图 TileSet 夜间图片 SHA-256 不匹配：%s" % night_image_path)
 		night_image = Image.new()
 		if night_image.load(night_image_path) != OK or night_image.get_size() != source_image.get_size():
 			return _fail("地图 TileSet 夜间图片缺失或尺寸不一致")
@@ -97,11 +105,13 @@ func load_data(data: Dictionary, base_path: String, expected_map_number: int, ex
 	return true
 
 
+## 返回指定原 GOP 帧对应的昼间或夜间 160×80 纹理。
 func frame_texture(frame_index: int, night: bool = false) -> Texture2D:
 	var values := _night_frame_textures if night and night_atlas_texture != null else _frame_textures
 	return values.get(frame_index) as Texture2D
 
 
+## 返回当前昼夜状态应交给正式 TileSet 的完整重排图集。
 func active_atlas_texture(night: bool) -> Texture2D:
 	return night_atlas_texture if night and night_atlas_texture != null else atlas_texture
 
@@ -171,6 +181,28 @@ static func _rect(value) -> Rect2i:
 
 static func _is_safe_png_path(path: String) -> bool:
 	return not path.is_empty() and path.to_lower().ends_with(".png") and not path.begins_with("/") and not path.contains("\\") and ".." not in path.split("/", false)
+
+
+static func _is_sha256(value: String) -> bool:
+	if value.length() != 64 or value != value.to_lower():
+		return false
+	for character in value:
+		if character not in "0123456789abcdef":
+			return false
+	return true
+
+
+static func _file_sha256(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var context := HashingContext.new()
+	if context.start(HashingContext.HASH_SHA256) != OK:
+		return ""
+	while file.get_position() < file.get_length():
+		if context.update(file.get_buffer(mini(1024 * 1024, file.get_length() - file.get_position()))) != OK:
+			return ""
+	return context.finish().hex_encode()
 
 
 static func _has_only_keys(data: Dictionary, allowed: Array[String]) -> bool:

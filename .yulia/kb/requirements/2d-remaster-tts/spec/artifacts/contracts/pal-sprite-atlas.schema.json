@@ -4,13 +4,14 @@
   "title": "PAL Remaster Sprite Atlas",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "source_sprite_number", "source_frame_count", "scale", "image", "canvas_size", "frames"],
+  "required": ["schema_version", "source_sprite_number", "source_frame_count", "scale", "image", "image_sha256", "canvas_size", "frames"],
   "properties": {
     "schema_version": { "const": "1.0.0" },
     "source_sprite_number": { "type": "integer", "minimum": 1 },
     "source_frame_count": { "type": "integer", "minimum": 1 },
     "scale": { "const": 5 },
     "image": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.png$" },
+    "image_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "canvas_size": { "$ref": "#/$defs/size" },
     "frames": {
       "type": "array",

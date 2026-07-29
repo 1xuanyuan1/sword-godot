@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import struct
 import sys
@@ -54,11 +55,19 @@ def png_size(path: Path) -> tuple[int, int]:
     return struct.unpack(">II", header[16:24])
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate(path: Path, expected_sprite: int | None, expected_frames: int | None) -> int:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         fail("manifest: expected an object")
-    fields = {"schema_version", "source_sprite_number", "source_frame_count", "scale", "image", "canvas_size", "frames"}
+    fields = {"schema_version", "source_sprite_number", "source_frame_count", "scale", "image", "image_sha256", "canvas_size", "frames"}
     exact_keys(data, fields, "manifest")
     if data["schema_version"] != SCHEMA_VERSION or data["scale"] != 5:
         fail("manifest: schema_version must be 1.0.0 and scale must be 5")
@@ -73,6 +82,8 @@ def validate(path: Path, expected_sprite: int | None, expected_frames: int | Non
         fail("canvas_size: dimensions must be positive")
     relative_image = safe_png(data["image"], "image")
     image_path = path.parent / relative_image
+    if not isinstance(data["image_sha256"], str) or data["image_sha256"] != sha256_file(image_path):
+        fail("image_sha256: does not match image")
     width, height = png_size(image_path)
     frames = data["frames"]
     if not isinstance(frames, list) or len(frames) != frame_count:

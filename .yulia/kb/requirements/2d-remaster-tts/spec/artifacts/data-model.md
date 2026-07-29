@@ -16,13 +16,13 @@ keywords: ['data model', 'tileset', 'sprite atlas', 'TTS', 'MOD']
 ## PalMapTilesetManifest
 
 - `map_number`、`source_frame_count`、`scale=5`、`tile_cell_px=[160,80]`、`content_px=[160,75]`。
-- `image` 与 `frames[]`；每帧包含唯一 `source_frame_index` 和 Atlas `rect`。
-- 可选 `night_image`；未提供时由高清 CanvasItem 调色 Shader 表达夜景。
+- `image`、`image_sha256` 与 `frames[]`；每帧包含唯一 `source_frame_index` 和 Atlas `rect`。
+- 可选 `night_image` 与配套 `night_image_sha256`；未提供时由高清 CanvasItem 调色 Shader 表达夜景。
 - 校验器结合原 MAP/GOP，确认地图实际引用帧全部覆盖、无越界、无重复。
 
 ## PalSpriteAtlas
 
-- `source_sprite_number`、`source_frame_count`、`scale=5`、`image`、`canvas_size`、`frames[]`。
+- `source_sprite_number`、`source_frame_count`、`scale=5`、`image`、`image_sha256`、`canvas_size`、`frames[]`。
 - 每帧：`source_frame_index`、`rect`、`pivot`、`alpha_bounds`、`duration_ms`。
 - `source_frame_index` 必须唯一且与原 MGO 选帧一一对应；同一 Atlas 所有帧共用画布坐标和脚底原点。
 

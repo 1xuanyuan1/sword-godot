@@ -52,7 +52,11 @@ func _init() -> void:
 	if atlas.save_png(atlas_path) != OK:
 		_fail("无法保存五倍图集：%s" % atlas_path)
 		return
-	var manifest := _build_tileset_manifest(map_number, tile_sprite.frame_count(), atlas_path.get_file())
+	var atlas_sha256 := _file_sha256(atlas_path)
+	if atlas_sha256.is_empty():
+		_fail("无法计算五倍图集 SHA-256：%s" % atlas_path)
+		return
+	var manifest := _build_tileset_manifest(map_number, tile_sprite.frame_count(), atlas_path.get_file(), atlas_sha256)
 	if not _write_json(absolute_output.path_join("pal-map-tileset.json"), manifest):
 		return
 	if not _write_json(absolute_output.path_join("map_%03d_coverage.json" % map_number), coverage):
@@ -86,7 +90,7 @@ func _build_atlas(tile_sprite: PalSprite, palette: PackedByteArray) -> Dictionar
 	return {"image": atlas, "error": ""}
 
 
-func _build_tileset_manifest(map_number: int, frame_count: int, image_name: String) -> Dictionary:
+func _build_tileset_manifest(map_number: int, frame_count: int, image_name: String, image_sha256: String) -> Dictionary:
 	var frames: Array = []
 	for frame_index in range(frame_count):
 		var position := Vector2i(frame_index % ATLAS_COLUMNS, int(frame_index / ATLAS_COLUMNS)) * TILE_CELL_PX
@@ -102,6 +106,7 @@ func _build_tileset_manifest(map_number: int, frame_count: int, image_name: Stri
 		"tile_cell_px": [TILE_CELL_PX.x, TILE_CELL_PX.y],
 		"content_px": [CONTENT_PX.x, CONTENT_PX.y],
 		"image": image_name,
+		"image_sha256": image_sha256,
 		"frames": frames,
 	}
 
@@ -208,6 +213,19 @@ func _absolute_path(path: String) -> String:
 	if path.begins_with("res://") or path.begins_with("user://"):
 		return ProjectSettings.globalize_path(path)
 	return path.simplify_path()
+
+
+func _file_sha256(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var context := HashingContext.new()
+	if context.start(HashingContext.HASH_SHA256) != OK:
+		return ""
+	while file.get_position() < file.get_length():
+		if context.update(file.get_buffer(mini(1024 * 1024, file.get_length() - file.get_position()))) != OK:
+			return ""
+	return context.finish().hex_encode()
 
 
 func _fail(message: String) -> void:

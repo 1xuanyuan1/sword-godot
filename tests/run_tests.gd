@@ -551,6 +551,7 @@ func _test_remaster_asset_contracts() -> void:
 		"source_frame_count": 2,
 		"scale": 5,
 		"image": "actor.png",
+		"image_sha256": _file_sha256(absolute_root.path_join("actor.png")),
 		"canvas_size": [8, 10],
 		"frames": [
 			{"source_frame_index": 0, "rect": [0, 0, 8, 10], "pivot": [4, 9], "alpha_bounds": [1, 1, 6, 8], "duration_ms": 100},
@@ -564,6 +565,9 @@ func _test_remaster_asset_contracts() -> void:
 	var incomplete_sprite := sprite_data.duplicate(true)
 	incomplete_sprite["frames"].remove_at(1)
 	_expect(not RemasterSpriteAtlas.new().load_data(incomplete_sprite, root_path, 7, 2), "an incomplete character atlas falls back as one whole character")
+	var tampered_sprite := sprite_data.duplicate(true)
+	tampered_sprite["image_sha256"] = "0".repeat(64)
+	_expect(not RemasterSpriteAtlas.new().load_data(tampered_sprite, root_path, 7, 2), "a character atlas with a mismatched image hash falls back as one whole character")
 
 	var map_image := Image.create(320, 80, false, Image.FORMAT_RGBA8)
 	map_image.fill(Color.TRANSPARENT)
@@ -578,6 +582,7 @@ func _test_remaster_asset_contracts() -> void:
 		"tile_cell_px": [160, 80],
 		"content_px": [160, 75],
 		"image": "map.png",
+		"image_sha256": _file_sha256(absolute_root.path_join("map.png")),
 		"night_image": null,
 		"frames": [
 			{"source_frame_index": 0, "rect": [0, 0, 160, 80]},
@@ -588,6 +593,9 @@ func _test_remaster_asset_contracts() -> void:
 	_expect(map_atlas.load_data(map_data_contract, root_path, 12, 3, PackedInt32Array([0, 1])), "map tileset accepts coverage of every frame actually referenced by a map")
 	_expect(map_atlas.atlas_texture != null and map_atlas.frame_texture(1) != null, "map tileset repacks source-indexed 160x80 frames for TileMap consumption")
 	_expect(not RemasterMapTileset.new().load_data(map_data_contract, root_path, 12, 3, PackedInt32Array([0, 2])), "a map tileset missing one referenced GOP frame falls back as a whole map")
+	var tampered_map := map_data_contract.duplicate(true)
+	tampered_map["image_sha256"] = "f".repeat(64)
+	_expect(not RemasterMapTileset.new().load_data(tampered_map, root_path, 12, 3, PackedInt32Array([0, 1])), "a map tileset with a mismatched image hash falls back as a whole map")
 	var synthetic_map_bytes := PackedByteArray()
 	synthetic_map_bytes.resize(PalMapData.BYTE_SIZE)
 	var synthetic_map := PalMapData.from_bytes(synthetic_map_bytes)
@@ -597,6 +605,19 @@ func _test_remaster_asset_contracts() -> void:
 	DirAccess.remove_absolute(absolute_root.path_join("actor.png"))
 	DirAccess.remove_absolute(absolute_root.path_join("map.png"))
 	DirAccess.remove_absolute(absolute_root)
+
+
+func _file_sha256(path: String) -> String:
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return ""
+	var context := HashingContext.new()
+	if context.start(HashingContext.HASH_SHA256) != OK:
+		return ""
+	while file.get_position() < file.get_length():
+		if context.update(file.get_buffer(mini(1024 * 1024, file.get_length() - file.get_position()))) != OK:
+			return ""
+	return context.finish().hex_encode()
 
 
 func _test_tilemap_runtime_retirement() -> void:

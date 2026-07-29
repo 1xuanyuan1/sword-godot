@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import struct
 import sys
@@ -54,12 +55,20 @@ def png_size(path: Path) -> tuple[int, int]:
     return struct.unpack(">II", header[16:24])
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate(path: Path, expected_map: int | None, expected_frames: int | None, required_frames: set[int]) -> int:
     data = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(data, dict):
         fail("manifest: expected an object")
-    required = {"schema_version", "map_number", "source_frame_count", "scale", "tile_cell_px", "content_px", "image", "frames"}
-    exact_keys(data, required | {"night_image"}, required, "manifest")
+    required = {"schema_version", "map_number", "source_frame_count", "scale", "tile_cell_px", "content_px", "image", "image_sha256", "frames"}
+    exact_keys(data, required | {"night_image", "night_image_sha256"}, required, "manifest")
     if data["schema_version"] != SCHEMA_VERSION or data["scale"] != 5:
         fail("manifest: schema_version must be 1.0.0 and scale must be 5")
     map_number = integer(data["map_number"], "map_number")
@@ -71,11 +80,17 @@ def validate(path: Path, expected_map: int | None, expected_frames: int | None, 
     if int_array(data["tile_cell_px"], 2, "tile_cell_px") != [160, 80] or int_array(data["content_px"], 2, "content_px") != [160, 75]:
         fail("manifest: tile_cell_px must be [160,80] and content_px must be [160,75]")
     image_path = path.parent / safe_png(data["image"], "image")
+    if not isinstance(data["image_sha256"], str) or data["image_sha256"] != sha256_file(image_path):
+        fail("image_sha256: does not match image")
     image_size = png_size(image_path)
     if data.get("night_image") is not None:
         night_path = path.parent / safe_png(data["night_image"], "night_image")
+        if not isinstance(data.get("night_image_sha256"), str) or data["night_image_sha256"] != sha256_file(night_path):
+            fail("night_image_sha256: does not match night_image")
         if png_size(night_path) != image_size:
             fail("night_image: dimensions do not match image")
+    elif data.get("night_image_sha256") is not None:
+        fail("night_image_sha256: requires night_image")
     frames = data["frames"]
     if not isinstance(frames, list) or not frames:
         fail("frames: expected a non-empty array")

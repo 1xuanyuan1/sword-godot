@@ -4,7 +4,7 @@
   "title": "PAL Remaster Map Tileset",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "map_number", "source_frame_count", "scale", "tile_cell_px", "content_px", "image", "frames"],
+  "required": ["schema_version", "map_number", "source_frame_count", "scale", "tile_cell_px", "content_px", "image", "image_sha256", "frames"],
   "properties": {
     "schema_version": { "const": "1.0.0" },
     "map_number": { "type": "integer", "minimum": 0 },
@@ -13,7 +13,9 @@
     "tile_cell_px": { "const": [160, 80] },
     "content_px": { "const": [160, 75] },
     "image": { "type": "string", "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.png$" },
+    "image_sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "night_image": { "type": ["string", "null"], "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$)).+\\.png$" },
+    "night_image_sha256": { "type": ["string", "null"], "pattern": "^[a-f0-9]{64}$" },
     "frames": {
       "type": "array",
       "minItems": 1,
