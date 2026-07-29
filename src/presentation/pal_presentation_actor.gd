@@ -21,15 +21,13 @@ var sprite_number: int = 0
 var role_index: int = -1
 ## 当前 PAL 世界脚底坐标。
 var pal_world_position: Vector2i = Vector2i.ZERO
-## 由 PalWorldTransform 统一换算的 Godot 3D 坐标。
-var world_position_3d: Vector3 = Vector3.ZERO
 ## SDLPal 的南、西、北、东方向枚举。
 var direction: int = 0
 ## 已经选定的当前 MGO 帧编号。
 var frame_index: int = -1
 ## 传给经典 PalSceneLayout 的原始场景层。
 var scene_layer: int = 0
-## 排序和 3D 高度共用的归一化逻辑层。
+## 跨经典与高清 2D 渲染共用的归一化逻辑层。
 var logical_layer: int = 0
 ## 当前对象是否应被表现层显示。
 var visible: bool = true

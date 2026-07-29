@@ -15,7 +15,7 @@ sword/
 │   ├── formats/           # MKF、YJ1、RLE、Sprite、地图等底层格式
 │   ├── game/              # 运行时会话状态和 ScriptVM
 │   ├── import/            # 本地原版数据校验与转换
-│   ├── presentation/      # 1080p Shell、共享快照、场景路由与 HD-2D 展示
+│   ├── presentation/      # 1080p Shell、共享快照、场景路由与高清 2D 展示
 │   ├── ui/                # 资源实验室、对话框、菜单和预览 UI
 │   └── world/             # 地图探索、TileMap 世界和人物节点
 ├── shaders/               # 索引颜色到 PAL 调色板的 GPU 映射
@@ -28,7 +28,7 @@ sword/
 
 ## 入口与主要场景
 
-- `scenes/presentation_shell.tscn`：正式 1920×1080 入口，在经典 SubViewport 与 HD-2D 世界之间提供稳定展示壳。
+- `scenes/presentation_shell.tscn`：正式 1920×1080 入口，在经典 SubViewport 与高清 2D 世界之间提供稳定展示壳。
 - `scenes/main.tscn`：Shell 内的经典启动内容，编排商标 RNG、山水标题动画、“新的故事／旧的回忆”菜单和新游戏／读档转场。
 - `scenes/import_lab.tscn`：资源实验室，提供数据目录选择、导入、快速启动和开发样板导航。
 - `scenes/map_explorer.tscn`：当前可玩探索场景，连接 `GameSession`、`ScriptVM`、地图世界、对话框和菜单。
@@ -68,7 +68,7 @@ sword/
 
 ### `src/presentation`
 
-`PalPresentationShell` 提供 1920×1080 根画布和持续运行的 320×200 经典 SubViewport；`PalSceneRouter` 在 Shell 内替换经典场景，无 Shell 的合成测试仍回退 SceneTree。`PalWorldPresentationBuilder` 从 GameSession 与 EventObject 选择唯一的人物位置、方向和帧，`PalWorldTransform` 转换 3D 坐标，`PalTileMapWorld` 与 `PalHd2DWorld` 消费同一 `PalWorldPresentationSnapshot`。`PalRemasterAssetResolver` 校验 Private/MOD Manifest、类型、相对路径和 SHA-256，并按优先级回退。高清世界只创建 Camera3D、灯光、环境和 Sprite3D 表现节点，不创建碰撞或修改剧情；诊断人物与地面默认隐藏，缺少审核高清素材时继续显示经典画面。
+`PalPresentationShell` 提供 1920×1080 根画布和持续运行的 320×200 经典 SubViewport；`PalSceneRouter` 在 Shell 内替换经典场景，无 Shell 的合成测试仍回退 SceneTree。`PalWorldPresentationBuilder` 从 GameSession 与 EventObject 选择唯一的人物位置、方向和帧，经典与高清 `PalTileMapWorld` 配置消费同一 `PalWorldPresentationSnapshot`。`PalRemasterAssetResolver` 校验 Private/MOD Manifest、类型、相对路径和 SHA-256，并按优先级回退；缺少审核高清素材时继续显示经典 TileSet 或 MGO 帧。
 
 ### `src/ui`
 
@@ -86,7 +86,7 @@ sword/
 - `tests/run_save_system_tests.gd`：CI 使用合成内容验证版本、校验、损坏诊断和完整会话往返。
 - `tests/run_battle_bridge_tests.gd`：CI 验证 `004A/0007` 等待、胜败/逃跑分支和 HUD 覆盖层。
 - `tests/run_local_tilemap_inventory_test.gd`：Headless 遍历全部本机有效地图和场景引用，验证正式 TileMapLayer 资源结构。
-- `tests/run_local_presentation_shell_visual_test.gd`：使用真实窗口渲染器输出 1920×1080 经典 Shell 截图；HD-2D 尚无审核素材时只验证镜头、节点和占位隐藏，不产出合成美术截图。
+- `tests/run_local_presentation_shell_visual_test.gd`：使用真实窗口渲染器输出 1920×1080 Shell 截图，验证 3D 退役和高清 2D 未就绪时的经典安全回退。
 - `tests/support/`：只供测试使用的 CPU 地图／场景像素基准，不被正式游戏或导入器引用。
 - `tests/run_local_*.gd`：使用本机 `generated/pal/` 验证完整资源、剧情和画面，不在 GitHub CI 执行。
 - `generated/pal/content/`：运行时数据库、Sprite、地图、二进制 TileSet 等本地产物。

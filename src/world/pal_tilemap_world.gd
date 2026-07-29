@@ -16,7 +16,7 @@ const VIEWPORT_SIZE := PresentationMetrics.CLASSIC_CONTENT_SIZE
 const COLLECTIBLE_MARKER_SIZE := 9
 const SPRITELESS_COLLECTIBLE_HEIGHT := 10
 
-## TileMap 正式路径完成一帧同步后发出同一份 2D/3D 展示快照。
+## TileMap 正式路径完成一帧同步后发出经典与高清 2D 共用的展示快照。
 signal presentation_snapshot_ready(snapshot: PalWorldPresentationSnapshot)
 
 ## 最近一次地图资源、节点结构或调色板同步失败原因。
@@ -173,8 +173,8 @@ func reset_sprite_cache() -> void:
 	_texture_cache.clear()
 
 
-## 为 HD-2D Sprite3D 提供与正式 TileMap 完全相同的 MGO 解码帧，避免另写一套选帧或格式解析。
-## 该纹理只作为玩家本地经典素材回退；人物位置、方向和帧编号仍来自共享快照。
+## 为高清 2D Sprite 提供与正式 TileMap 完全相同的经典 MGO 回退帧。
+## 人物位置、方向和帧编号始终来自共享快照，不在表现层重复选择。
 func classic_actor_texture(actor: PalPresentationActor, palette_index: int, night_palette: bool) -> Texture2D:
 	if actor == null or actor.sprite_number <= 0 or actor.frame_index < 0 or _database == null:
 		return null

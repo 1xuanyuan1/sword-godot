@@ -9,9 +9,9 @@ const SCHEMA_VERSION := "1.0.0"
 const SOURCE_PRIVATE := 10
 const SOURCE_MOD := 20
 const MOD_TYPES := ["portrait", "field_sprite", "voice", "ui_theme"]
-const ASSET_TYPES := ["environment", "field_sprite", "portrait", "battlefield", "battle_action", "cutscene", "voice", "ui_theme"]
+const ASSET_TYPES := ["map_tileset", "field_sprite", "portrait", "battlefield", "battle_action", "cutscene", "voice", "ui_theme"]
 const TYPE_BY_PREFIX := {
-	"map": "environment",
+	"map": "map_tileset",
 	"character": "field_sprite",
 	"portrait": "portrait",
 	"battlefield": "battlefield",
@@ -347,7 +347,7 @@ static func _logical_id_matches_type(logical_id: String, asset_type: String) -> 
 		return false
 	match parts[0]:
 		"map":
-			return parts.size() == 3 and parts[2] == "environment"
+			return parts.size() == 3 and parts[2] == "tileset"
 		"character":
 			return parts.size() == 3 and parts[2] == "field"
 		"portrait", "battle", "cutscene":

@@ -10,10 +10,8 @@ const CollectibleClassifier := preload("res://src/game/pal_collectible_classifie
 const RoleConditionDisplay := preload("res://src/ui/pal_role_condition_display.gd")
 const MapExplorer := preload("res://src/world/map_explorer.gd")
 const PresentationMetrics := preload("res://src/presentation/pal_presentation_metrics.gd")
-const WorldTransform := preload("res://src/presentation/pal_world_transform.gd")
 const PresentationBuilder := preload("res://src/presentation/pal_world_presentation_builder.gd")
 const RemasterAssetResolver := preload("res://src/presentation/pal_remaster_asset_resolver.gd")
-const Hd2DWorld := preload("res://src/presentation/pal_hd2d_world.gd")
 
 var _failures: Array[String] = []
 var _checks: int = 0
@@ -36,7 +34,6 @@ func _init() -> void:
 	_test_presentation_metrics()
 	_test_world_presentation()
 	_test_remaster_asset_resolver()
-	_test_hd2d_environment_loading()
 	_test_runtime_paths()
 	_test_tilemap_runtime_retirement()
 	_test_tileset_builder()
@@ -392,11 +389,6 @@ func _test_presentation_metrics() -> void:
 
 
 func _test_world_presentation() -> void:
-	var pal_position := Vector2i(16, 8)
-	var world_position := WorldTransform.pal_to_world_3d(pal_position, 8)
-	_expect(world_position == Vector3(1.0, 0.5, 0.0), "PAL half-tile maps to east/north 3D axes and shared logical height")
-	_expect(WorldTransform.world_3d_to_pal(world_position) == pal_position, "PAL to 3D transform round-trips exact half-tile centers")
-
 	var database := PalContentDatabase.new()
 	var roles := PalPlayerRoles.new()
 	roles.scene_sprite_numbers = PackedInt32Array([11, 12, 13, 14, 15, 16])
@@ -421,8 +413,8 @@ func _test_world_presentation() -> void:
 	_expect(snapshot.party.size() == 1 and snapshot.events.size() == 1, "shared presentation snapshot contains party and visible events")
 	_expect(snapshot.party[0].frame_index == 10, "shared presentation builder selects the SDLPal three-frame walk phase once")
 	_expect(snapshot.events[0].frame_index == 8, "shared presentation builder applies the event three-frame remap before direction offset")
-	_expect(snapshot.party[0].world_position_3d == WorldTransform.pal_to_world_3d(Vector2i(160, 112), 6), "snapshot actor 3D position comes from the canonical transform")
-	_expect(snapshot.camera_focus_3d == WorldTransform.pal_to_world_3d(Vector2i(160, 100)), "snapshot camera focuses on the classic viewport center")
+	_expect(snapshot.party[0].pal_world_position == Vector2i(160, 112), "snapshot actor keeps the authoritative PAL world position")
+	_expect(snapshot.camera_center_pal == Vector2i(160, 100), "snapshot camera keeps the classic PAL viewport center")
 
 
 func _test_remaster_asset_resolver() -> void:
@@ -511,36 +503,21 @@ func _test_remaster_asset_resolver() -> void:
 	_expect(resolver.set_additional_remaster_roots(PackedStringArray(["res://sword-assets", "user://preview"])), "resolver accepts explicit Godot resource roots")
 	_expect(not resolver.set_additional_remaster_roots(PackedStringArray(["/tmp/private-assets"])), "resolver rejects arbitrary filesystem roots")
 
-
-func _test_hd2d_environment_loading() -> void:
-	var resolver := RemasterAssetResolver.new()
-	resolver.set_file_verification_enabled(false)
-	var manifest := {
+	var map_manifest := {
 		"schema_version": "1.0.0",
-		"pack_id": "fixture.environment",
+		"pack_id": "fixture.tileset",
 		"asset_version": "1",
 		"assets": [{
-			"id": "map/012/environment",
-			"type": "environment",
-			"path": "tests/fixtures/hd2d_environment.tscn",
+			"id": "map/012/tileset",
+			"type": "map_tileset",
+			"path": "tests/fixtures/map_012_tileset.json",
 			"sha256": "0".repeat(64),
 			"review_status": "approved",
 		}],
 	}
-	_expect(resolver.add_remaster_manifest_data(manifest, "res://"), "resolver indexes an approved HD-2D environment scene")
-	var world := Hd2DWorld.new()
-	world.configure_asset_resolver(resolver)
-	var snapshot := PalWorldPresentationSnapshot.new()
-	snapshot.map_number = 12
-	snapshot.camera_focus_3d = PalWorldTransform.pal_to_world_3d(Vector2i(1248, 1040))
-	world.sync_snapshot(snapshot)
-	var environment := world.active_environment()
-	_expect(environment != null and environment.has_node("FixtureMarker"), "HD-2D world instantiates the resolved modular environment")
-	_expect(environment != null and environment.position == snapshot.camera_focus_3d, "HD-2D environment aligns its PAL anchor with the canonical transform")
-	snapshot.map_number = 13
-	world.sync_snapshot(snapshot)
-	_expect(not world.has_active_environment(), "missing HD-2D map environment falls back without retaining the previous map")
-	world.free()
+	_expect(resolver.add_remaster_manifest_data(map_manifest, "res://"), "resolver indexes an approved 2D map tileset")
+	var map_asset = resolver.resolve("map/012/tileset", "map_tileset")
+	_expect(map_asset != null and map_asset.type == "map_tileset", "resolver returns the canonical map tileset type")
 
 
 func _test_tilemap_runtime_retirement() -> void:

@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 从 GameSession 和 EventObject 构建跨 2D/3D 渲染后端共享的展示快照。
+## 从 GameSession 和 EventObject 构建经典与高清 2D 渲染共用的展示快照。
 ## 队员编队回退、方向、普通步态、剧情动作和事件帧只在这里选择一次。
 class_name PalWorldPresentationBuilder
 extends RefCounted
@@ -24,7 +24,7 @@ static func build(
 	snapshot.night_palette = session.night_palette
 	snapshot.viewport_position = session.viewport_position
 	snapshot.camera_offset = camera_offset
-	snapshot.camera_focus_3d = PalWorldTransform.camera_focus(session.viewport_position, camera_offset)
+	snapshot.camera_center_pal = session.viewport_position + camera_offset + PalPresentationMetrics.CLASSIC_CONTENT_SIZE / 2
 	if database == null or database.player_roles == null:
 		return snapshot
 
@@ -43,7 +43,6 @@ static func build(
 		actor.frame_index = _party_frame_index(database, session, role_index, party_index, walk_phase, moving)
 		actor.scene_layer = session.world_layer
 		actor.logical_layer = session.world_layer + 6
-		actor.world_position_3d = PalWorldTransform.pal_to_world_3d(world_position, actor.logical_layer)
 		actor.is_party_member = true
 		snapshot.party.append(actor)
 
@@ -63,7 +62,6 @@ static func build(
 		actor.frame_index = PalSceneLayout.follower_frame_index(actor.direction, sprite.frame_count())
 		actor.scene_layer = session.world_layer
 		actor.logical_layer = session.world_layer + 6
-		actor.world_position_3d = PalWorldTransform.pal_to_world_3d(actor.pal_world_position, actor.logical_layer)
 		snapshot.followers.append(actor)
 
 	for event in events:
@@ -79,7 +77,6 @@ static func build(
 		actor.frame_index = _event_frame_index(event)
 		actor.scene_layer = event.layer
 		actor.logical_layer = event.layer * 8 + 2
-		actor.world_position_3d = PalWorldTransform.pal_to_world_3d(event.position, actor.logical_layer)
 		snapshot.events.append(actor)
 	return snapshot
 

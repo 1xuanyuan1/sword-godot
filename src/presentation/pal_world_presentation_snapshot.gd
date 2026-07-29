@@ -1,6 +1,6 @@
 # Copyright (C) 2026 sword-godot contributors
 # SPDX-License-Identifier: GPL-3.0-or-later
-## 某一游戏帧提供给经典 TileMap 与 HD-2D 世界的共享只读展示快照。
+## 某一游戏帧提供给经典与高清 TileMap 配置的共享只读展示快照。
 ## 快照复制坐标、方向和帧编号，不持有 GameSession 或可变 EventObject。
 class_name PalWorldPresentationSnapshot
 extends RefCounted
@@ -17,8 +17,8 @@ var night_palette: bool = false
 var viewport_position: Vector2i = Vector2i.ZERO
 ## 007F 剧情镜头的附加 PAL 像素偏移。
 var camera_offset: Vector2i = Vector2i.ZERO
-## 固定 Camera3D 应跟随的 3D 焦点。
-var camera_focus_3d: Vector3 = Vector3.ZERO
+## 经典与高清 Camera2D 共用的 PAL 世界中心。
+var camera_center_pal: Vector2i = Vector2i.ZERO
 ## 最多三名玩家队员。
 var party: Array = []
 ## 0098 设置的最多两名跟随者。
