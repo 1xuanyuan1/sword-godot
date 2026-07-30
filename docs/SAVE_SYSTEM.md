@@ -103,6 +103,17 @@ Toy 云存储按“登录用户 + 当前 Toy”隔离并跨设备持久化。受
 
 Web 存档与网页来源、浏览器及当前用户配置绑定。更换域名、使用另一个浏览器配置或清理站点数据后，IndexedDB 中的存档不会自动迁移。
 
+## 把 Web 存档下载到本地
+
+仓库提供了 [`tools/download_web_save.js`](../tools/download_web_save.js)，可以把浏览器 IndexedDB 中的单个存档下载为桌面版也能读取的 `slot_NNN.json`：
+
+1. 打开 Web 游戏和浏览器开发者工具。
+2. 在 Console 顶部把执行上下文切换到真正运行 Godot 画布的 iframe。执行 `typeof engine` 应返回 `"object"`。
+3. 打开 `tools/download_web_save.js`，复制完整内容并粘贴到 Console 执行。
+4. 脚本会列出当前网页来源实际存在的槽位；输入一个槽位编号后，浏览器开始下载对应 JSON 文件。
+
+脚本只读 IndexedDB，不会修改或删除网页存档。下载前会确认记录是 UTF-8 JSON，并检查版本化存档的必要字段；如果浏览器阻止多媒体 iframe 下载，请允许该站点下载文件，或改用桌面浏览器打开正式游戏页。下载所得文件可复制到桌面端的 `user://saves/` 目录，文件名中的槽位号也可以在 `001`–`100` 范围内调整。
+
 ## 保存范围
 
 `PalSaveManager` 保存并恢复以下状态：
