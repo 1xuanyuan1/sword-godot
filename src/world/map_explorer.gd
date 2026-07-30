@@ -292,6 +292,9 @@ func _process(delta: float) -> void:
 	if auto_world_changed:
 		_displace_party_from_blockers()
 		_refresh_world()
+		# SDLPal 的 0009 每帧都会 PAL_MakeScene；0050 留下的待渐显标记应在
+		# 第一帧世界画面绘制后立即消费，否则捕鱼和放鹿动作会一直被黑幕盖住。
+		_start_pending_fade_in_after_world_draw()
 		# 自动脚本可能让 NPC 主动走入接触范围；官方会在同一游戏更新周期检查触发。
 		if _script_vm != null and not _script_vm.is_busy():
 			_trigger_touch_event()

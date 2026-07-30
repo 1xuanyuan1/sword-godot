@@ -13,6 +13,23 @@ keywords:
 
 ## 变更记录
 
+## 2026-07-30
+
+### [FT-087] [fix] 揭开白河村捕鱼与放鹿动作黑幕
+
+- **关联需求**: M5 白河村主线完整试玩
+- **关联 TODO**: 无
+- **功能描述**: 补齐 `0050` 渐隐后由 `0009` 首次世界重绘触发渐显的 SDLPal 时序。正式 TileMap 路径现在会在自动脚本帧同步地图、人物和 EventObject 后立即消费待渐显标记，捕鱼的李逍遥动作与捕鹿后的鹿离场动画不再整段黑屏。
+- **验证情况**: 真实资源回归通过正式 `MapExplorer + TileMapLayer + PalTileMapWorld` 执行脚本 `14358/14840`，确认捕鱼动作 `0–26` 帧与鹿的 12 帧自动脚本均在遮罩移除后运动；带窗口回归另检查 320×200 实际像素并把捕鱼／放鹿截图写入 Git 忽略目录。
+- **涉及文件**:
+  - `src/world/map_explorer.gd`
+  - `tests/run_local_baihe_hunting_runtime_test.gd`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/bugfix/map-explorer.md`
+  - `.yulia/kb/changelog/changelog.md`
+
+---
+
 ## 2026-07-29
 
 ### [FT-085] [feat] 接入 Toy 云存档与排行榜

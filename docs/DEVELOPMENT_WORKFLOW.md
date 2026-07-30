@@ -172,9 +172,11 @@ Headless 路径会逐帧解压并应用全部 12 段／1464 帧，验证脚本�
 ```bash
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_local_baihe_medicine_mainline_test.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_baihe_hunting_runtime_test.gd
 ```
 
-该测试从白河村稳定入口开始，沿正式房屋／山路转场执行韩医仙初诊、药方、银杏果、借还钓竿、河边捕鱼、捕兽夹放置与 proximity 自动捕鹿、三味药交付、六神丹使用及三人归队。修改场外剧情物品 `281–286`、EventObject `797/798/831/877/887/898/905/906/909`、物品消耗或队伍进出时必须运行。
+主线测试从白河村稳定入口开始，沿正式房屋／山路转场执行韩医仙初诊、药方、银杏果、借还钓竿、河边捕鱼、捕兽夹放置与 proximity 自动捕鹿、三味药交付、六神丹使用及三人归队。运行时测试另以正式 `MapExplorer + TileMapLayer + PalTileMapWorld` 执行捕鱼 `14358` 和放鹿 `14840`，固定 `0050 → 0009` 后动作必须揭幕；去掉 `--headless` 会读取实际像素并把截图写入 `generated/pal/visual_tests/`。修改场外剧情物品 `281–286`、EventObject `797/798/831/877/887/898/905/906/909`、物品消耗、队伍进出或屏幕渐变时必须运行。
 
 玉佛寺双战与取得玉佛珠主线回归：
 
