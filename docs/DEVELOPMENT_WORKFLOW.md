@@ -174,9 +174,11 @@ Headless 路径会逐帧解压并应用全部 12 段／1464 帧，验证脚本�
   --script res://tests/run_local_baihe_medicine_mainline_test.gd
 /Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
   --script res://tests/run_local_baihe_hunting_runtime_test.gd
+/Applications/Godot.app/Contents/MacOS/Godot --headless --path . \
+  --script res://tests/run_local_baihe_medicine_use_runtime_test.gd
 ```
 
-主线测试从白河村稳定入口开始，沿正式房屋／山路转场执行韩医仙初诊、药方、银杏果、借还钓竿、河边捕鱼、捕兽夹放置与 proximity 自动捕鹿、三味药交付、六神丹使用及三人归队。运行时测试另以正式 `MapExplorer + TileMapLayer + PalTileMapWorld` 执行捕鱼 `14358` 和放鹿 `14840`，固定 `0050 → 0009` 后动作必须揭幕；去掉 `--headless` 会读取实际像素并把截图写入 `generated/pal/visual_tests/`。修改场外剧情物品 `281–286`、EventObject `797/798/831/877/887/898/905/906/909`、物品消耗、队伍进出或屏幕渐变时必须运行。
+主线测试从白河村稳定入口开始，沿正式房屋／山路转场执行韩医仙初诊、药方、银杏果、借还钓竿、河边捕鱼、捕兽夹放置与 proximity 自动捕鹿、三味药交付、六神丹使用及三人归队。捕鱼／放鹿运行测试以正式 `MapExplorer + TileMapLayer + PalTileMapWorld` 执行 `14358/14840`，固定 `0050 → 0009` 后动作必须揭幕；六神丹运行测试固定 `0081` 成功而通用接触距离严格失败的床前边界站位，确认物品结束后仍直达 EventObject 905 的 `14864`、恢复三人队并继续播放韩医仙提示。两个运行测试去掉 `--headless` 都会读取实际像素并把截图写入 `generated/pal/visual_tests/`。修改场外剧情物品 `281–286`、EventObject `797/798/831/877/887/898/905/906/909`、物品消耗、队伍进出、接触衔接或屏幕渐变时必须运行。
 
 玉佛寺双战与取得玉佛珠主线回归：
 
@@ -331,6 +333,8 @@ Headless 路径会逐帧解压并应用全部 12 段／1464 帧，验证脚本�
 ### 人工剧情检查点
 
 资源实验室的“剧情测试”只用于尚未验收、必须人工观察的问题。检查点是稀疏的临时剧情快照，不等同于完整主线存档，默认只保证按钮标注的片段；如果允许从某个检查点继续主线并另存，检查点必须同时恢复此前会影响后续的 Scene 入口和 EventObject 状态，并增加跨越下一剧情阶段的回归。验证完成后删除按钮和检查点，保留对应的自动回归，避免测试界面持续膨胀。
+
+当前“六神丹喂灵儿（待验收）”会直接站到诊厅床前的原版边界 half 格，恢复李逍遥／林月如和一颗六神丹。进入后按 `Esc` 打开物品页使用六神丹；预期赵灵儿立即开始苏醒长剧情，最终恢复三人队并由韩医仙给出下一步提示。该入口不写正式存档。
 
 旧版“码头乘船”检查点曾只恢复张四和船只，遗漏开场李大娘离场后已开启的客栈楼梯，继续玩到喂药夜晚会重新出现叫醒专用姿势并卡住楼梯。当前检查点已经补齐 Scene 1 稳定入口与 EventObject 4/11/12；读取由该旧检查点产生、且精确匹配该矛盾组合的存档时，`PalDebugCheckpoint.repair_legacy_checkpoint_runtime()` 会在内存中一次性修复，玩家再次保存后即可固化正确状态。
 

@@ -14,6 +14,26 @@ keywords:
 
 ## 2026-07-30
 
+### [BF-059] 六神丹已消耗但赵灵儿苏醒事件没有续跑
+
+- **来源**: 用户 Toy 本地存档 001 试玩反馈
+- **关联需求**: M5 白河村主线完整试玩
+- **问题描述**: 玩家在韩医仙诊厅床前使用六神丹后，道具会被正确消耗，赵灵儿 EventObject 905 的触发入口也已从物品脚本改为 `14864`，但没有出现苏醒长剧情，角色仍可自由移动且主线无法继续。`0081` 使用带人物朝向偏移的距离公式确认床前目标并把它提升为接触触发；物品脚本结束后，`MapExplorer` 却丢弃了已确认的对象编号，再用 EventObject 原坐标的严格接触距离全场扫描。实际床前 half 格对前一公式成功、对后一公式恰好等于边界而失败，因此只留下“药扣了、入口装好了”的中间状态。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `src/world/map_explorer.gd`
+  - `src/debug/pal_debug_checkpoint.gd`
+  - `src/debug/story_test_lab.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_baihe_medicine_mainline_test.gd`
+  - `tests/run_local_baihe_medicine_use_runtime_test.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+- **修复内容**: `ScriptVM` 让 `0081` 同时保留已武装的 EventObject 编号，直到脚本结束回调读取；物品完成后，`MapExplorer` 直接把该对象放入正式接触扫描上下文并运行其新入口，目标失效时才回退通用扫描。新增床前边界运行回归，确认普通接触判距确实失败时仍会从六神丹自动进入 `14864`，完整播放消息 `4254–4345`、恢复 `[0,1,2]` 三人队、音乐 55，并继续命中韩医仙的下一步提示。资源实验室临时增加“六神丹喂灵儿”最短人工检查点。
+- **状态**: ✅ 已修复
+
+---
+
 ### [BF-058] 白河村捕鱼与放鹿动作被渐隐黑幕完整遮住
 
 - **来源**: 用户试玩反馈

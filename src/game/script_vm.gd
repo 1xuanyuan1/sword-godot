@@ -118,6 +118,9 @@ var script_success: bool = true
 ## 本轮 `0081` 是否已把一个面对的事件提升为下一帧接触触发。
 ## 该状态独立于 `script_success`，因为物品脚本可能先检查多个不匹配对象。
 var touch_trigger_armed: bool = false
+## 本轮 `0081` 最后确认并提升为接触触发的 EventObject 编号。
+## 脚本结束回调会读取该编号，因此只在下一次运行、重新配置或停止时清空。
+var touch_trigger_event_id: int = 0
 
 var _cursor: int = 0
 var _event_object_id: int = 0
@@ -164,6 +167,8 @@ func configure(content_database: PalContentDatabase, game_session: GameSession =
 	_auto_frame_number = 0
 	_camera_offset = Vector2i.ZERO
 	_camera_pan_active = false
+	touch_trigger_armed = false
+	touch_trigger_event_id = 0
 	if session != null and database != null:
 		session.initialize_role_state(database.player_roles)
 	_equipment_manager.database = database
@@ -206,6 +211,7 @@ func run_trigger(entry_index: int, event_object_id: int = 0) -> int:
 	_close_dialog_after_frame_wait = false
 	_camera_pan_active = false
 	touch_trigger_armed = false
+	touch_trigger_event_id = 0
 	_cursor = entry_index
 	_next_trigger_entry = entry_index
 	_event_object_id = event_object_id
@@ -324,6 +330,7 @@ func stop() -> void:
 	_close_dialog_after_frame_wait = false
 	_camera_pan_active = false
 	touch_trigger_armed = false
+	touch_trigger_event_id = 0
 	_call_stack.clear()
 	dialog_ended.emit()
 
@@ -814,6 +821,7 @@ func _continue_execution() -> int:
 				if _is_party_facing_event(entry.operands[0], entry.operands[1]):
 					if entry.operands[1] > 0:
 						touch_trigger_armed = true
+						touch_trigger_event_id = entry.operands[0]
 				else:
 					script_success = false
 					_cursor = entry.operands[2]

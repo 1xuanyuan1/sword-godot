@@ -15,6 +15,27 @@ keywords:
 
 ## 2026-07-30
 
+### [FT-088] [fix] 续跑六神丹命中的赵灵儿苏醒事件
+
+- **关联需求**: M5 白河村主线完整试玩
+- **关联 TODO**: 无
+- **功能描述**: 场外物品脚本的 `0081` 现在会把已确认的 EventObject 编号交还给探索控制器；物品结束后直接在正式接触链中运行该目标的新入口，不再用另一套原坐标距离重复判定。床前边界位置使用六神丹后会自动播放赵灵儿苏醒、三人归队及韩医仙后续提示，主线可以继续。
+- **验证情况**: 新增正式 `MapExplorer + TileMapLayer + PalTileMapWorld` 运行回归，固定 `0081` 成功而普通接触严格失败的床前 half 格，从物品入口消费一颗六神丹并自动续跑 EventObject 905 / 脚本 `14864`；完整检查消息 `4254–4345`、三人队 `[0,1,2]`、场景 52、音乐 55、赵灵儿隐藏和韩医仙下一步提示。带窗口运行读取实际像素并保存苏醒后的 Git 忽略截图；资源实验室增加一个临时最短检查点供人工试玩。
+- **涉及文件**:
+  - `src/game/script_vm.gd`
+  - `src/world/map_explorer.gd`
+  - `src/debug/pal_debug_checkpoint.gd`
+  - `src/debug/story_test_lab.gd`
+  - `tests/run_tests.gd`
+  - `tests/run_local_baihe_medicine_mainline_test.gd`
+  - `tests/run_local_baihe_medicine_use_runtime_test.gd`
+  - `docs/SCRIPT_VM.md`
+  - `docs/DEVELOPMENT_WORKFLOW.md`
+  - `.yulia/kb/bugfix/map-explorer.md`
+  - `.yulia/kb/changelog/changelog.md`
+
+---
+
 ### [FT-087] [fix] 揭开白河村捕鱼与放鹿动作黑幕
 
 - **关联需求**: M5 白河村主线完整试玩

@@ -62,6 +62,24 @@ static func request(checkpoint_id: String) -> bool:
 				"music": 61,
 				"hint": "验证花树背景、洗澡画面与晃衣服动作不再异常黑屏",
 			}
+		"baihe_medicine_use":
+			_pending = {
+				"id": checkpoint_id,
+				"scene": 52,
+				"script": 0,
+				"event": 0,
+				# 这是 0081 面向偏移判定成功、普通接触原坐标判定刚好失败的床前 half 格。
+				"position": Vector2i(1424, 576),
+				"direction": GameSession.DIR_EAST,
+				"party": [0, 2],
+				"inventory": {286: 1},
+				"music": 12,
+				"event_overrides": {
+					906: {"trigger_script": 15042},
+					909: {"trigger_script": 15046},
+				},
+				"hint": "按 Esc 打开菜单，在物品中使用六神丹，验证赵灵儿苏醒并恢复三人队",
+			}
 		_:
 			_pending = {}
 			return false

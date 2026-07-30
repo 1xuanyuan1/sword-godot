@@ -180,7 +180,7 @@ TileMap、Shader、调色板、跟随者、动态地图、商店、确认框、�
   --script res://tests/run_local_manual_search_test.gd
 ```
 
-合成测试另行固定朝东检查点生成、身后排除、SearchNear/SearchNormal 范围、同格事件顺序以及 NPC 转身站定行为；接触事件覆盖严格距离边界、临时隐藏、NPC 转向和多个重叠脚本的续跑顺序。
+合成测试另行固定朝东检查点生成、身后排除、SearchNear/SearchNormal 范围、同格事件顺序以及 NPC 转身站定行为；接触事件覆盖严格距离边界、临时隐藏、NPC 转向和多个重叠脚本的续跑顺序。物品脚本 `0081` 会保留它按朝向偏移确认并提升为接触触发的 EventObject 编号，脚本结束后由 `MapExplorer` 直接在正式接触链中运行该目标；不能丢弃编号后再用 EventObject 原坐标重复判距，否则白河村床前这类 half 格边界会漏掉已经成功命中的事件。
 
 全部剧情场景的自动事件回归：
 

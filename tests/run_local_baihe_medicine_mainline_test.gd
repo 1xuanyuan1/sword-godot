@@ -192,9 +192,9 @@ func _test_baihe_medicine_mainline(database: PalContentDatabase) -> String:
 	_face_event(session, linger)
 	var medicine := database.item_definition(286)
 	_run_stage(vm, medicine.script_on_use, 0xffff)
-	if not _unsupported.is_empty() or not vm.script_success or not vm.touch_trigger_armed or linger.trigger_script != 14864:
+	if not _unsupported.is_empty() or not vm.script_success or not vm.touch_trigger_armed or vm.touch_trigger_event_id != linger.object_id or linger.trigger_script != 14864:
 		vm.free()
-		return "六神丹没有安装赵灵儿恢复入口：success=%s armed=%s trigger=%d unsupported=%s" % [vm.script_success, vm.touch_trigger_armed, linger.trigger_script, _unsupported]
+		return "六神丹没有安装并记录赵灵儿恢复入口：success=%s armed=%s event=%d trigger=%d unsupported=%s" % [vm.script_success, vm.touch_trigger_armed, vm.touch_trigger_event_id, linger.trigger_script, _unsupported]
 	if medicine.is_consuming():
 		session.change_item_count(286, -1)
 	_run_stage(vm, linger.trigger_script, linger.object_id)

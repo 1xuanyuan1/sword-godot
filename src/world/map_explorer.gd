@@ -584,6 +584,31 @@ func _trigger_touch_event() -> bool:
 	return _continue_touch_scan()
 
 
+func _trigger_armed_touch_event(event_object_id: int) -> bool:
+	if event_object_id <= 0:
+		return _trigger_touch_event()
+	if _touch_scan_active or _script_vm == null or _script_vm.is_busy():
+		return false
+	var target: PalEventObject = null
+	for event in _scene_events:
+		if event.object_id == event_object_id:
+			target = event
+			break
+	# 0081 已用带朝向偏移的原版公式确认目标；不要再用普通接触扫描的
+	# EventObject 原坐标重复判距。床前边界站位正好会在两套公式间产生差异。
+	if target == null or not target.is_visible() or not target.is_touch_trigger() or target.trigger_script <= 0:
+		return _trigger_touch_event()
+	_touch_scan_active = true
+	_touch_scan_next_index = 0
+	_touch_scan_restart_requested = false
+	_touch_scan_processed_event_ids.clear()
+	_touch_scan_processed_event_ids[target.object_id] = true
+	if _prepare_touch_event(target):
+		_refresh_world()
+	_run_event_trigger(target)
+	return true
+
+
 func _continue_touch_scan() -> bool:
 	if not _touch_scan_active or _script_vm == null or _script_vm.is_busy():
 		return false
@@ -715,6 +740,8 @@ func _load_debug_checkpoint(checkpoint: Dictionary) -> void:
 		_session.party_direction = int(checkpoint["direction"])
 	if checkpoint.has("position"):
 		_session.set_party_world_position(checkpoint["position"])
+	if checkpoint.has("party"):
+		_session.party_roles = PackedInt32Array(checkpoint["party"])
 	var checkpoint_inventory: Dictionary = checkpoint.get("inventory", {})
 	for item_id in checkpoint_inventory:
 		_session.set_item_count(int(item_id), int(checkpoint_inventory[item_id]))
@@ -1303,9 +1330,10 @@ func _on_script_finished(next_entry: int) -> void:
 		# 0081 会按原版把匹配对象改为接触触发；它与脚本最终成功标志不是同一状态。
 		# 破天锤会先顺序检查前面的石像，因此面对第二座以后时 script_success 仍可能为 false。
 		var should_trigger_touch := _script_vm.touch_trigger_armed
+		var armed_event_id := _script_vm.touch_trigger_event_id
 		_pending_used_item_id = 0
 		if should_trigger_touch:
-			call_deferred("_trigger_touch_event")
+			call_deferred("_trigger_armed_touch_event", armed_event_id)
 	if _pending_magic_object_id > 0:
 		_finish_pending_magic_stage(next_entry, _script_vm.script_success)
 	if _fade_in_after_scene_change and _pending_scene_index < 0 and not _screen_fade_active:

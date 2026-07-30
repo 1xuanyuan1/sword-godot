@@ -2097,6 +2097,10 @@ func _test_debug_checkpoints() -> void:
 	_expect(boat_overrides.get(124, {}).get("trigger_script") == 0x16f9 and boat_overrides.get(124, {}).get("position") == Vector2i(1152, 1376), "boat checkpoint restores Zhang Si's post-medicine position and boarding script")
 	_expect(checkpoint.get("scene_enter_scripts", {}).get(0) == 8145 and boat_overrides.get(4, {}).get("state") == 1, "boat checkpoint preserves the completed inn intro and open stairs")
 	_expect(boat_overrides.get(11, {}).get("position") == Vector2i(1152, 384) and boat_overrides.get(11, {}).get("auto_script") == 4458 and boat_overrides.get(12, {}).get("state") == 0, "boat checkpoint removes the aunt wake-up pose before continued play")
+	_expect(DebugCheckpoint.request("baihe_medicine_use"), "baihe medicine use checkpoint is accepted")
+	checkpoint = DebugCheckpoint.consume()
+	_expect(checkpoint.get("scene") == 52 and checkpoint.get("position") == Vector2i(1424, 576) and checkpoint.get("direction") == GameSession.DIR_EAST, "baihe medicine checkpoint opens at Linger's bedside boundary position")
+	_expect(checkpoint.get("party") == [0, 2] and checkpoint.get("inventory", {}).get(286) == 1, "baihe medicine checkpoint restores Yueru and one six-god pill")
 	var legacy_database := PalContentDatabase.new()
 	var inn_scene := PalSceneDefinition.new()
 	inn_scene.script_on_enter = 6225
